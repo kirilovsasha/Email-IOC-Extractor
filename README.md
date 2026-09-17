@@ -1,78 +1,70 @@
 # Reliquary
 
-**Extract. Normalize. Decide.**
+**IOC. Normalize. Export.**
 
-Офлайн-утилита для аналитика SOC: извлекает IOC из писем, тикетов, PDF/HTML,
-нормализует в STIX 2.1 / CSV, разбирает почтовые заголовки, разворачивает URL rewrite,
-оценивает вложения и выдаёт вердикт с рекомендуемыми действиями.
+Офлайн-утилита для аналитика SOC. **Главная задача** — извлечь IOC из писем,
+тикетов, PDF/HTML и нормализовать их в STIX 2.1 / CSV.
 
-> Название: **Reliquary** — «хранилище реликвий». Инструмент вынимает цифровые
-> артефакты угроз из сырых улик и складывает их в нормализованный вид для triage.
+Проверка письма на фишинг (заголовки, вердикт, рекомендации) — **дополнительный**
+модуль: включается автоматически для `.eml`/`.msg`, но не перекрывает работу с IOC.
 
-## Возможности
+> **Reliquary** — «хранилище реликвий»: вынимает цифровые артефакты угроз
+> из сырых улик и складывает в нормализованный вид.
+
+## Ядро (основное)
 
 | Модуль | Что делает |
 |--------|------------|
-| IOC extractor | IP, домены, URL, email, MD5/SHA1/SHA256, CVE (с учётом defang `hxxp` / `[.]`) |
-| Email headers | SPF/DKIM/DMARC, Reply-To/Return-Path mismatch, display-name spoof, Received hops |
-| URL rewrite | SafeLinks, Proofpoint v2/v3, Mimecast, Barracuda, FireEye, generic `?url=` — **без сети** |
-| Attachments | хеши, MIME, double extension, OLE/VBA, macro-enabled Office |
-| Verdict | score + уровень (benign / suspicious / malicious / unknown) + playbook действий |
-| Export | CSV, STIX 2.1 Bundle, полный JSON-отчёт |
-| GUI | CustomTkinter-консоль для сменного triage |
-| CLI | headless-режим для скриптов и CI |
+| **IOC extractor** | IP, домены, URL, email, MD5/SHA1/SHA256, CVE (с учётом defang `hxxp` / `[.]`) |
+| **URL rewrite** | SafeLinks, Proofpoint v2/v3, Mimecast, Barracuda, FireEye — разворот **без сети**, чтобы в экспорт попал реальный URL |
+| **Attachments** | имя, MIME, MD5/SHA1/SHA256 вложений как IOC |
+| **Export** | CSV, STIX 2.1 Bundle, полный JSON |
 
-**Сеть не используется.** Все проверки — локальные эвристики.
+## Дополнительно (фишинг / письмо)
+
+| Модуль | Что делает |
+|--------|------------|
+| Email headers | SPF/DKIM/DMARC, Reply-To / Return-Path mismatch, display-name spoof |
+| Attachment risk | double extension, OLE/VBA heuristics |
+| Verdict | эвристический score + рекомендуемые действия (не замена TIP/sandbox) |
+
+**Сеть не используется.** Все проверки — локальные.
 
 ## Быстрый старт
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 
-# GUI
+# GUI — акцент на IOC
 python run_reliquary.py
-# или
-python -m reliquary
 
-# CLI
-python -m reliquary.cli samples/phishing_sample.eml --csv out.csv --stix out.json
-python -m reliquary.cli -t "hxxps://evil[.]xyz/" -o
+# CLI — по умолчанию печатает сводку IOC; --phishing добавляет вердикт
+python -m reliquary.cli samples/ticket_sample.txt --csv out.csv --stix out.json
+python -m reliquary.cli samples/phishing_sample.eml --phishing
 ```
 
 ## Сборка EXE (PyInstaller)
-
-На машине аналитика (обычно Windows):
 
 ```bash
 pip install -r requirements.txt
 pyinstaller build/reliquary.spec
 ```
 
-Готовый бинарник: `dist/Reliquary.exe` (Windows) или `dist/Reliquary` (Linux).
-Его можно копировать на изолированные рабочие места SOC — интернет не нужен.
+`dist/Reliquary.exe` можно копировать на air-gapped рабочие места SOC.
 
 ## Структура
 
 ```
 reliquary/
-  core/          # парсеры, IOC, headers, URL unwrap, verdict, export
-  gui/           # графический интерфейс
-  cli.py         # консольный режим
-samples/         # учебные артефакты
-tests/           # pytest
+  core/          # IOC, parsers, URL unwrap, export (+ optional phishing)
+  gui/           # GUI: IOC на первом плане
+  cli.py
+samples/
+tests/
 build/reliquary.spec
 ```
-
-## Вердикт — как читать
-
-- **БЕЗОПАСНО** — явных red flags нет
-- **НЕОДНОЗНАЧНО** — слабые сигналы, peer-review
-- **ПОДОЗРИТЕЛЬНО** — есть признаки фишинга/spoofing/опасных вложений
-- **ВРЕДОНОСНО** — высокая суммарная score-оценка; действовать по playbook во вкладке «Действия»
-
-Эвристики не заменяют TIP/sandbox — это ускоритель первичного triage на air-gapped месте.
 
 ## Лицензия
 

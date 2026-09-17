@@ -1,4 +1,8 @@
-"""Heuristic verdict and recommended analyst actions (fully offline)."""
+"""Optional phishing / mail-triage heuristics (fully offline).
+
+Not the primary Reliquary output — IOC extraction and STIX/CSV export are.
+This module adds a secondary score + actions when analyzing email artifacts.
+"""
 
 from __future__ import annotations
 

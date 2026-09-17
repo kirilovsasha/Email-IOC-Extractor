@@ -86,6 +86,18 @@ def test_export_csv_and_stix(tmp_path: Path):
 
 
 def test_verdict_actions_present():
+    """Phishing verdict is optional add-on; still produced for emails."""
     result = analyze_file(SAMPLES / "phishing_sample.eml")
     assert result.verdict is not None
     assert len(result.verdict.actions) >= 1
+    # Core promise: IOCs are the main deliverable
+    assert len(result.iocs) >= 1
+
+
+def test_cli_defaults_to_ioc_list(capsys):
+    from reliquary.cli import main
+
+    code = main([str(SAMPLES / "ticket_sample.txt")])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "ioc_type" in out or "sha256" in out.lower() or "domain" in out
