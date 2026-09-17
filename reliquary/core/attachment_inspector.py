@@ -158,6 +158,7 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
         sha256=sha256,
         risk_flags=flags,
         notes=notes,
+        data=data,
     )
 
 

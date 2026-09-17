@@ -14,3 +14,7 @@ out/
 !samples/**
 .DS_Store
 *.spec.bak
+reliquary_error.log
+_t_*.txt
+_t_*.csv
+_t_*.json
