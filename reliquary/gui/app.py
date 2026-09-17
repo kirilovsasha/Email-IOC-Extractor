@@ -1,9 +1,10 @@
-"""Reliquary desktop GUI (CustomTkinter) — offline SOC triage console."""
+"""Reliquary desktop GUI — IOC extraction first, phishing as optional layer."""
 
 from __future__ import annotations
 
 import threading
 import tkinter as tk
+from collections import Counter
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -32,7 +33,6 @@ class ReliquaryApp(ctk.CTk):
         self._build()
 
     def _build(self) -> None:
-        # Brand header — hero-level product signal
         header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=72)
         header.pack(fill="x")
         header.pack_propagate(False)
@@ -53,13 +53,12 @@ class ReliquaryApp(ctk.CTk):
         )
         tag.pack(side="left", pady=16)
 
-        # Toolbar
         toolbar = ctk.CTkFrame(self, fg_color=COLORS["bg"])
         toolbar.pack(fill="x", padx=20, pady=(16, 8))
 
         ctk.CTkButton(
             toolbar,
-            text="Открыть файл",
+            text="Извлечь IOC",
             command=self.open_file,
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_dim"],
@@ -68,11 +67,11 @@ class ReliquaryApp(ctk.CTk):
 
         ctk.CTkButton(
             toolbar,
-            text="Анализ текста",
+            text="Из текста",
             command=self.analyze_clipboard_area,
             fg_color=COLORS["surface_alt"],
             hover_color=COLORS["border"],
-            width=140,
+            width=120,
         ).pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(
@@ -103,11 +102,10 @@ class ReliquaryApp(ctk.CTk):
         ).pack(side="left", padx=(0, 8))
 
         self.status = ctk.CTkLabel(
-            toolbar, text="Готов к работе — сеть не используется", text_color=COLORS["muted"]
+            toolbar, text="Готов — извлеките IOC из файла или текста", text_color=COLORS["muted"]
         )
         self.status.pack(side="right")
 
-        # Body: left input / right results
         body = ctk.CTkFrame(self, fg_color=COLORS["bg"])
         body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
         body.grid_columnconfigure(0, weight=1)
@@ -119,7 +117,7 @@ class ReliquaryApp(ctk.CTk):
 
         ctk.CTkLabel(
             left,
-            text="Входные данные / тикет",
+            text="Источник (файл / тикет / письмо)",
             font=ctk.CTkFont(size=14, weight="bold"),
             text_color=COLORS["text"],
         ).pack(anchor="w", padx=16, pady=(16, 8))
@@ -134,37 +132,46 @@ class ReliquaryApp(ctk.CTk):
         self.input_box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         self.input_box.insert(
             "1.0",
-            "Вставьте текст тикета, письмо или перетащите файл через «Открыть файл».\n"
-            "Поддержка: .eml .msg .pdf .html .htm .txt\n\n"
-            "Reliquary работает полностью офлайн.",
+            "Вставьте текст или откройте файл — Reliquary извлечёт IOC и нормализует в STIX/CSV.\n\n"
+            "Поддержка: .eml .msg .pdf .html .htm .txt\n"
+            "Для писем дополнительно доступен разбор на фишинг (вкладка «Фишинг»).\n\n"
+            "Работает полностью офлайн.",
         )
 
         right = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
         right.grid(row=0, column=1, sticky="nsew")
 
-        # Verdict banner
-        self.verdict_frame = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
-        self.verdict_frame.pack(fill="x", padx=16, pady=16)
+        # Primary: IOC summary (not phishing verdict)
+        self.summary_frame = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
+        self.summary_frame.pack(fill="x", padx=16, pady=(16, 8))
 
-        self.verdict_label = ctk.CTkLabel(
-            self.verdict_frame,
-            text="ВЕРДИКТ: —",
+        self.ioc_summary_label = ctk.CTkLabel(
+            self.summary_frame,
+            text="IOC: —",
             font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=COLORS["muted"],
+            text_color=COLORS["accent"],
         )
-        self.verdict_label.pack(anchor="w", padx=16, pady=(12, 4))
+        self.ioc_summary_label.pack(anchor="w", padx=16, pady=(12, 4))
 
-        self.verdict_summary = ctk.CTkLabel(
-            self.verdict_frame,
-            text="Загрузите артефакт для triage",
+        self.ioc_breakdown = ctk.CTkLabel(
+            self.summary_frame,
+            text="Откройте файл или вставьте текст для извлечения индикаторов",
             font=ctk.CTkFont(size=13),
             text_color=COLORS["muted"],
             wraplength=700,
             justify="left",
         )
-        self.verdict_summary.pack(anchor="w", padx=16, pady=(0, 12))
+        self.ioc_breakdown.pack(anchor="w", padx=16, pady=(0, 8))
 
-        # Tabs
+        # Secondary: compact phishing hint (not the hero)
+        self.phishing_hint = ctk.CTkLabel(
+            self.summary_frame,
+            text="Фишинг: —  (доп. модуль для писем)",
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS["muted"],
+        )
+        self.phishing_hint.pack(anchor="w", padx=16, pady=(0, 12))
+
         self.tabs = ctk.CTkTabview(
             right,
             fg_color=COLORS["surface"],
@@ -176,17 +183,16 @@ class ReliquaryApp(ctk.CTk):
         )
         self.tabs.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
-        for name in ("IOC", "Заголовки", "URL Rewrite", "Вложения", "Действия", "Причины"):
+        # Core tabs first, phishing extras last
+        for name in ("IOC", "URL Rewrite", "Вложения", "Фишинг", "Заголовки"):
             self.tabs.add(name)
 
         self.ioc_tree = self._make_text(self.tabs.tab("IOC"))
-        self.hdr_tree = self._make_text(self.tabs.tab("Заголовки"))
         self.url_tree = self._make_text(self.tabs.tab("URL Rewrite"))
         self.att_tree = self._make_text(self.tabs.tab("Вложения"))
-        self.act_tree = self._make_text(self.tabs.tab("Действия"))
-        self.reason_tree = self._make_text(self.tabs.tab("Причины"))
+        self.phish_tree = self._make_text(self.tabs.tab("Фишинг"))
+        self.hdr_tree = self._make_text(self.tabs.tab("Заголовки"))
 
-        # Drag-and-drop hint via drop on window (tk doesn't have native DnD everywhere)
         self.bind("<Control-o>", lambda _e: self.open_file())
 
     def _make_text(self, parent: ctk.CTkFrame) -> ctk.CTkTextbox:
@@ -205,7 +211,7 @@ class ReliquaryApp(ctk.CTk):
 
     def open_file(self) -> None:
         path = filedialog.askopenfilename(
-            title="Reliquary — выбрать артефакт",
+            title="Reliquary — извлечь IOC",
             filetypes=[
                 ("Все поддерживаемые", "*.eml *.msg *.pdf *.html *.htm *.txt *.csv *.log"),
                 ("Email", "*.eml *.msg"),
@@ -217,7 +223,7 @@ class ReliquaryApp(ctk.CTk):
         )
         if not path:
             return
-        self._set_status(f"Анализ: {Path(path).name}…")
+        self._set_status(f"Извлечение IOC: {Path(path).name}…")
         self.update_idletasks()
         threading.Thread(target=self._run_file, args=(path,), daemon=True).start()
 
@@ -227,14 +233,14 @@ class ReliquaryApp(ctk.CTk):
             self.after(0, lambda: self._apply_result(result, preload_text=True))
         except Exception as exc:  # noqa: BLE001
             self.after(0, lambda: messagebox.showerror("Ошибка", str(exc)))
-            self.after(0, lambda: self._set_status("Ошибка анализа"))
+            self.after(0, lambda: self._set_status("Ошибка извлечения"))
 
     def analyze_clipboard_area(self) -> None:
         text = self.input_box.get("1.0", "end").strip()
         if not text or text.startswith("Вставьте текст"):
-            messagebox.showinfo("Reliquary", "Вставьте текст тикета в левую панель")
+            messagebox.showinfo("Reliquary", "Вставьте текст в левую панель")
             return
-        self._set_status("Анализ текста…")
+        self._set_status("Извлечение IOC из текста…")
         threading.Thread(target=self._run_text, args=(text,), daemon=True).start()
 
     def _run_text(self, text: str) -> None:
@@ -259,30 +265,51 @@ class ReliquaryApp(ctk.CTk):
             self.input_box.delete("1.0", "end")
             self.input_box.insert("1.0", meta)
 
+        counts = Counter(i.ioc_type.value for i in result.iocs)
+        total = len(result.iocs)
+        self.ioc_summary_label.configure(
+            text=f"IOC: {total}",
+            text_color=COLORS["accent"],
+        )
+        if counts:
+            breakdown = "  ·  ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
+            self.ioc_breakdown.configure(text=breakdown, text_color=COLORS["text"])
+        else:
+            self.ioc_breakdown.configure(
+                text="Индикаторы не найдены",
+                text_color=COLORS["muted"],
+            )
+
         v = result.verdict
-        if v:
+        is_mail = result.source_kind == "email" or bool(result.headers)
+        if v and is_mail:
             color = VERDICT_COLORS.get(v.level.value, COLORS["muted"])
             label = VERDICT_LABELS_RU.get(v.level.value, v.level.value.upper())
-            self.verdict_label.configure(
-                text=f"ВЕРДИКТ: {label}  ·  score {v.score}/100",
+            self.phishing_hint.configure(
+                text=f"Фишинг (доп.): {label}  ·  score {v.score}/100 — {v.summary}",
                 text_color=color,
             )
-            self.verdict_summary.configure(text=v.summary, text_color=COLORS["text"])
+        elif v:
+            self.phishing_hint.configure(
+                text=f"Доп. эвристика: {VERDICT_LABELS_RU.get(v.level.value, v.level.value)} "
+                f"({v.score}/100) — не основной результат",
+                text_color=COLORS["muted"],
+            )
         else:
-            self.verdict_label.configure(text="ВЕРДИКТ: —", text_color=COLORS["muted"])
+            self.phishing_hint.configure(
+                text="Фишинг: —  (доп. модуль для писем)",
+                text_color=COLORS["muted"],
+            )
 
         self._fill_iocs(result)
-        self._fill_headers(result)
         self._fill_urls(result)
         self._fill_attachments(result)
-        self._fill_actions(result)
-        self._fill_reasons(result)
+        self._fill_phishing(result)
+        self._fill_headers(result)
+        self.tabs.set("IOC")
 
         err = f" · ошибки: {len(result.errors)}" if result.errors else ""
-        self._set_status(
-            f"Готово: {len(result.iocs)} IOC, {len(result.attachments)} влож., "
-            f"{len(result.headers)} находок по заголовкам{err}"
-        )
+        self._set_status(f"Готово: {total} IOC{err} — можно экспортировать CSV / STIX")
 
     def _write(self, box: ctk.CTkTextbox, content: str) -> None:
         box.delete("1.0", "end")
@@ -299,7 +326,12 @@ class ReliquaryApp(ctk.CTk):
         self._write(self.ioc_tree, "\n".join(lines))
 
     def _fill_headers(self, result: AnalysisResult) -> None:
-        lines = [f"{'SEV':<10} {'NAME':<28} NOTE", "-" * 100]
+        lines = [
+            "# Доп. модуль: разбор почтовых заголовков (для писем)",
+            "",
+            f"{'SEV':<10} {'NAME':<28} NOTE",
+            "-" * 100,
+        ]
         for h in result.headers:
             lines.append(f"{h.severity.value:<10} {h.name:<28} {h.note}")
             lines.append(f"{'':10} {h.value[:120]}")
@@ -309,7 +341,12 @@ class ReliquaryApp(ctk.CTk):
         self._write(self.hdr_tree, "\n".join(lines))
 
     def _fill_urls(self, result: AnalysisResult) -> None:
-        lines = [f"{'REWRITER':<22} CHANGED  URL", "-" * 100]
+        lines = [
+            "# Разворот URL rewrite — чтобы в IOC попал реальный адрес",
+            "",
+            f"{'REWRITER':<22} CHANGED  URL",
+            "-" * 100,
+        ]
         for u in result.url_rewrites:
             lines.append(f"{u.rewriter:<22} {str(u.changed):<8} {u.original}")
             if u.changed:
@@ -320,7 +357,7 @@ class ReliquaryApp(ctk.CTk):
         self._write(self.url_tree, "\n".join(lines))
 
     def _fill_attachments(self, result: AnalysisResult) -> None:
-        lines = []
+        lines = ["# Вложения → хеши как IOC (+ флаги риска)", ""]
         for a in result.attachments:
             lines.append(f"• {a.filename}  ({a.size} bytes, {a.mime_guess})")
             lines.append(f"  MD5:    {a.md5}")
@@ -331,36 +368,42 @@ class ReliquaryApp(ctk.CTk):
             for n in a.notes:
                 lines.append(f"  — {n}")
             lines.append("")
-        if not lines:
+        if len(lines) == 2:
             lines.append("(вложений нет)")
         self._write(self.att_tree, "\n".join(lines))
 
-    def _fill_actions(self, result: AnalysisResult) -> None:
-        lines = []
+    def _fill_phishing(self, result: AnalysisResult) -> None:
+        lines = [
+            "# Дополнительный модуль: эвристика фишинга / triage письма",
+            "# Основной результат Reliquary — вкладка IOC и экспорт STIX/CSV",
+            "",
+        ]
         if result.verdict:
-            for a in result.verdict.actions:
-                lines.append(f"[{a.priority}] {a.action}")
-                lines.append(f"    {a.rationale}")
-                lines.append("")
-        if not lines:
-            lines.append("(нет рекомендаций)")
-        self._write(self.act_tree, "\n".join(lines))
-
-    def _fill_reasons(self, result: AnalysisResult) -> None:
-        lines = []
-        if result.verdict:
-            for r in result.verdict.reasons:
-                lines.append(f"• {r}")
+            v = result.verdict
+            label = VERDICT_LABELS_RU.get(v.level.value, v.level.value)
+            lines.append(f"Вердикт: {label}  (score {v.score}/100)")
+            lines.append(v.summary)
+            lines.append("")
+            lines.append("Причины:")
+            for r in v.reasons:
+                lines.append(f"  • {r}")
+            lines.append("")
+            lines.append("Рекомендуемые действия:")
+            for a in v.actions:
+                lines.append(f"  [{a.priority}] {a.action}")
+                lines.append(f"      {a.rationale}")
+        else:
+            lines.append("(вердикт не сформирован)")
         if result.errors:
             lines.append("")
             lines.append("Ошибки парсинга:")
             for e in result.errors:
-                lines.append(f"! {e}")
-        self._write(self.reason_tree, "\n".join(lines) if lines else "(пусто)")
+                lines.append(f"  ! {e}")
+        self._write(self.phish_tree, "\n".join(lines))
 
     def export(self, kind: str) -> None:
         if not self.result:
-            messagebox.showinfo("Reliquary", "Сначала выполните анализ")
+            messagebox.showinfo("Reliquary", "Сначала извлеките IOC")
             return
         if kind == "csv":
             path = filedialog.asksaveasfilename(
@@ -393,7 +436,6 @@ class ReliquaryApp(ctk.CTk):
 
 def run() -> None:
     enforce_offline()
-    # Ensure Tcl/Tk is available; fail with a clear message for headless CI.
     try:
         app = ReliquaryApp()
     except tk.TclError as exc:

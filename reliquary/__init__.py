@@ -1,5 +1,5 @@
-"""Reliquary — offline SOC utility for IOC extraction and triage."""
+"""Reliquary — offline SOC utility: IOC extraction first, optional mail triage."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __app_name__ = "Reliquary"
-__tagline__ = "Extract. Normalize. Decide."
+__tagline__ = "IOC. Normalize. Export."
