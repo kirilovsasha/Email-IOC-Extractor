@@ -6,7 +6,7 @@ import re
 from email.message import Message
 from email.utils import parseaddr
 
-from reliquary.core.models import HeaderFinding, Severity
+from reliquary.core.models import HeaderFinding, MailIdentity, Severity
 
 
 def _get_all(msg: Message, name: str) -> list[str]:
@@ -15,6 +15,24 @@ def _get_all(msg: Message, name: str) -> list[str]:
 
 def analyze_headers(msg: Message) -> list[HeaderFinding]:
     findings: list[HeaderFinding] = []
+
+    # Identity block — first: who/what this mail is
+    subject = msg.get("Subject", "")
+    date = msg.get("Date", "")
+    mid = msg.get("Message-ID", "")
+    to_hdr = msg.get("To", "")
+    cc_hdr = msg.get("Cc", "")
+
+    if subject:
+        findings.append(HeaderFinding("Subject", subject, Severity.INFO, "Тема письма"))
+    if date:
+        findings.append(HeaderFinding("Date", date, Severity.INFO, "Дата отправки"))
+    if mid:
+        findings.append(HeaderFinding("Message-ID", mid, Severity.INFO, "Уникальный ID сообщения"))
+    if to_hdr:
+        findings.append(HeaderFinding("To", to_hdr, Severity.INFO, "Получатель"))
+    if cc_hdr:
+        findings.append(HeaderFinding("Cc", cc_hdr, Severity.INFO, "Копия"))
 
     from_hdr = msg.get("From", "")
     from_name, from_addr = parseaddr(from_hdr)
@@ -26,6 +44,10 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
     findings.append(
         HeaderFinding("From", from_hdr or "(пусто)", Severity.INFO, "Адрес отправителя")
     )
+    if return_path:
+        findings.append(
+            HeaderFinding("Return-Path", return_path, Severity.INFO, "Конверт отправителя (SMTP)")
+        )
     if reply_to:
         findings.append(
             HeaderFinding("Reply-To", reply_to, Severity.INFO, "Адрес для ответа")
@@ -107,7 +129,7 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             )
         )
 
-    # Received chain
+    # Received chain — show first hop for mail path identity
     received = _get_all(msg, "Received")
     findings.append(
         HeaderFinding(
@@ -117,6 +139,24 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             "Количество hops в цепочке Received",
         )
     )
+    if received:
+        findings.append(
+            HeaderFinding(
+                "Received (first)",
+                received[0][:400],
+                Severity.INFO,
+                "Первый (ближайший к получателю) hop — откуда пришло письмо",
+            )
+        )
+        if len(received) > 1:
+            findings.append(
+                HeaderFinding(
+                    "Received (origin)",
+                    received[-1][:400],
+                    Severity.INFO,
+                    "Последний hop в списке — обычно ближайший к отправителю",
+                )
+            )
     if len(received) == 0:
         findings.append(
             HeaderFinding(
@@ -177,7 +217,6 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                 break
 
     # Message-ID domain vs From domain
-    mid = msg.get("Message-ID", "")
     if mid and from_addr and "@" in mid:
         mid_dom = mid.rsplit("@", 1)[-1].strip("> ").lower()
         from_dom = from_addr.split("@")[-1].lower()
@@ -199,3 +238,63 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
         )
 
     return findings
+
+
+_RAW_HEADER_KEYS = (
+    "From",
+    "To",
+    "Cc",
+    "Subject",
+    "Date",
+    "Message-ID",
+    "Return-Path",
+    "Reply-To",
+    "Sender",
+    "Authentication-Results",
+    "Received-SPF",
+    "DKIM-Signature",
+    "X-Mailer",
+    "User-Agent",
+    "X-Originating-IP",
+    "X-Priority",
+    "Importance",
+)
+
+
+def extract_raw_headers(msg: Message) -> dict[str, str]:
+    """Key headers as plain strings for display / copy."""
+    out: dict[str, str] = {}
+    for key in _RAW_HEADER_KEYS:
+        values = _get_all(msg, key)
+        if values:
+            out[key] = " | ".join(values) if key != "Received" else values[0]
+    received = _get_all(msg, "Received")
+    if received:
+        out["Received-Count"] = str(len(received))
+        out["Received-First"] = received[0]
+        if len(received) > 1:
+            out["Received-Origin"] = received[-1]
+    return out
+
+
+def build_mail_identity(msg: Message) -> MailIdentity:
+    auth_blob = " | ".join(_get_all(msg, "Authentication-Results")).lower()
+
+    def _auth(proto: str) -> str:
+        m = re.search(rf"{proto}\s*=\s*([a-z]+)", auth_blob)
+        return m.group(1) if m else ""
+
+    received = _get_all(msg, "Received")
+    return MailIdentity(
+        from_header=msg.get("From", "") or "",
+        return_path=msg.get("Return-Path", "") or "",
+        reply_to=msg.get("Reply-To", "") or "",
+        subject=msg.get("Subject", "") or "",
+        message_id=msg.get("Message-ID", "") or "",
+        date=msg.get("Date", "") or "",
+        spf=_auth("spf"),
+        dkim=_auth("dkim"),
+        dmarc=_auth("dmarc"),
+        received_hops=len(received),
+        first_received=received[0][:300] if received else "",
+    )

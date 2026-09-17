@@ -1,71 +1,74 @@
 # Reliquary
 
-**IOC. Normalize. Export.**
+**Extract. Normalize. Export.**
 
-Офлайн-утилита для аналитика SOC. **Главная задача** — извлечь IOC из писем,
-тикетов, PDF/HTML и нормализовать их в STIX 2.1 / CSV.
+Офлайн-приложение для извлечения IOC из писем, тикетов, PDF и HTML.
+Экспорт: CSV, STIX 2.1, JSON, MISP, OpenCTI, **YARA**.
 
-Проверка письма на фишинг (заголовки, вердикт, рекомендации) — **дополнительный**
-модуль: включается автоматически для `.eml`/`.msg`, но не перекрывает работу с IOC.
+## Что извлекает
 
-> **Reliquary** — «хранилище реликвий»: вынимает цифровые артефакты угроз
-> из сырых улик и складывает в нормализованный вид.
+| Тип | Примеры |
+|-----|---------|
+| Сеть | IPv4/IPv6, `ip:port`, домены (в т.ч. punycode), URL, email |
+| Хеши | MD5, SHA1, SHA256 (в т.ч. вложений) |
+| Host | Windows-пути, UNC, registry, mutex, `command_line` |
+| Crypto / IM | Bitcoin, Monero, Telegram, Discord |
+| Прочее | CVE, имена вложений |
 
-## Ядро (основное)
+Письма (`.eml` / `.msg`): тело, URL rewrite, вложения, карточка identity
+(From / Return-Path / SPF·DKIM·DMARC / hops), сырые заголовки.
 
-| Модуль | Что делает |
-|--------|------------|
-| **IOC extractor** | IP, домены, URL, email, MD5/SHA1/SHA256, CVE (с учётом defang `hxxp` / `[.]`) |
-| **URL rewrite** | SafeLinks, Proofpoint v2/v3, Mimecast, Barracuda, FireEye — разворот **без сети**, чтобы в экспорт попал реальный URL |
-| **Attachments** | имя, MIME, MD5/SHA1/SHA256 вложений как IOC |
-| **Export** | CSV, STIX 2.1 Bundle, полный JSON |
+Шум: теги `private`, `url_rewriter`, `allowlisted` — скрываются фильтрами в GUI.
+Свои списки: [`allowlist.txt`](allowlist.txt), [`denylist.txt`](denylist.txt).
 
-## Дополнительно (фишинг / письмо)
-
-| Модуль | Что делает |
-|--------|------------|
-| Email headers | SPF/DKIM/DMARC, Reply-To / Return-Path mismatch, display-name spoof |
-| Attachment risk | double extension, OLE/VBA heuristics |
-| Verdict | эвристический score + рекомендуемые действия (не замена TIP/sandbox) |
-
-**Сеть не используется.** Все проверки — локальные.
-
-## Быстрый старт
+## Быстрый старт (Windows)
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 
-# GUI — акцент на IOC
-python run_reliquary.py
-
-# CLI — по умолчанию печатает сводку IOC; --phishing добавляет вердикт
-python -m reliquary.cli samples/ticket_sample.txt --csv out.csv --stix out.json
-python -m reliquary.cli samples/phishing_sample.eml --phishing
+run_gui.bat
 ```
 
-## Сборка EXE (PyInstaller)
+При ошибке запуска смотрите `reliquary_error.log` рядом с bat.
+
+CLI:
+
+```bash
+python -m reliquary.cli samples/ticket_sample.txt --csv out.csv --stix out.json
+python -m reliquary.cli samples/phishing_sample.eml --iocs-only
+```
+
+## GUI
+
+- Открыть несколько файлов / папку, drag-and-drop
+- Фильтры: Сеть / Хеши / Хост / Крипто + скрытие private / rewriter / allowlist
+- Копировать IOC, сохранить вложения
+- Экспорт: CSV · STIX · JSON · MISP · OpenCTI · YARA
+
+## Сборка EXE
 
 ```bash
 pip install -r requirements.txt
 pyinstaller build/reliquary.spec
 ```
 
-`dist/Reliquary.exe` можно копировать на air-gapped рабочие места SOC.
+`dist/Reliquary.exe` — без консоли; лог ошибок — `reliquary_error.log` рядом с exe.
 
 ## Структура
 
 ```
 reliquary/
-  core/          # IOC, parsers, URL unwrap, export (+ optional phishing)
-  gui/           # GUI: IOC на первом плане
-  cli.py
+  core/          # парсеры, IOC, allowlist, экспорт
+  gui/           # desktop UI
 samples/
-tests/
-build/reliquary.spec
+allowlist.txt
+denylist.txt
+run_gui.bat
+run_reliquary.py
 ```
 
 ## Лицензия
 
-Внутренний инструмент SOC. Адаптируйте под свои playbook'и.
+Внутренний инструмент SOC.

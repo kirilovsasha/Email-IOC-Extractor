@@ -4,12 +4,77 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reliquary.core.allowlist import build_allowlist, build_denylist, tag_allowlist_denylist
 from reliquary.core.document_parser import parse_document
-from reliquary.core.header_analyzer import analyze_headers
+from reliquary.core.header_analyzer import (
+    analyze_headers,
+    build_mail_identity,
+    extract_raw_headers,
+)
 from reliquary.core.ioc_extractor import extract_iocs
 from reliquary.core.models import AnalysisResult, Ioc, IocType
 from reliquary.core.url_rewrite import find_and_unwrap
 from reliquary.core.verdict import render_verdict
+
+
+def _ioc_priority(ioc: Ioc) -> int:
+    """Higher = keep when merging duplicates / competing signals."""
+    score = 0
+    if "unwrapped" in ioc.tags:
+        score += 50
+    if "denylisted" in ioc.tags:
+        score += 40
+    if "from_url" in ioc.tags and "url_rewriter" not in ioc.tags:
+        score += 20
+    if "url_rewriter" in ioc.tags:
+        score -= 30
+    if "allowlisted" in ioc.tags:
+        score -= 10
+    if "private" in ioc.tags:
+        score -= 5
+    return score
+
+
+def _dedup_iocs(iocs: list[Ioc]) -> list[Ioc]:
+    dedup: dict[tuple[str, str], Ioc] = {}
+    for ioc in iocs:
+        key = (ioc.ioc_type.value, ioc.value.lower())
+        prev = dedup.get(key)
+        if prev is None or _ioc_priority(ioc) > _ioc_priority(prev):
+            dedup[key] = ioc
+        elif prev is not None:
+            for tag in ioc.tags:
+                if tag not in prev.tags:
+                    prev.tags.append(tag)
+            if ioc.rewritten_from and not prev.rewritten_from:
+                prev.rewritten_from = ioc.rewritten_from
+
+    # Prefer unwrapped URL domains over rewriter hosts when both present as domain IOCs
+    domains = [i for i in dedup.values() if i.ioc_type == IocType.DOMAIN]
+    rewriter_keys = {
+        (i.ioc_type.value, i.value.lower())
+        for i in domains
+        if "url_rewriter" in i.tags
+    }
+    unwrapped_present = any("unwrapped" in i.tags or "from_url" in i.tags for i in domains)
+    if unwrapped_present:
+        for key in list(dedup.keys()):
+            ioc = dedup[key]
+            if key in rewriter_keys and "url_rewriter" in ioc.tags:
+                # keep but mark as noise-candidate; do not drop — GUI filter hides them
+                if "noise_candidate" not in ioc.tags:
+                    ioc.tags.append("noise_candidate")
+
+    result = list(dedup.values())
+    result.sort(key=lambda i: (-_ioc_priority(i), i.ioc_type.value, i.value.lower()))
+    return result
+
+
+def _finalize_iocs(iocs: list[Ioc]) -> list[Ioc]:
+    allow_domains, allow_ips = build_allowlist()
+    deny = build_denylist()
+    tag_allowlist_denylist(iocs, allow_domains, allow_ips, deny)
+    return _dedup_iocs(iocs)
 
 
 def analyze_file(path: str | Path) -> AnalysisResult:
@@ -30,17 +95,17 @@ def analyze_file(path: str | Path) -> AnalysisResult:
     if parsed.message is not None:
         try:
             result.headers = analyze_headers(parsed.message)
+            result.raw_headers = extract_raw_headers(parsed.message)
+            result.mail_identity = build_mail_identity(parsed.message)
         except Exception as exc:  # noqa: BLE001
             result.errors.append(f"Заголовки: {exc}")
 
-    # URL rewrite pass on body + html
     blob = f"{parsed.text}\n{parsed.html}"
     try:
         result.url_rewrites = find_and_unwrap(blob)
     except Exception as exc:  # noqa: BLE001
         result.errors.append(f"URL rewrite: {exc}")
 
-    # Build enriched text for IOC extraction: prefer unwrapped URLs
     enriched = blob
     for rewrite in result.url_rewrites:
         if rewrite.changed:
@@ -52,17 +117,25 @@ def analyze_file(path: str | Path) -> AnalysisResult:
         result.errors.append(f"IOC: {exc}")
         iocs = []
 
-    # Link rewritten_from on URL IOCs
-    unwrap_map = {
-        r.unwrapped: r.original for r in result.url_rewrites if r.changed
-    }
+    unwrap_map = {r.unwrapped: r.original for r in result.url_rewrites if r.changed}
+    rewriter_hosts = set()
+    for r in result.url_rewrites:
+        if r.changed:
+            from urllib.parse import urlparse
+
+            host = urlparse(r.original).hostname
+            if host:
+                rewriter_hosts.add(host.lower())
+
     for ioc in iocs:
         if ioc.ioc_type == IocType.URL and ioc.value in unwrap_map:
             ioc.rewritten_from = unwrap_map[ioc.value]
             if "unwrapped" not in ioc.tags:
                 ioc.tags.append("unwrapped")
+        if ioc.ioc_type == IocType.DOMAIN and ioc.value.lower() in rewriter_hosts:
+            if "url_rewriter" not in ioc.tags:
+                ioc.tags.append("url_rewriter")
 
-    # Attachment hashes as IOCs
     for att in result.attachments:
         for algo, value, itype in (
             ("md5", att.md5, IocType.MD5),
@@ -90,15 +163,7 @@ def analyze_file(path: str | Path) -> AnalysisResult:
                 )
             )
 
-    # Deduplicate final IOC list
-    dedup: dict[tuple[str, str], Ioc] = {}
-    for ioc in iocs:
-        key = (ioc.ioc_type.value, ioc.value.lower())
-        if key not in dedup:
-            dedup[key] = ioc
-    result.iocs = list(dedup.values())
-    result.iocs.sort(key=lambda i: (i.ioc_type.value, i.value.lower()))
-
+    result.iocs = _finalize_iocs(iocs)
     result.verdict = render_verdict(result)
     return result
 
@@ -115,12 +180,45 @@ def analyze_text(text: str, label: str = "clipboard") -> AnalysisResult:
     for rewrite in result.url_rewrites:
         if rewrite.changed:
             enriched += f"\n{rewrite.unwrapped}"
-    result.iocs = extract_iocs(enriched, source="ticket")
-    for ioc in result.iocs:
+    iocs = extract_iocs(enriched, source="ticket")
+    for ioc in iocs:
         if ioc.ioc_type == IocType.URL:
             for r in result.url_rewrites:
                 if r.changed and r.unwrapped == ioc.value:
                     ioc.rewritten_from = r.original
-                    ioc.tags.append("unwrapped")
+                    if "unwrapped" not in ioc.tags:
+                        ioc.tags.append("unwrapped")
+    result.iocs = _finalize_iocs(iocs)
     result.verdict = render_verdict(result)
     return result
+
+
+def merge_results(results: list[AnalysisResult], label: str = "batch") -> AnalysisResult:
+    """Merge multiple file analyses into one result (batch open)."""
+    if not results:
+        return AnalysisResult(source_path=label, source_kind="batch")
+    if len(results) == 1:
+        return results[0]
+
+    merged = AnalysisResult(
+        source_path=f"{label} ({len(results)} files)",
+        source_kind="batch",
+        subject="; ".join(r.subject for r in results if r.subject)[:500],
+        sender="; ".join(r.sender for r in results if r.sender)[:500],
+        raw_text_preview="\n---\n".join(
+            f"[{r.source_path}]\n{r.raw_text_preview}" for r in results
+        )[:8000],
+    )
+    iocs: list[Ioc] = []
+    for r in results:
+        iocs.extend(r.iocs)
+        merged.url_rewrites.extend(r.url_rewrites)
+        merged.attachments.extend(r.attachments)
+        merged.headers.extend(r.headers)
+        merged.errors.extend(r.errors)
+        if r.mail_identity and merged.mail_identity is None:
+            merged.mail_identity = r.mail_identity
+            merged.raw_headers = dict(r.raw_headers)
+    merged.iocs = _finalize_iocs(iocs)
+    merged.verdict = render_verdict(merged)
+    return merged

@@ -25,6 +25,68 @@ def test_defang_and_extract():
     assert "ipv4" in types
 
 
+def test_soc_host_and_crypto_iocs():
+    text = (
+        "C2 185.199.108.153:443 path C:\\Users\\Public\\payload.exe "
+        "UNC \\\\fileserver\\share\\drop.bin "
+        "reg HKLM\\Software\\Evil\\Run "
+        "mutex Global\\EvilMutex01 "
+        "btc 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa "
+        "tg https://t.me/evil_channel "
+        "discord discord.gg/abcd1234 "
+        "cmdline powershell.exe -enc SQBFAFgA"
+    )
+    iocs = extract_iocs(text)
+    by_type = {i.ioc_type.value for i in iocs}
+    assert "ip_port" in by_type
+    assert "filepath" in by_type
+    assert "unc" in by_type
+    assert "registry" in by_type
+    assert "mutex" in by_type
+    assert "bitcoin" in by_type
+    assert "messenger" in by_type
+    assert "command_line" in by_type
+
+
+def test_mail_identity_and_raw_headers():
+    result = analyze_file(SAMPLES / "phishing_sample.eml")
+    assert result.mail_identity is not None
+    assert result.mail_identity.spf == "fail"
+    assert "From" in result.raw_headers
+    assert "Message-ID" in result.raw_headers
+
+
+def test_filter_and_exports(tmp_path: Path):
+    from reliquary.core.exporters import (
+        export_misp,
+        export_opencti,
+        export_yara,
+        filter_iocs,
+    )
+
+    result = analyze_file(SAMPLES / "phishing_sample.eml")
+    filtered = filter_iocs(result, hide_rewriter=True)
+    assert all("url_rewriter" not in i.tags for i in filtered)
+    export_misp(result, tmp_path / "misp.json")
+    export_opencti(result, tmp_path / "octi.json")
+    yar = tmp_path / "iocs.yar"
+    export_yara(result, yar)
+    text = yar.read_text(encoding="utf-8")
+    assert "rule " in text
+    assert "condition:" in text
+    assert (tmp_path / "misp.json").stat().st_size > 0
+
+
+def test_merge_results():
+    from reliquary.core.pipeline import merge_results
+
+    a = analyze_file(SAMPLES / "ticket_sample.txt")
+    b = analyze_file(SAMPLES / "phishing_sample.eml")
+    merged = merge_results([a, b])
+    assert merged.source_kind == "batch"
+    assert len(merged.iocs) >= max(len(a.iocs), len(b.iocs))
+
+
 def test_safelinks_unwrap():
     url = (
         "https://nam.safelinks.protection.outlook.com/"
@@ -69,6 +131,8 @@ def test_analyze_phishing_eml():
         VerdictLevel.UNKNOWN,
     }
     assert any(h.severity.value in ("high", "medium") for h in result.headers)
+    assert any(h.name == "From" for h in result.headers)
+    assert any(h.name in ("Subject", "Message-ID", "Date") for h in result.headers)
     assert any(u.changed for u in result.url_rewrites)
     assert any("invoice.pdf.exe" in a.filename for a in result.attachments)
 
