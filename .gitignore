@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+dist/
+build/dist/
+build/Reliquary/
+*.egg-info/
+.eggs/
+out/
+*.csv
+!samples/**
+.DS_Store
+*.spec.bak

@@ -1,0 +1,11 @@
+Ticket #4821 — Phishing report
+
+User forwarded mail claiming to be from PayPal.
+URL observed (defanged): hxxps://paypa1-secure[.]xyz/login
+Also SafeLinks: https://nam.safelinks.protection.outlook.com/?url=http%3A%2F%2Fmalicious.example.com%2Fsteal&data=xx
+
+Attachment hash (SHA256):
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+Related CVE discussion: CVE-2024-12345
+Contact: helpdesk@company.local
