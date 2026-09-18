@@ -8,55 +8,76 @@ import re
 _URL_IN_TEXT = re.compile(r"(?i)\b(?:https?|hxxps?)://[^\s<>\"']+")
 
 
-def decode_qr_payloads(data: bytes) -> list[str]:
-    """Return decoded QR strings. Tries optional backends; never contacts network."""
+def decode_qr_payloads(data: bytes) -> tuple[list[str], list[str]]:
+    """Return (decoded strings, soft-error notes). Never contacts network."""
     payloads: list[str] = []
+    notes: list[str] = []
+    tried = False
 
     # Pillow + pyzbar (common on analyst workstations if libzbar present)
     try:
         from PIL import Image  # type: ignore[import-untyped]
         from pyzbar.pyzbar import decode as zbar_decode  # type: ignore[import-untyped]
 
+        tried = True
         img = Image.open(io.BytesIO(data))
         for obj in zbar_decode(img):
             try:
                 text = obj.data.decode("utf-8", errors="replace").strip()
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"QR pyzbar decode: {exc}")
                 continue
             if text:
                 payloads.append(text)
-    except Exception:  # noqa: BLE001
-        pass
+    except ImportError:
+        notes.append("QR: pyzbar/Pillow не установлены (опционально)")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"QR pyzbar: {exc}")
 
     if payloads:
-        return _dedup(payloads)
+        return _dedup(payloads), notes
 
     # zxing-cpp wheels (optional)
     try:
         import zxingcpp  # type: ignore[import-untyped]
         from PIL import Image  # type: ignore[import-untyped]
 
+        tried = True
         img = Image.open(io.BytesIO(data))
         results = zxingcpp.read_barcodes(img)
         for r in results:
-            text = (getattr(r, "text", None) or str(r)).strip()
+            text = (getattr(r, "text", None) or "").strip()
             if text:
                 payloads.append(text)
-    except Exception:  # noqa: BLE001
-        pass
+    except ImportError:
+        if not tried:
+            notes.append("QR: zxingcpp не установлен (опционально)")
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"QR zxing: {exc}")
 
-    return _dedup(payloads)
+    # Deduplicate soft notes (optional backends often both missing)
+    uniq_notes: list[str] = []
+    seen: set[str] = set()
+    for n in notes:
+        if n not in seen:
+            seen.add(n)
+            uniq_notes.append(n)
+    # Don't spam "not installed" for every image in a batch — keep one short note
+    if all("не установлен" in n for n in uniq_notes) and uniq_notes:
+        uniq_notes = ["QR: опциональный декодер не установлен"]
+
+    return _dedup(payloads), uniq_notes
 
 
 def _dedup(items: list[str]) -> list[str]:
-    seen: set[str] = set()
     out: list[str] = []
-    for item in items:
-        key = item.strip()
-        if not key or key in seen:
+    seen: set[str] = set()
+    for it in items:
+        key = it.lower()
+        if key in seen:
             continue
         seen.add(key)
-        out.append(key)
+        out.append(it)
     return out
 
 
@@ -64,6 +85,6 @@ def urls_from_payloads(payloads: list[str]) -> list[str]:
     urls: list[str] = []
     for p in payloads:
         urls.extend(_URL_IN_TEXT.findall(p))
-        if p.startswith("http://") or p.startswith("https://"):
+        if p.startswith("http"):
             urls.append(p)
     return _dedup(urls)

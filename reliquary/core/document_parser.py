@@ -12,8 +12,15 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from reliquary.core.attachment_inspector import inspect_bytes
+from reliquary.core.formats import (
+    ARCHIVE_SUFFIXES,
+    EMAIL_SUFFIXES,
+    HTML_SUFFIXES,
+    OFFICE_OOXML_SUFFIXES,
+    TEXT_SUFFIXES,
+)
 from reliquary.core.models import AttachmentInfo
-from reliquary.core.office_extract import clean_extracted, extract_docx_text, extract_xlsx_text
+from reliquary.core.office_extract import clean_extracted, extract_office_text
 
 # Guardrails for large documents (IOC extract still useful on the head of the file).
 MAX_TEXT_CHARS = 2_000_000
@@ -114,7 +121,19 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 payload = part.get_payload(decode=True) or b""
                 charset = part.get_content_charset() or "utf-8"
                 decoded = payload.decode(charset, errors="replace")
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                attachments.append(
+                    AttachmentInfo(
+                        filename=f"(inline:{ctype})",
+                        size=0,
+                        mime_guess=ctype,
+                        md5="",
+                        sha1="",
+                        sha256="",
+                        risk_flags=["decode_error"],
+                        notes=[f"Не удалось декодировать часть письма: {exc}"],
+                    )
+                )
                 continue
             if ctype == "text/plain":
                 text_parts.append(decoded)
@@ -126,8 +145,20 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
             payload = msg.get_payload(decode=True) or b""
             charset = msg.get_content_charset() or "utf-8"
             decoded = payload.decode(charset, errors="replace")
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             decoded = str(msg.get_payload())
+            attachments.append(
+                AttachmentInfo(
+                    filename="(body)",
+                    size=0,
+                    mime_guess=ctype,
+                    md5="",
+                    sha1="",
+                    sha256="",
+                    risk_flags=["decode_error"],
+                    notes=[f"Декод тела письма с ошибкой: {exc}"],
+                )
+            )
         if ctype == "text/html":
             html_parts.append(decoded)
         else:
@@ -319,9 +350,9 @@ def parse_text(path: Path, data: bytes | None = None) -> ParsedDocument:
     )
 
 
-def parse_docx(path: Path, data: bytes | None = None) -> ParsedDocument:
+def parse_office(path: Path, data: bytes | None = None) -> ParsedDocument:
     raw = _read_bytes(path, data)
-    text, errors = extract_docx_text(raw)
+    text, errors = extract_office_text(raw, path.suffix.lower())
     text, clip_notes = _clip_text(clean_extracted(text))
     errors.extend(clip_notes)
     return ParsedDocument(
@@ -331,20 +362,15 @@ def parse_docx(path: Path, data: bytes | None = None) -> ParsedDocument:
         attachments=[inspect_bytes(path.name, raw)],
         errors=errors,
     )
+
+
+# Back-compat aliases
+def parse_docx(path: Path, data: bytes | None = None) -> ParsedDocument:
+    return parse_office(path, data)
 
 
 def parse_xlsx(path: Path, data: bytes | None = None) -> ParsedDocument:
-    raw = _read_bytes(path, data)
-    text, errors = extract_xlsx_text(raw)
-    text, clip_notes = _clip_text(clean_extracted(text))
-    errors.extend(clip_notes)
-    return ParsedDocument(
-        kind="office",
-        path=str(path),
-        text=text,
-        attachments=[inspect_bytes(path.name, raw)],
-        errors=errors,
-    )
+    return parse_office(path, data)
 
 
 def parse_zip(path: Path, data: bytes | None = None) -> ParsedDocument:
@@ -353,12 +379,16 @@ def parse_zip(path: Path, data: bytes | None = None) -> ParsedDocument:
     att = inspect_bytes(path.name, raw)
     lines = ["ZIP archive inventory:", path.name, ""]
     lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
+    errors: list[str] = []
+    if "encrypted_archive" in att.risk_flags:
+        errors.append("⚠ Архив защищён паролем — содержимое не извлечено, только имена/флаги")
+    errors.extend(n for n in att.notes if "парол" in n.lower() or "encrypted" in n.lower())
     return ParsedDocument(
         kind="archive",
         path=str(path),
         text="\n".join(lines),
         attachments=[att],
-        errors=[],
+        errors=errors,
     )
 
 
@@ -368,12 +398,18 @@ def parse_archive_generic(path: Path, data: bytes | None = None) -> ParsedDocume
     att = inspect_bytes(path.name, raw)
     lines = [f"{path.suffix.upper().lstrip('.')} archive inventory:", path.name, ""]
     lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
+    errors: list[str] = list(att.notes) if not att.archive_entries else []
+    if "encrypted_archive" in att.risk_flags:
+        errors.insert(
+            0,
+            "⚠ Архив защищён паролем — inventory ограничен, данные не извлечены",
+        )
     return ParsedDocument(
         kind="archive",
         path=str(path),
         text="\n".join(lines),
         attachments=[att],
-        errors=list(att.notes) if not att.archive_entries else [],
+        errors=errors,
     )
 
 
@@ -384,22 +420,18 @@ def parse_document(path: str | Path, data: bytes | None = None) -> ParsedDocumen
     if data is None and not p.is_file():
         return ParsedDocument(kind="unknown", path=str(p), text="", errors=["Не файл"])
     suffix = p.suffix.lower()
-    if suffix == ".eml":
-        return parse_eml(p, data)
-    if suffix == ".msg":
-        return parse_msg(p, data)
+    if suffix in EMAIL_SUFFIXES:
+        return parse_eml(p, data) if suffix == ".eml" else parse_msg(p, data)
     if suffix == ".pdf":
         return parse_pdf(p, data)
-    if suffix in {".html", ".htm"}:
+    if suffix in HTML_SUFFIXES:
         return parse_html(p, data)
-    if suffix == ".docx":
-        return parse_docx(p, data)
-    if suffix == ".xlsx":
-        return parse_xlsx(p, data)
+    if suffix in OFFICE_OOXML_SUFFIXES:
+        return parse_office(p, data)
     if suffix == ".zip":
         return parse_zip(p, data)
-    if suffix in {".7z", ".rar"}:
+    if suffix in ARCHIVE_SUFFIXES:
         return parse_archive_generic(p, data)
-    if suffix in {".txt", ".csv", ".log", ".md", ".json"}:
+    if suffix in TEXT_SUFFIXES:
         return parse_text(p, data)
     return parse_text(p, data)

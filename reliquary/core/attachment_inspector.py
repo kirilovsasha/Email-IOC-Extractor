@@ -13,11 +13,12 @@ import filetype
 
 from reliquary.core.models import AttachmentInfo
 
-MAX_KEEP_BYTES = 15 * 1024 * 1024
+MAX_KEEP_BYTES = 8 * 1024 * 1024  # hard cap for any kept payload
+KEEP_SMALL_BYTES = 2 * 1024 * 1024  # small attachments kept for case pack / save
 MAX_ARCHIVE_ENTRIES = 200
-MAX_NEST_DEPTH = 2
+MAX_NEST_DEPTH = 4
 MAX_NESTED_MEMBER_BYTES = 5 * 1024 * 1024
-MAX_NESTED_MEMBERS = 8
+MAX_NESTED_MEMBERS = 12
 
 DANGEROUS_EXTENSIONS = {
     ".exe",
@@ -98,8 +99,9 @@ def _zip_encrypted(data: bytes) -> bool:
             for info in zf.infolist():
                 if info.flag_bits & 0x1:
                     return True
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Fall through to heuristics; caller may still see BadZipFile notes
+        _ = exc
     # AES extra field / Encrypt marker heuristic
     if b"Encrypt" in data[:8192] or b"AE\x01" in data[:16384] or b"AE\x02" in data[:16384]:
         return True
@@ -120,7 +122,7 @@ def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str]
             if encrypted or _zip_encrypted(data):
                 flags.append("encrypted_archive")
                 notes.append(
-                    "ZIP с паролем / encrypted members — inventory по именам без извлечения"
+                    "⚠ ЗАЩИЩЁН ПАРОЛЕМ: ZIP encrypted — имена видны, содержимое не извлечено"
                 )
 
             entries = names[:MAX_ARCHIVE_ENTRIES]
@@ -225,7 +227,7 @@ def _inventory_7z(data: bytes) -> tuple[list[str], list[str], list[str]]:
                 needs_pw = False
             if needs_pw:
                 flags.append("encrypted_archive")
-                notes.append("7z защищён паролем")
+                notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: 7z — содержимое недоступно без пароля")
     except Exception as exc:  # noqa: BLE001
         msg = str(exc).lower()
         if "password" in msg:
@@ -272,7 +274,7 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
         rf = rarfile.RarFile(io.BytesIO(data))
         if rf.needs_password():
             flags.append("encrypted_archive")
-            notes.append("RAR защищён паролем")
+            notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: RAR — содержимое недоступно без пароля")
         names = [i.filename for i in rf.infolist() if not i.is_dir()]
         rf.close()
     except Exception as exc:  # noqa: BLE001
@@ -313,17 +315,18 @@ def _ole_streams(data: bytes) -> tuple[list[str], list[str], list[str]]:
     return streams, flags, notes
 
 
-def _qr_urls_from_image(data: bytes) -> list[str]:
-    """Best-effort offline QR decode. Returns URLs/text payloads."""
+def _qr_urls_from_image(data: bytes) -> tuple[list[str], list[str]]:
+    """Best-effort offline QR decode. Returns (payloads, notes)."""
     try:
         from reliquary.core.qr_scan import decode_qr_payloads
 
-        return decode_qr_payloads(data)
-    except Exception:  # noqa: BLE001
-        return []
+        payloads, notes = decode_qr_payloads(data)
+        return payloads, notes
+    except Exception as exc:  # noqa: BLE001
+        return [], [f"QR: сбой декодера ({exc})"]
 
 
-def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
+def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None) -> AttachmentInfo:
     md5, sha1, sha256 = _hashes(data)
     mime = _guess_mime(data, filename)
     flags: list[str] = []
@@ -363,11 +366,11 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
     if ext in IMAGE_EXTENSIONS or (mime or "").startswith("image/"):
         flags.append("image_attachment")
         notes.append("Изображение — проверьте QR / скриншоты фишинга")
-        qr_hits = _qr_urls_from_image(data)
+        qr_hits, qr_notes = _qr_urls_from_image(data)
+        notes.extend(qr_notes)
         if qr_hits:
             flags.append("qr_url")
             notes.append("QR: " + "; ".join(qr_hits[:5]))
-            # Stash payloads in archive_entries-like field for pipeline IOC lift
             archive_entries.extend(f"QR:{q}" for q in qr_hits[:20])
 
     # OLE magic
@@ -380,7 +383,7 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
     # ZIP / OOXML
     if data[:2] == b"PK":
         flags.append("zip_container")
-        if b"word/vbaProject.bin" in data or b"xl/vbaProject.bin" in data:
+        if b"word/vbaProject.bin" in data or b"xl/vbaProject.bin" in data or b"ppt/vbaProject.bin" in data:
             flags.append("ooxml_vba")
             notes.append("В OOXML найден vbaProject.bin — макросы")
         if ext in ARCHIVE_EXTENSIONS or ext == ".zip" or mime == "application/zip":
@@ -414,7 +417,7 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
 
     if ext == ".zip" and "encrypted_archive" not in flags and _zip_encrypted(data):
         flags.append("encrypted_archive")
-        notes.append("Зашифрованный ZIP")
+        notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: зашифрованный ZIP")
 
     if len(data) == 0:
         flags.append("empty_file")
@@ -431,10 +434,16 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
         flags.append("mime_mismatch")
         notes.append(f"Расширение {ext}, но MIME похож на executable ({mime})")
 
-    keep = data if len(data) <= MAX_KEEP_BYTES else None
-    if keep is None and data:
+    # Keep: nested email (for pipeline) and small payloads (case pack / Save).
+    if keep_bytes is None:
+        need_keep = ("nested_email" in flags) or (len(data) <= KEEP_SMALL_BYTES)
+    else:
+        need_keep = keep_bytes
+    keep = data if need_keep and len(data) <= MAX_KEEP_BYTES else None
+    if need_keep and keep is None and data:
         notes.append(
-            f"Содержимое не сохранено в памяти (>{MAX_KEEP_BYTES // (1024 * 1024)} МБ) — только хеши"
+            f"Содержимое не сохранено в памяти (>{MAX_KEEP_BYTES // (1024 * 1024)} МБ) — "
+            "вложенный разбор/case pack без payload"
         )
 
     # Dedup flags preserving order

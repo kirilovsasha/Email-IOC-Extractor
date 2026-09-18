@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from reliquary import __version__
-from reliquary.core.allowlist import build_allowlist, build_denylist, list_mtime_label, tag_allowlist_denylist
+from reliquary.core.allowlist import (
+    build_allowlist,
+    build_denylist,
+    list_mtime_label,
+    tag_allowlist_denylist,
+)
 from reliquary.core.document_parser import parse_document
 from reliquary.core.header_analyzer import (
     analyze_headers,
@@ -27,7 +32,7 @@ from reliquary.core.models import (
     Ioc,
     IocType,
 )
-from reliquary.core.paths import file_mtime_iso, config_path, ensure_user_lists
+from reliquary.core.paths import config_path, ensure_user_lists, file_mtime_iso
 from reliquary.core.url_rewrite import find_and_unwrap
 from reliquary.core.verdict import render_verdict
 
@@ -310,6 +315,23 @@ def analyze_file(path: str | Path) -> AnalysisResult:
             blob += "\n" + nested_text
             att.notes.append("Вложенное письмо разобрано локально")
         result.errors.extend(nested_errs)
+        # Drop large nested payloads after parse to free RAM on folder batches
+        if (
+            att.data is not None
+            and "nested_email" in att.risk_flags
+            and att.size > 2 * 1024 * 1024
+        ):
+            att.data = None
+        # Surface password-protected / soft inspector notes into analysis errors
+        if "encrypted_archive" in att.risk_flags:
+            result.errors.append(
+                f"⚠ {att.filename}: архив защищён паролем — содержимое не извлечено"
+            )
+        for note in att.notes:
+            if note.startswith("⚠") or note.startswith("OLE разбор"):
+                tagged = f"{att.filename}: {note}"
+                if tagged not in result.errors:
+                    result.errors.append(tagged)
 
     try:
         result.url_rewrites = find_and_unwrap(blob)

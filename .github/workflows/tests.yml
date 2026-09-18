@@ -16,6 +16,11 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
-          pip install -e .
+          pip install -e ".[dev]"
+          pip install ruff mypy
+      - name: Ruff
+        run: python -m ruff check reliquary/core/formats.py reliquary/core/filter_state.py reliquary/core/batch.py reliquary/core/office_extract.py
+      - name: Mypy (core helpers)
+        run: python -m mypy --follow-imports=silent --ignore-missing-imports reliquary/core/models.py reliquary/core/filter_state.py reliquary/core/formats.py reliquary/core/batch.py
       - name: Test
         run: python -m pytest -q

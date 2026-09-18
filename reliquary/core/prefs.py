@@ -28,6 +28,8 @@ _DEFAULTS: dict[str, Any] = {
     "cat_host": True,
     "cat_crypto": True,
     "folder_warn_threshold": 80,
+    "max_workers": 0,  # 0 = auto (min(4, cpu))
+    "skip_broken": True,
 }
 
 
@@ -58,11 +60,12 @@ def load_prefs() -> dict[str, Any]:
     return data
 
 
-def save_prefs(updates: dict[str, Any]) -> None:
+def save_prefs(updates: dict[str, Any]) -> bool:
     data = load_prefs()
     data.update(updates)
     path = prefs_path()
     try:
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return True
     except OSError:
-        pass
+        return False

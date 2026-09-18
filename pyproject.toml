@@ -1,5 +1,6 @@
+[project]
 name = "reliquary"
-version = "1.7.0"
+version = "1.8.0"
 description = "IOC Extractor — offline SOC IOC extractor for email, tickets, PDF/HTML"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,7 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 rar = ["rarfile>=4.1"]
 qr = ["pyzbar>=0.1.9"]
-dev = ["pytest>=8.0", "pyinstaller>=6.0"]
+dev = ["pytest>=8.0", "pyinstaller>=6.0", "ruff>=0.8", "mypy>=1.8"]
 
 [project.scripts]
 reliquary = "reliquary.cli:main"
@@ -29,5 +30,24 @@ reliquary-gui = "reliquary.gui.app:run"
 ioc-extractor = "reliquary.cli:main"
 ioc-extractor-gui = "reliquary.gui.app:run"
 
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["reliquary*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true

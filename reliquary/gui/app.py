@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import csv
 import io
 import os
@@ -25,25 +24,22 @@ from reliquary.core.allowlist import (
     list_file_path,
     list_mtime_label,
 )
+from reliquary.core.batch import default_max_workers, format_eta, run_batch
 from reliquary.core.defang import defang_ioc_line, defang_value
-from reliquary.core.exporters import (
-    export_case_pack,
-    export_case_pack_multi,
-    export_csv,
-    export_misp,
-    export_opencti,
-    export_report_json,
-    export_stix,
-    export_yara,
-    filter_iocs,
-    with_iocs,
-)
+from reliquary.core.filter_state import CAT_PREF_KEYS, CATEGORY_TYPES, FilterState
+from reliquary.core.formats import collect_supported, tk_filetypes
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
 from reliquary.core.paths import app_dir, ensure_user_lists
-from reliquary.core.pipeline import analyze_file, analyze_text, merge_results
+from reliquary.core.pipeline import analyze_file, analyze_text
 from reliquary.core.prefs import load_prefs, save_prefs
 from reliquary.core.ticket import build_message_id_block, build_ticket_template
+from reliquary.gui.export_actions import (
+    EXPORT_CHOICES,
+    default_export_filename,
+    normalize_export_kind,
+    run_export,
+)
 from reliquary.gui.ioc_table import IocTable
 from reliquary.gui.tabs import desired_result_tabs
 from reliquary.gui.theme import (
@@ -51,64 +47,22 @@ from reliquary.gui.theme import (
     BTN_PRIMARY,
     BTN_SECONDARY,
     COLORS,
-    IOC_GROUPS,
     IOC_TYPE_COLORS,
     SEVERITY_COLORS,
     SEVERITY_LABELS_RU,
     VERDICT_COLORS,
 )
-from reliquary.gui.tooltips import HoverTip, muted_label, vsep
+from reliquary.gui.tooltips import FilterChip, HoverTip, filter_section, toolbar_group
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 _PLACEHOLDER = (
     "Вставьте текст тикета сюда или откройте файл.\n\n"
-    ".eml .msg .pdf .html .txt .docx .xlsx .zip\n"
-    "Ctrl+O — файл · Ctrl+Enter — извлечь из текста · клик по IOC — копировать"
+    ".eml .msg .pdf .html .txt .docx .xlsx .pptx .zip\n"
+    "Ctrl+O — файл · Ctrl+Enter — извлечь · Enter на IOC — копировать"
 )
 
-_SUPPORTED_GLOBS = (
-    "*.eml",
-    "*.msg",
-    "*.pdf",
-    "*.html",
-    "*.htm",
-    "*.txt",
-    "*.csv",
-    "*.log",
-    "*.md",
-    "*.docx",
-    "*.xlsx",
-    "*.zip",
-    "*.7z",
-    "*.rar",
-)
-_SUPPORTED_SUFFIXES = {g[1:].lower() for g in _SUPPORTED_GLOBS}
-
-_CATEGORY_TYPES: dict[str, set[str]] = {
-    "Сеть": set(IOC_GROUPS[0][1]),
-    "Хеши": set(IOC_GROUPS[1][1]),
-    "Хост": set(IOC_GROUPS[2][1]),
-    "Крипто": set(IOC_GROUPS[3][1]),
-}
-_CAT_PREF_KEYS = {
-    "Сеть": "cat_network",
-    "Хеши": "cat_hashes",
-    "Хост": "cat_host",
-    "Крипто": "cat_crypto",
-}
-
-_EXPORT_CHOICES = (
-    "CSV",
-    "STIX",
-    "JSON",
-    "MISP",
-    "OpenCTI",
-    "YARA",
-    "Case pack",
-    "Case pack (по файлам)",
-)
 _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
 _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _TAB_HOTKEYS = ("ioc", "batch", "url", "att", "mail", "err")
@@ -117,41 +71,39 @@ _SCALE_STEPS = (0.85, 1.0, 1.15, 1.25, 1.35, 1.5)
 # Filter strip: (label, var_attr, tooltip). Hide = drop noise; focus = narrow list.
 _HIDE_NOISE_FILTERS = (
     (
-        "прокси URL",
+        "прокси-ссылки",
         "hide_rewriter",
-        "Скрыть URL из SafeLinks / Proofpoint и другой прокси-шум писем",
+        "Спрятать URL из SafeLinks / Proofpoint и других почтовых прокси — обычно шум",
     ),
     (
-        "allowlist",
+        "из allowlist",
         "hide_allowlisted",
-        "Скрыть IOC из allowlist.txt (известные безопасные)",
+        "Спрятать IOC из allowlist.txt (уже известные как безопасные)",
     ),
     (
-        "частные IP",
+        "локальные IP",
         "hide_private",
-        "Скрыть частные/локальные адреса (10/8, 192.168/16, …)",
+        "Спрятать частные/локальные адреса (10.x, 192.168.x, …)",
     ),
 )
 _FOCUS_FILTERS = (
     (
         "только denylist",
         "only_denylisted",
-        "Показать только IOC из denylist.txt",
+        "Оставить только IOC из denylist.txt — известные угрозы",
     ),
     (
         "к разбору",
         "actionable_only",
-        "Только полезные IOC: без прокси/allowlist/private и без «голых» имён файлов",
+        "Оставить полезные IOC: без прокси, allowlist, локальных IP и «голых» имён файлов",
     ),
 )
-
-
-def _collect_supported(root: Path, *, recursive: bool = True) -> list[str]:
-    paths: list[str] = []
-    iterator = root.rglob if recursive else root.glob
-    for pattern in _SUPPORTED_GLOBS:
-        paths.extend(str(p) for p in iterator(pattern) if p.is_file())
-    return sorted(set(paths))
+_TYPE_FILTER_TIPS = {
+    "Сеть": "IP, домены, URL, email, мессенджеры",
+    "Хеши": "MD5, SHA1, SHA256 и CVE",
+    "Хост": "Файлы, пути, UNC, реестр, mutex, командная строка",
+    "Крипто": "Bitcoin и Monero адреса",
+}
 
 
 class IocExtractorApp(ctk.CTk):
@@ -173,7 +125,7 @@ class IocExtractorApp(ctk.CTk):
             self.geometry(geom)
         except Exception:  # noqa: BLE001
             self.geometry("1320x820")
-        self.minsize(1024, 680)
+        self.minsize(880, 600)
         self.configure(fg_color=COLORS["bg"])
 
         self.result: AnalysisResult | None = None
@@ -184,12 +136,13 @@ class IocExtractorApp(ctk.CTk):
         self._cancel_batch = False
         self._batch_row_tags: dict[str, str] = {}
         self._search_after_id: str | None = None
+        self._layout_after: str | None = None
 
         self.cat_vars = {
             name: ctk.BooleanVar(
-                value=bool(self._prefs.get(_CAT_PREF_KEYS[name], True))
+                value=bool(self._prefs.get(CAT_PREF_KEYS[name], True))
             )
-            for name in _CATEGORY_TYPES
+            for name in CATEGORY_TYPES
         }
         self.hide_rewriter = ctk.BooleanVar(value=bool(self._prefs.get("hide_rewriter", True)))
         self.hide_allowlisted = ctk.BooleanVar(
@@ -222,24 +175,23 @@ class IocExtractorApp(ctk.CTk):
 
     # ------------------------------------------------------------------ UI
     def _build(self) -> None:
-        # —— Header: brand + secondary ——
-        header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=48)
+        # —— Header ——
+        header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0)
         header.pack(fill="x")
-        header.pack_propagate(False)
 
         ctk.CTkLabel(
             header,
             text=__app_name__,
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
             text_color=COLORS["accent"],
-        ).pack(side="left", padx=(18, 10), pady=10)
+        ).pack(side="left", padx=(14, 10), pady=6)
 
         ctk.CTkLabel(
             header,
             text=f"v{__version__} · offline",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             text_color=COLORS["muted"],
-        ).pack(side="left", pady=10)
+        ).pack(side="left", pady=6)
 
         self.lists_mtime = ctk.CTkLabel(
             header,
@@ -247,218 +199,231 @@ class IocExtractorApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
             text_color=COLORS["muted"],
         )
-        self.lists_mtime.pack(side="left", padx=(14, 0), pady=10)
+        self.lists_mtime.pack(side="left", padx=(14, 0), pady=6)
         self._refresh_lists_mtime()
 
         ctk.CTkButton(
             header, text="О программе", width=110, command=self.show_about, **BTN_SECONDARY
-        ).pack(side="right", padx=(6, 16), pady=8)
-        ctk.CTkButton(
+        ).pack(side="right", padx=(6, 14), pady=4)
+        btn_import = ctk.CTkButton(
             header, text="Импорт списков", width=120, command=self.import_lists, **BTN_SECONDARY
-        ).pack(side="right", padx=(6, 0), pady=8)
-        ctk.CTkButton(
-            header, text="Конфиги", width=90, command=self.open_configs, **BTN_SECONDARY
-        ).pack(side="right", padx=0, pady=8)
-
-        # —— Toolbar: источник → буфер → экспорт ——
-        toolbar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=6)
-        toolbar.pack(fill="x", padx=16, pady=(10, 4))
-        tb = ctk.CTkFrame(toolbar, fg_color="transparent")
-        tb.pack(fill="x", padx=10, pady=8)
-
-        muted_label(tb, "Источник").pack(side="left", padx=(0, 8))
-        btn_open = ctk.CTkButton(
-            tb, text="Открыть файл", width=112, command=self.open_files, **BTN_PRIMARY
         )
-        btn_open.pack(side="left", padx=(0, 6))
+        btn_import.pack(side="right", padx=(6, 0), pady=4)
+        HoverTip(
+            btn_import,
+            "Импорт IOC в allowlist или denylist из CSV / MISP JSON",
+        )
+        btn_configs = ctk.CTkButton(
+            header, text="Конфиги", width=90, command=self.open_configs, **BTN_SECONDARY
+        )
+        btn_configs.pack(side="right", padx=0, pady=4)
+        HoverTip(
+            btn_configs,
+            "Открыть папку с allowlist, denylist, verdict.ini и ticket.ini",
+        )
+
+        # —— Compact chrome: actions + collapsible filters (body gets the height) ——
+        chrome = ctk.CTkFrame(
+            self,
+            fg_color=COLORS["surface"],
+            corner_radius=10,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        chrome.pack(fill="x", padx=12, pady=(6, 4))
+        self._chrome = chrome
+
+        actions = ctk.CTkFrame(chrome, fg_color="transparent")
+        actions.pack(fill="x", padx=6, pady=(6, 4))
+
+        src_shell, src = toolbar_group(actions, "Файл", compact=True)
+        src_shell.pack(side="left", padx=(0, 4), fill="y")
+        btn_open = ctk.CTkButton(
+            src, text="Открыть", width=84, command=self.open_files, **BTN_PRIMARY
+        )
+        btn_open.pack(side="left", padx=(0, 4))
         HoverTip(btn_open, "Файл или несколько файлов (Ctrl+O)")
         btn_folder = ctk.CTkButton(
-            tb, text="Папка", width=72, command=self.open_folder, **BTN_SECONDARY
+            src, text="Папка", width=64, command=self.open_folder, **BTN_SECONDARY
         )
-        btn_folder.pack(side="left", padx=(0, 4))
+        btn_folder.pack(side="left")
         HoverTip(btn_folder, "Рекурсивно обработать все поддерживаемые файлы в папке")
 
-        vsep(tb, height=26)
-
-        muted_label(tb, "Буфер").pack(side="left", padx=(0, 8))
+        clip_shell, clip = toolbar_group(actions, "Буфер", compact=True)
+        clip_shell.pack(side="left", padx=(0, 4), fill="y")
         ctk.CTkOptionMenu(
-            tb,
+            clip,
             variable=self._copy_format,
             values=list(_COPY_FORMATS),
-            width=112,
+            width=108,
             height=BTN_H,
-            fg_color=COLORS["surface_alt"],
+            fg_color=COLORS["surface"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
         btn_copy = ctk.CTkButton(
-            tb, text="Копировать", width=100, command=self.copy_iocs, **BTN_SECONDARY
+            clip, text="Копировать", width=88, command=self.copy_iocs, **BTN_SECONDARY
         )
-        btn_copy.pack(side="left", padx=(0, 8))
+        btn_copy.pack(side="left", padx=(0, 4))
         HoverTip(btn_copy, "Скопировать видимые IOC в выбранном формате")
         btn_ticket = ctk.CTkButton(
-            tb, text="Тикет", width=68, command=self.copy_ticket, **BTN_SECONDARY
+            clip, text="Тикет", width=58, command=self.copy_ticket, **BTN_SECONDARY
         )
         btn_ticket.pack(side="left", padx=(0, 4))
         HoverTip(btn_ticket, "Шаблон handoff в буфер (для тикета в SD/SOAR)")
         ctk.CTkCheckBox(
-            tb,
-            text="короткий",
+            clip,
+            text="кор.",
             variable=self.ticket_short,
             command=self._persist_prefs,
             text_color=COLORS["muted"],
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_dim"],
             border_color=COLORS["border"],
-            width=78,
+            width=48,
             checkbox_width=16,
             checkbox_height=16,
-        ).pack(side="left", padx=(0, 6))
+        ).pack(side="left", padx=(0, 4))
         btn_msgid = ctk.CTkButton(
-            tb, text="Msg-ID", width=72, command=self.copy_message_id_block, **BTN_SECONDARY
+            clip, text="Msg-ID", width=64, command=self.copy_message_id_block, **BTN_SECONDARY
         )
         btn_msgid.pack(side="left")
         HoverTip(btn_msgid, "Message-ID / campaign-блок для корреляции писем")
 
-        vsep(tb, height=26)
-
-        muted_label(tb, "Экспорт").pack(side="left", padx=(0, 8))
+        exp_shell, exp = toolbar_group(actions, "Экспорт", compact=True)
+        exp_shell.pack(side="left", fill="y")
         ctk.CTkOptionMenu(
-            tb,
+            exp,
             variable=self._export_choice,
-            values=list(_EXPORT_CHOICES),
-            width=128,
+            values=list(EXPORT_CHOICES),
+            width=132,
             height=BTN_H,
-            fg_color=COLORS["surface_alt"],
+            fg_color=COLORS["surface"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
         btn_export = ctk.CTkButton(
-            tb, text="Сохранить", width=96, command=self._export_clicked, **BTN_PRIMARY
+            exp, text="Сохранить", width=84, command=self._export_clicked, **BTN_PRIMARY
         )
-        btn_export.pack(side="left", padx=(0, 6))
+        btn_export.pack(side="left", padx=(0, 4))
         HoverTip(btn_export, "Сохранить видимые IOC в выбранном формате")
         btn_att = ctk.CTkButton(
-            tb, text="Вложения", width=88, command=self.save_attachments, **BTN_SECONDARY
+            exp, text="Вложения", width=80, command=self.save_attachments, **BTN_SECONDARY
         )
         btn_att.pack(side="left")
         HoverTip(btn_att, "Выгрузить вложения письма на диск")
 
-        # —— Filters: типы | скрыть шум | фокус ——
-        filters = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=6)
-        filters.pack(fill="x", padx=16, pady=(6, 4))
+        # Filter bar: search always visible; chips toggle to free vertical space
+        filt_bar = ctk.CTkFrame(chrome, fg_color="transparent")
+        filt_bar.pack(fill="x", padx=6, pady=(0, 6))
 
-        row_types = ctk.CTkFrame(filters, fg_color="transparent")
-        row_types.pack(fill="x", padx=10, pady=(8, 2))
-
-        muted_label(row_types, "Типы IOC", size=12).pack(side="left", padx=(0, 8))
-        for name, var in self.cat_vars.items():
-            cb = ctk.CTkCheckBox(
-                row_types,
-                text=name,
-                variable=var,
-                command=self._on_filter_change,
-                text_color=COLORS["text"],
-                fg_color=COLORS["accent"],
-                hover_color=COLORS["accent_dim"],
-                border_color=COLORS["border"],
-                width=70,
-                checkbox_width=18,
-                checkbox_height=18,
-            )
-            cb.pack(side="left", padx=(0, 6))
+        self._filters_open = ctk.BooleanVar(value=False)
+        self._filt_toggle = ctk.CTkButton(
+            filt_bar,
+            text="Фильтры ▸",
+            width=100,
+            height=28,
+            command=self._toggle_filters_panel,
+            fg_color=COLORS["surface_alt"],
+            hover_color=COLORS["border"],
+            border_width=1,
+            border_color=COLORS["border"],
+            corner_radius=8,
+        )
+        self._filt_toggle.pack(side="left", padx=(0, 6))
+        HoverTip(
+            self._filt_toggle,
+            "Типы IOC, убрать шум, сузить список — наведите на чипы для пояснений",
+        )
 
         self.search_entry = ctk.CTkEntry(
-            row_types,
+            filt_bar,
             textvariable=self._search_var,
-            placeholder_text="Ctrl+F поиск по IOC…",
-            width=170,
-            height=26,
+            placeholder_text="Поиск IOC…  Ctrl+F",
+            width=220,
+            height=28,
             fg_color=COLORS["surface_alt"],
             border_color=COLORS["border"],
+            corner_radius=8,
         )
-        self.search_entry.pack(side="right", padx=(6, 0))
+        self.search_entry.pack(side="left", padx=(0, 6))
+        HoverTip(self.search_entry, "Ищет по value / type / tags / context")
         ctk.CTkButton(
-            row_types,
-            text="Сброс",
-            width=64,
-            height=26,
+            filt_bar,
+            text="Сбросить",
+            width=80,
+            height=28,
             command=self._reset_filters,
             fg_color=COLORS["surface_alt"],
             hover_color=COLORS["border"],
             border_width=1,
             border_color=COLORS["border"],
-        ).pack(side="right")
+            corner_radius=8,
+        ).pack(side="left")
 
-        row_noise = ctk.CTkFrame(filters, fg_color="transparent")
-        row_noise.pack(fill="x", padx=10, pady=(2, 4))
+        self._filters_panel = ctk.CTkFrame(
+            chrome,
+            fg_color=COLORS["surface_alt"],
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        # packed on demand by _toggle_filters_panel
 
-        muted_label(row_noise, "Скрыть шум", size=12).pack(side="left", padx=(0, 6))
-        ctk.CTkLabel(
-            row_noise,
-            text="(✓ = убрать из списка)",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["muted"],
-        ).pack(side="left", padx=(0, 8))
+        chips_wrap = ctk.CTkFrame(self._filters_panel, fg_color="transparent")
+        chips_wrap.pack(fill="x", padx=8, pady=6)
+
+        types_shell, types_row = filter_section(chips_wrap, "Типы", compact=True)
+        types_shell.pack(side="left", padx=(0, 12))
+        for name, var in self.cat_vars.items():
+            FilterChip(
+                types_row,
+                name,
+                var,
+                self._on_filter_change,
+                tip=_TYPE_FILTER_TIPS.get(name, ""),
+                width=64,
+                compact=True,
+            ).pack(side="left", padx=(0, 4))
+
+        hide_shell, hide_row = filter_section(chips_wrap, "Шум", compact=True)
+        hide_shell.pack(side="left", padx=(0, 12))
         for text, attr, tip in _HIDE_NOISE_FILTERS:
-            cb = ctk.CTkCheckBox(
-                row_noise,
-                text=text,
-                variable=getattr(self, attr),
-                command=self._on_filter_change,
-                text_color=COLORS["text"],
-                fg_color=COLORS["accent"],
-                hover_color=COLORS["accent_dim"],
-                border_color=COLORS["border"],
-                width=100,
-                checkbox_width=18,
-                checkbox_height=18,
-            )
-            cb.pack(side="left", padx=(0, 6))
-            HoverTip(cb, tip)
+            FilterChip(
+                hide_row,
+                text,
+                getattr(self, attr),
+                self._on_filter_change,
+                tip=tip,
+                compact=True,
+            ).pack(side="left", padx=(0, 4))
 
-        vsep(row_noise, height=18)
-
-        muted_label(row_noise, "Фокус", size=12).pack(side="left", padx=(0, 6))
-        ctk.CTkLabel(
-            row_noise,
-            text="(✓ = только это)",
-            font=ctk.CTkFont(size=11),
-            text_color=COLORS["muted"],
-        ).pack(side="left", padx=(0, 8))
+        focus_shell, focus_row = filter_section(chips_wrap, "Фокус", compact=True)
+        focus_shell.pack(side="left")
         for text, attr, tip in _FOCUS_FILTERS:
-            cb = ctk.CTkCheckBox(
-                row_noise,
-                text=text,
-                variable=getattr(self, attr),
-                command=self._on_filter_change,
-                text_color=COLORS["text"],
-                fg_color=COLORS["accent"],
-                hover_color=COLORS["accent_dim"],
-                border_color=COLORS["border"],
-                width=118,
-                checkbox_width=18,
-                checkbox_height=18,
-            )
-            cb.pack(side="left", padx=(0, 6))
-            HoverTip(cb, tip)
+            FilterChip(
+                focus_row,
+                text,
+                getattr(self, attr),
+                self._on_filter_change,
+                tip=tip,
+                compact=True,
+            ).pack(side="left", padx=(0, 4))
 
-        self.filter_legend = ctk.CTkLabel(
-            filters,
-            text=(
-                "Шум — типичный мусор писем (прокси URL, allowlist, частные IP). "
-                "Сначала откройте файл → смотрите IOC → при необходимости включите «к разбору»."
-            ),
-            font=ctk.CTkFont(size=11),
+        ctk.CTkLabel(
+            self._filters_panel,
+            text="Включённый чип «Шум» = скрыто. «К разбору» — быстрый старт.",
+            font=ctk.CTkFont(size=10),
             text_color=COLORS["muted"],
             anchor="w",
-        )
-        self.filter_legend.pack(fill="x", padx=12, pady=(0, 8))
+        ).pack(fill="x", padx=10, pady=(0, 6))
+
+        self.filter_legend = None
 
         self.focus_hint_row = ctk.CTkFrame(self, fg_color="transparent")
-        self.focus_hint_row.pack(fill="x", padx=18, pady=(0, 2))
+        self.focus_hint_row.pack(fill="x", padx=14, pady=(0, 0))
         self.focus_hint = ctk.CTkLabel(
             self.focus_hint_row,
             text="",
@@ -479,22 +444,24 @@ class IocExtractorApp(ctk.CTk):
             border_color=COLORS["border"],
             text_color=COLORS["text"],
         )
-        # Hidden until a file focus is set
         self.focus_clear_btn.pack_forget()
 
-        # —— Body: source | results ——
+        # —— Body (primary workspace: source + IOC) ——
         body = ctk.CTkFrame(self, fg_color=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=16, pady=(0, 4))
-        body.grid_columnconfigure(0, weight=2, minsize=280)
-        body.grid_columnconfigure(1, weight=5, minsize=520)
+        body.pack(fill="both", expand=True, padx=12, pady=(0, 4))
+        # Soft minsizes — hard minsizes fight the window when shrinking
+        body.grid_columnconfigure(0, weight=2, minsize=200)
+        body.grid_columnconfigure(1, weight=5, minsize=320)
         body.grid_rowconfigure(0, weight=1)
+        self._body = body
 
         # Left: source
         left = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.grid_propagate(True)
 
         left_head = ctk.CTkFrame(left, fg_color="transparent")
-        left_head.pack(fill="x", padx=14, pady=(12, 4))
+        left_head.pack(fill="x", padx=12, pady=(10, 4))
         ctk.CTkLabel(
             left_head,
             text="Источник",
@@ -514,7 +481,7 @@ class IocExtractorApp(ctk.CTk):
             wrap="word",
             border_width=0,
         )
-        self.input_box.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        self.input_box.pack(fill="both", expand=True, padx=12, pady=(0, 6))
         self.input_box.insert("1.0", _PLACEHOLDER)
         self._bind_placeholder()
 
@@ -523,54 +490,55 @@ class IocExtractorApp(ctk.CTk):
             text="Извлечь из текста  (Ctrl+Enter)",
             command=self.analyze_text_area,
             **BTN_PRIMARY,
-        ).pack(fill="x", padx=14, pady=(0, 14))
+        ).pack(fill="x", padx=12, pady=(0, 10))
 
         # Right: results
         right = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
         right.grid(row=0, column=1, sticky="nsew")
+        self._right = right
 
-        # Compact summary bar (IOC count + verdict badge)
-        summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6, height=52)
-        summary.pack(fill="x", padx=12, pady=(12, 6))
-        summary.pack_propagate(False)
+        summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
+        summary.pack(fill="x", padx=10, pady=(10, 4))
 
         self.ioc_summary_label = ctk.CTkLabel(
             summary,
             text="IOC —",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(size=18, weight="bold"),
             text_color=COLORS["accent"],
         )
-        self.ioc_summary_label.pack(side="left", padx=(14, 12), pady=10)
+        self.ioc_summary_label.pack(side="left", padx=(10, 10), pady=6)
 
         self.verdict_badge = ctk.CTkLabel(
             summary,
             text="",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLORS["muted"],
         )
-        self.verdict_badge.pack(side="left", padx=(0, 12), pady=10)
+        self.verdict_badge.pack(side="left", padx=(0, 8), pady=6)
 
         self.ioc_breakdown = ctk.CTkLabel(
             summary,
             text="Откройте файл или вставьте текст",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             text_color=COLORS["muted"],
             anchor="e",
+            wraplength=360,
         )
-        self.ioc_breakdown.pack(side="right", padx=14, pady=10)
+        self.ioc_breakdown.pack(side="right", fill="x", expand=True, padx=10, pady=6)
 
         self.filter_hint = ctk.CTkLabel(
             right,
-            text="Фильтры влияют на список, копирование и экспорт · клик по IOC копирует значение",
+            text="Клик — детали · Enter/Ctrl+C — копировать · 2×клик — к фрагменту · ПКМ — меню",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["muted"],
             anchor="w",
+            wraplength=640,
         )
-        self.filter_hint.pack(fill="x", padx=14, pady=(0, 4))
+        self.filter_hint.pack(fill="x", padx=12, pady=(0, 2))
 
-        # Context tabs: only relevant facets, labels carry counts
+        # Context tabs
         self._tab_host = ctk.CTkFrame(right, fg_color=COLORS["surface"])
-        self._tab_host.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self._tab_host.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         self._tab_key_by_label: dict[str, str] = {}
         self._tab_label_by_key: dict[str, str] = {}
@@ -612,13 +580,16 @@ class IocExtractorApp(ctk.CTk):
             self._tab_frames["ioc"],
             on_select=self._on_ioc_table_select,
             on_context=self._on_ioc_table_context,
+            on_goto=self._goto_ioc_context,
+            on_copy=self._on_ioc_table_copy,
+            on_status=self._set_status,
         )
         self.ioc_table.pack(fill="both", expand=True)
         self.batch_box = self._make_text(self._tab_frames["batch"])
         self.url_box = self._make_text(self._tab_frames["url"])
         self.att_box = self._make_text(self._tab_frames["att"])
 
-        mail_bar = ctk.CTkFrame(self._tab_frames["mail"], fg_color="transparent", height=32)
+        mail_bar = ctk.CTkFrame(self._tab_frames["mail"], fg_color="transparent")
         mail_bar.pack(fill="x", padx=2, pady=(2, 0))
         ctk.CTkButton(
             mail_bar, text="Copy From", width=90, command=self._copy_from, **BTN_SECONDARY
@@ -640,9 +611,10 @@ class IocExtractorApp(ctk.CTk):
         self._tab_key_by_label = {"IOC": "ioc"}
 
         # —— Status bar ——
-        status_bar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=32)
+        status_bar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0)
         status_bar.pack(fill="x", side="bottom")
-        status_bar.pack_propagate(False)
+        self._status_bar = status_bar
+
         self.status = ctk.CTkLabel(
             status_bar,
             text="Готов",
@@ -650,7 +622,13 @@ class IocExtractorApp(ctk.CTk):
             text_color=COLORS["muted"],
             anchor="w",
         )
-        self.status.pack(side="left", padx=16, pady=4)
+        self.status.pack(side="left", fill="x", expand=True, padx=16, pady=6)
+        self._progress = ctk.CTkProgressBar(
+            status_bar, width=120, height=10, progress_color=COLORS["accent"]
+        )
+        self._progress.set(0)
+        self._progress.pack(side="left", padx=(0, 8), pady=8)
+        self._progress.pack_forget()
         self._stop_btn = ctk.CTkButton(
             status_bar,
             text="Стоп",
@@ -675,19 +653,23 @@ class IocExtractorApp(ctk.CTk):
             state="disabled",
         )
         self._retry_btn.pack(side="right", padx=4, pady=4)
-        ctk.CTkLabel(
+        self._hotkey_hint = ctk.CTkLabel(
             status_bar,
-            text="1–6 вкладки · Ctrl+C/Shift+C · Ctrl+F · Ctrl+/− масштаб",
+            text="1–6 · Enter копировать · Ctrl+F · 2×клик → фрагмент",
             font=ctk.CTkFont(size=11),
             text_color=COLORS["border"],
             anchor="e",
-        ).pack(side="right", padx=8, pady=4)
+        )
+        self._hotkey_hint.pack(side="right", padx=8, pady=4)
 
         self.bind("<Control-o>", lambda _e: self.open_files())
         self.bind("<Control-O>", lambda _e: self.open_files())
         self.bind("<Control-Return>", lambda _e: self.analyze_text_area())
         self.bind("<Control-KP_Enter>", lambda _e: self.analyze_text_area())
 
+        self._layout_after: str | None = None
+        self.bind("<Configure>", self._on_window_configure, add="+")
+        self.after(80, self._apply_window_layout)
     def _try_hook_drop(self) -> None:
         try:
             import windnd  # type: ignore[import-untyped]
@@ -696,6 +678,53 @@ class IocExtractorApp(ctk.CTk):
         except Exception:  # noqa: BLE001
             pass
 
+    def _on_window_configure(self, event: tk.Event) -> None:  # type: ignore[type-arg]
+        if event.widget is not self:
+            return
+        if self._layout_after:
+            try:
+                self.after_cancel(self._layout_after)
+            except Exception:  # noqa: BLE001
+                pass
+        self._layout_after = self.after(80, self._apply_window_layout)
+
+    def _apply_window_layout(self) -> None:
+        """Adapt labels / columns when the main window is resized."""
+        self._layout_after = None
+        try:
+            w = max(self.winfo_width(), 400)
+        except Exception:  # noqa: BLE001
+            return
+
+        # Wrap summary / hint text to available right pane width
+        try:
+            right_w = max(self._right.winfo_width() - 40, 200)
+            self.ioc_breakdown.configure(wraplength=max(right_w - 220, 120))
+            self.filter_hint.configure(wraplength=right_w)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Shorten hotkey hint on narrow windows
+        try:
+            if w < 1000:
+                self._hotkey_hint.configure(text="1–6 · Enter · Ctrl+F")
+            else:
+                self._hotkey_hint.configure(
+                    text="1–6 · Enter копировать · Ctrl+F · 2×клик → фрагмент"
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Soften pane minsizes further when very narrow
+        try:
+            if w < 1000:
+                self._body.grid_columnconfigure(0, weight=2, minsize=160)
+                self._body.grid_columnconfigure(1, weight=5, minsize=260)
+            else:
+                self._body.grid_columnconfigure(0, weight=2, minsize=200)
+                self._body.grid_columnconfigure(1, weight=5, minsize=320)
+        except Exception:  # noqa: BLE001
+            pass
     # ---------------------------------------------------------- placeholder
     def _bind_placeholder(self) -> None:
         widget = getattr(self.input_box, "textbox", None) or getattr(
@@ -797,6 +826,11 @@ class IocExtractorApp(ctk.CTk):
             widget.tag_configure(f"sev_{sev}", foreground=color, font=bold)
 
     def _on_ioc_table_select(self, ioc: Ioc) -> None:
+        # Select only — copy is explicit (Enter / Ctrl+C / кнопка)
+        preview = ioc.value if len(ioc.value) <= 64 else ioc.value[:61] + "…"
+        self._set_status(f"Выбрано: {ioc.ioc_type.value} · {preview}")
+
+    def _on_ioc_table_copy(self, ioc: Ioc) -> None:
         self.clipboard_clear()
         self.clipboard_append(ioc.value)
         self._set_status(f"Скопировано: {ioc.ioc_type.value} → {ioc.value[:80]}")
@@ -937,7 +971,7 @@ class IocExtractorApp(ctk.CTk):
             "actionable_only": bool(self.actionable_only.get()),
         }
         for name, var in self.cat_vars.items():
-            updates[_CAT_PREF_KEYS[name]] = bool(var.get())
+            updates[CAT_PREF_KEYS[name]] = bool(var.get())
         save_prefs(updates)
 
     def _on_close(self) -> None:
@@ -1068,6 +1102,16 @@ class IocExtractorApp(ctk.CTk):
         self._analyze_paths(paths)
 
     # ----------------------------------------------------------- filtering
+    def _toggle_filters_panel(self) -> None:
+        open_ = not bool(self._filters_open.get())
+        self._filters_open.set(open_)
+        if open_:
+            self._filters_panel.pack(fill="x", padx=6, pady=(0, 6))
+            self._filt_toggle.configure(text="Фильтры ▾")
+        else:
+            self._filters_panel.pack_forget()
+            self._filt_toggle.configure(text="Фильтры ▸")
+
     def _reset_filters(self) -> None:
         for var in self.cat_vars.values():
             var.set(True)
@@ -1081,38 +1125,70 @@ class IocExtractorApp(ctk.CTk):
         self._update_focus_hint()
         self._on_filter_change()
 
+    def _current_filter_state(self) -> FilterState:
+        return FilterState(
+            hide_rewriter=bool(self.hide_rewriter.get()),
+            hide_allowlisted=bool(self.hide_allowlisted.get()),
+            hide_private=bool(self.hide_private.get()),
+            only_denylisted=bool(self.only_denylisted.get()),
+            actionable_only=bool(self.actionable_only.get()),
+            search=self._search_var.get(),
+            source_file=self._focus_source_file,
+            cat_network=bool(self.cat_vars["Сеть"].get()),
+            cat_hashes=bool(self.cat_vars["Хеши"].get()),
+            cat_host=bool(self.cat_vars["Хост"].get()),
+            cat_crypto=bool(self.cat_vars["Крипто"].get()),
+        )
+
     def _selected_types(self) -> set[str] | None:
-        enabled = [name for name, var in self.cat_vars.items() if var.get()]
-        if not enabled:
-            return set()
-        if len(enabled) == len(self.cat_vars):
-            return None
-        types: set[str] = set()
-        for name in enabled:
-            types |= _CATEGORY_TYPES[name]
-        return types
+        return self._current_filter_state().selected_types()
 
     def _filter_kwargs(self) -> dict:
-        return {
-            "types": self._selected_types(),
-            "hide_private": bool(self.hide_private.get()),
-            "hide_rewriter": bool(self.hide_rewriter.get()),
-            "hide_allowlisted": bool(self.hide_allowlisted.get()),
-            "only_denylisted": bool(self.only_denylisted.get()),
-            "actionable_only": bool(self.actionable_only.get()),
-            "search": self._search_var.get(),
-            "source_file": self._focus_source_file,
-        }
+        return self._current_filter_state().kwargs()
 
     def _filtered_iocs(self):
         if not self.result:
             return []
-        return filter_iocs(self.result, **self._filter_kwargs())
+        return self._current_filter_state().apply(self.result)
 
     def _filtered_result(self) -> AnalysisResult | None:
         if not self.result:
             return None
-        return with_iocs(self.result, self._filtered_iocs())
+        return self._current_filter_state().filtered_result(self.result)
+
+    def _goto_ioc_context(self, ioc: Ioc) -> None:
+        """Focus source pane on context snippet / value (double-click)."""
+        needle = (ioc.context or "").strip() or ioc.value
+        if not needle:
+            self._copy_one(ioc.value)
+            return
+        preview = needle[:80]
+        box = self.input_box
+        try:
+            start = box.search(ioc.value, "1.0", tk.END)
+            if not start and ioc.context:
+                frag = ioc.context.strip()[:40]
+                if frag:
+                    start = box.search(frag, "1.0", tk.END)
+            if start:
+                box.see(start)
+                end = f"{start}+{len(ioc.value)}c"
+                try:
+                    box.tag_remove("search_hit", "1.0", "end")
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    box.tag_add("search_hit", start, end)
+                    box.tag_config("search_hit", background=COLORS["accent_dim"])
+                except Exception:  # noqa: BLE001
+                    pass
+                self._set_status(f"Контекст: {preview}")
+            else:
+                self._set_status(f"Откуда: {ioc.source or '—'} · {preview}")
+                self._copy_one(ioc.value)
+        except Exception:  # noqa: BLE001
+            self._set_status(f"Откуда: {ioc.source or '—'} · {preview}")
+            self._copy_one(ioc.value)
 
     def _refresh_views(self) -> None:
         if not self.result:
@@ -1120,7 +1196,7 @@ class IocExtractorApp(ctk.CTk):
             self.verdict_badge.configure(text="")
             self.ioc_breakdown.configure(text="Откройте файл или вставьте текст")
             self.filter_hint.configure(
-                text="Сначала откройте файл или вставьте текст · клик по IOC копирует значение"
+                text="Сначала откройте файл или вставьте текст · Enter на IOC копирует значение"
             )
             self.source_meta.configure(text="")
             self._sync_result_tabs(None)
@@ -1145,12 +1221,12 @@ class IocExtractorApp(ctk.CTk):
         if total == full:
             self.ioc_summary_label.configure(text=f"IOC {total}")
             self.filter_hint.configure(
-                text=f"Все {full} · ПКМ по IOC · Ctrl+C value · Ctrl+Shift+C defanged"
+                text="Клик — детали · Enter/Ctrl+C — копировать · 2×клик — к фрагменту · ПКМ — меню"
             )
         else:
             self.ioc_summary_label.configure(text=f"IOC {total}/{full}")
             self.filter_hint.configure(
-                text=f"Показано {total} из {full} · поиск/фильтр/фокус файла активны"
+                text=f"Показано {total} из {full} · фильтр/поиск активны · Enter копирует выбранное"
             )
 
         if counts:
@@ -1187,19 +1263,7 @@ class IocExtractorApp(ctk.CTk):
         paths = filedialog.askopenfilenames(
             title=f"{__app_name__} — открыть файлы",
             initialdir=self._last_dir or None,
-            filetypes=[
-                (
-                    "Все поддерживаемые",
-                    "*.eml *.msg *.pdf *.html *.htm *.txt *.csv *.log *.docx *.xlsx *.zip *.7z *.rar",
-                ),
-                ("Email", "*.eml *.msg"),
-                ("Office", "*.docx *.xlsx"),
-                ("Архив", "*.zip *.7z *.rar"),
-                ("PDF", "*.pdf"),
-                ("HTML", "*.html *.htm"),
-                ("Текст / тикет", "*.txt *.csv *.log *.md"),
-                ("Все файлы", "*.*"),
-            ],
+            filetypes=tk_filetypes(),
         )
         if not paths:
             return
@@ -1216,12 +1280,12 @@ class IocExtractorApp(ctk.CTk):
             return
         self._last_dir = folder
         self._persist_prefs()
-        paths = _collect_supported(Path(folder), recursive=True)
+        paths = collect_supported(Path(folder), recursive=True)
         if not paths:
             messagebox.showinfo(
                 __app_name__,
                 "В папке нет поддерживаемых файлов "
-                "(.eml .msg .pdf .html .txt .docx .xlsx .zip .7z .rar).",
+                "(.eml .msg .pdf .html .txt .docx/.docm .xlsx/.xlsm .pptx/.pptm .zip .7z .rar).",
             )
             return
         try:
@@ -1238,6 +1302,8 @@ class IocExtractorApp(ctk.CTk):
         self._analyze_paths(paths)
 
     def _on_drop(self, files) -> None:
+        from reliquary.core.formats import SUPPORTED_SUFFIXES
+
         paths: list[str] = []
         for item in files:
             if isinstance(item, bytes):
@@ -1250,10 +1316,10 @@ class IocExtractorApp(ctk.CTk):
                 else:
                     item = item.decode("utf-8", errors="replace")
             path = Path(str(item))
-            if path.is_file() and path.suffix.lower() in _SUPPORTED_SUFFIXES:
+            if path.is_file() and path.suffix.lower() in SUPPORTED_SUFFIXES:
                 paths.append(str(path))
             elif path.is_dir():
-                paths.extend(_collect_supported(path, recursive=True))
+                paths.extend(collect_supported(path, recursive=True))
         paths = sorted(set(paths))
         if not paths:
             self.after(
@@ -1273,79 +1339,72 @@ class IocExtractorApp(ctk.CTk):
         self._set_status(f"Извлечение 0/{len(paths)}: {names}{extra}…")
         try:
             self._stop_btn.configure(state="normal")
+            self._progress.pack(side="left", padx=(0, 8), pady=8)
+            self._progress.set(0)
         except Exception:  # noqa: BLE001
             pass
         self.update_idletasks()
         threading.Thread(target=self._run_paths, args=(paths,), daemon=True).start()
 
     def _run_paths(self, paths: list[str]) -> None:
-        hard_errors: list[str] = []
-        failed: list[str] = []
-        total = len(paths)
-        slots: list[AnalysisResult | None] = [None] * total
-        done = [0]
+        workers = default_max_workers(int(self._prefs.get("max_workers") or 0) or None)
+        skip_broken = bool(self._prefs.get("skip_broken", True))
 
-        def _work(idx: int, path: str) -> tuple[int, AnalysisResult | None, str | None]:
-            if self._cancel_batch:
-                return idx, None, "cancelled"
-            try:
-                return idx, analyze_file(path), None
-            except Exception as exc:  # noqa: BLE001
-                return idx, None, f"{path}: {exc}"
+        def _on_progress(done: int, total: int, name: str, eta: float | None) -> None:
+            eta_s = format_eta(eta)
+            label = f"Извлечение {done}/{total}: {name}"
+            if eta_s:
+                label += f" · осталось {eta_s}"
+            frac = done / total if total else 0
 
-        workers = min(4, max(1, os.cpu_count() or 1))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_work, i, p) for i, p in enumerate(paths)]
-            for fut in concurrent.futures.as_completed(futures):
-                idx, result, err = fut.result()
-                done[0] += 1
-                n = done[0]
-                path = paths[idx]
-                self.after(
-                    0,
-                    lambda i=n, t=total, p=path: self._set_status(
-                        f"Извлечение {i}/{t}: {Path(p).name}"
-                    ),
-                )
-                if err == "cancelled":
-                    continue
-                if err:
-                    hard_errors.append(err)
-                    failed.append(path)
-                elif result is not None:
-                    slots[idx] = result
+            def _ui() -> None:
+                self._set_status(label)
+                try:
+                    self._progress.set(frac)
+                except Exception:  # noqa: BLE001
+                    pass
 
-        if self._cancel_batch:
-            hard_errors.append("Пакетная обработка отменена")
+            self.after(0, _ui)
 
-        results = [r for r in slots if r is not None]
-
-        self.after(0, lambda: self._stop_btn.configure(state="disabled"))
-
-        if not results:
-            msg = "Не удалось разобрать ни одного файла.\n" + "\n".join(hard_errors[:8])
-            self.after(0, lambda: messagebox.showerror("Ошибка", msg))
-            self.after(0, lambda: self._set_status("Ошибка извлечения"))
-            self.after(0, lambda: self._set_failed(failed))
-            return
-
-        if len(results) == 1:
-            result = results[0]
-        else:
-            result = merge_results(results, label=f"batch:{len(results)}")
-        for err in hard_errors:
-            result.errors.append(err)
-        if hard_errors:
-            result.errors.insert(
-                0,
-                f"Успешно: {len(results)}/{total}, ошибок: {len(hard_errors)}",
-            )
-        self.after(
-            0,
-            lambda: self._apply_result(
-                result, preload_text=True, batch_results=results, failed=failed
-            ),
+        outcome = run_batch(
+            paths,
+            max_workers=workers,
+            skip_broken=skip_broken,
+            is_cancelled=lambda: self._cancel_batch,
+            on_progress=_on_progress,
         )
+
+        def _finish() -> None:
+            try:
+                self._stop_btn.configure(state="disabled")
+                self._progress.pack_forget()
+                self._progress.set(0)
+            except Exception:  # noqa: BLE001
+                pass
+            self._set_failed(outcome.failed)
+            if outcome.result is None:
+                msg = "Не удалось разобрать ни одного файла.\n" + "\n".join(
+                    outcome.errors[:8]
+                )
+                if outcome.failed:
+                    msg += "\n\nFailed:\n" + "\n".join(
+                        Path(p).name for p in outcome.failed[:12]
+                    )
+                messagebox.showerror("Ошибка", msg)
+                self._set_status("Ошибка извлечения")
+                return
+            if outcome.failed:
+                self._set_status(
+                    f"Готово с пропусками: failed {len(outcome.failed)} — см. вкладку Ошибки"
+                )
+            self._apply_result(
+                outcome.result,
+                preload_text=True,
+                batch_results=outcome.batch_results,
+                failed=outcome.failed,
+            )
+
+        self.after(0, _finish)
 
     def _set_failed(self, failed: list[str]) -> None:
         self._failed_paths = list(failed)
@@ -1545,15 +1604,18 @@ class IocExtractorApp(ctk.CTk):
             self.ioc_table.clear()
             msg = "IOC не найдены"
             if result.errors:
-                msg += f"\n! {len(result.errors)} замечаний — вкладка «Ошибки»"
+                msg += f"  ·  {len(result.errors)} замечаний → вкладка «Ошибки»"
             self.ioc_empty_label.configure(text=msg)
             return
 
         note = ""
         if result.errors:
-            note = f"! {len(result.errors)} замечаний — вкладка «Ошибки»"
+            note = f"{len(result.errors)} замечаний → вкладка «Ошибки»"
         self.ioc_empty_label.configure(text=note)
-        self.ioc_table.set_iocs(list(filtered))
+        show_file = bool(result.file_rows and len(result.file_rows) > 1) or (
+            len(self._batch_results) > 1
+        )
+        self.ioc_table.set_iocs(list(filtered), show_file=show_file)
 
     def _fill_urls(self, result: AnalysisResult) -> None:
         self._clear_box(self.url_box)
@@ -1865,137 +1927,55 @@ class IocExtractorApp(ctk.CTk):
         if not filtered:
             messagebox.showinfo(__app_name__, "Сначала извлеките IOC")
             return
-        iocs = filtered.iocs
-        kind_l = kind.lower()
+        kind_n = normalize_export_kind(kind)
         initialdir = self._last_export_dir or self._last_dir or None
+        initial = default_export_filename(kind)
+        ext = Path(initial).suffix or ".bin"
+        filetypes = {
+            "csv": [("CSV", "*.csv")],
+            "stix": [("STIX JSON", "*.json")],
+            "json": [("JSON", "*.json")],
+            "misp": [("MISP JSON", "*.json")],
+            "opencti": [("OpenCTI JSON", "*.json")],
+            "yara": [("YARA", "*.yar *.yara"), ("All", "*.*")],
+            "case_pack": [("Case pack ZIP", "*.zip")],
+            "case_pack_multi": [("Case pack ZIP", "*.zip")],
+        }.get(kind_n, [("All", "*.*")])
 
-        def _remember(path: str) -> None:
-            self._last_export_dir = str(Path(path).parent)
-            self._persist_prefs()
-
-        dialogs = {
-            "csv": (".csv", [("CSV", "*.csv")], "iocs.csv", export_csv),
-            "stix": (".json", [("STIX JSON", "*.json")], "iocs_stix.json", export_stix),
-        }
-        if kind_l in dialogs:
-            ext, ftypes, initial, fn = dialogs[kind_l]
-            path = filedialog.asksaveasfilename(
-                defaultextension=ext,
-                filetypes=ftypes,
-                initialfile=initial,
-                initialdir=initialdir,
-            )
-            if path:
-                fn(filtered, path)
-                _remember(path)
-                self._set_status(f"{kind_l.upper()}: {path}")
+        if kind_n == "case_pack_multi" and not self._batch_results:
+            messagebox.showinfo(__app_name__, "Нет per-file результатов для экспорта")
             return
 
-        if kind_l == "json":
-            path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("JSON", "*.json")],
-                initialfile="iocs_report.json",
-                initialdir=initialdir,
-            )
-            if path:
-                export_report_json(
-                    filtered, path, filters_applied=self._filter_kwargs_serializable()
-                )
-                _remember(path)
-                self._set_status(f"JSON: {path}")
+        path = filedialog.asksaveasfilename(
+            defaultextension=ext,
+            filetypes=filetypes,
+            initialfile=initial,
+            initialdir=initialdir,
+        )
+        if not path:
             return
-
-        if kind_l == "misp":
-            path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("MISP JSON", "*.json")],
-                initialfile="iocs_misp.json",
-                initialdir=initialdir,
+        try:
+            out = run_export(
+                kind_n,
+                filtered,
+                path,
+                filters_applied=self._filter_kwargs_serializable(),
+                batch_results=self._batch_results,
+                focus_source_file=self._focus_source_file,
+                include_attachments=True,
             )
-            if path:
-                export_misp(filtered, path, iocs=iocs)
-                _remember(path)
-                self._set_status(f"MISP: {path}")
-        elif kind_l == "opencti":
-            path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("OpenCTI JSON", "*.json")],
-                initialfile="iocs_opencti.json",
-                initialdir=initialdir,
-            )
-            if path:
-                export_opencti(filtered, path, iocs=iocs)
-                _remember(path)
-                self._set_status(f"OpenCTI: {path}")
-        elif kind_l == "yara":
-            path = filedialog.asksaveasfilename(
-                defaultextension=".yar",
-                filetypes=[("YARA", "*.yar *.yara"), ("All", "*.*")],
-                initialfile="ioc_extractor_iocs.yar",
-                initialdir=initialdir,
-            )
-            if path:
-                export_yara(filtered, path, iocs=iocs)
-                _remember(path)
-                self._set_status(f"YARA: {path}")
-        elif kind_l in ("case pack", "case_pack", "casepack"):
-            path = filedialog.asksaveasfilename(
-                defaultextension=".zip",
-                filetypes=[("Case pack ZIP", "*.zip")],
-                initialfile="case_pack.zip",
-                initialdir=initialdir,
-            )
-            if path:
-                out = export_case_pack(
-                    filtered,
-                    path,
-                    filters_applied=self._filter_kwargs_serializable(),
-                    include_attachments=True,
-                )
-                _remember(path)
-                self._set_status(f"Case pack: {out}")
-        elif "по файлам" in kind_l or kind_l.endswith("(per file)"):
-            if not self._batch_results:
-                messagebox.showinfo(__app_name__, "Нет per-file результатов для экспорта")
-                return
-            path = filedialog.asksaveasfilename(
-                defaultextension=".zip",
-                filetypes=[("Case pack ZIP", "*.zip")],
-                initialfile="case_pack_per_file.zip",
-                initialdir=initialdir,
-            )
-            if path:
-                # If focus file set — only that file; else all batch results
-                results = self._batch_results
-                if self._focus_source_file:
-                    results = [
-                        r
-                        for r in self._batch_results
-                        if Path(r.source_path).name == self._focus_source_file
-                    ] or results
-                out = export_case_pack_multi(
-                    results,
-                    path,
-                    filters_applied=self._filter_kwargs_serializable(),
-                    include_attachments=True,
-                )
-                _remember(path)
-                self._set_status(f"Case pack (по файлам ×{len(results)}): {out}")
+        except ValueError as exc:
+            messagebox.showinfo(__app_name__, str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(__app_name__, f"Экспорт не удался:\n{exc}")
+            return
+        self._last_export_dir = str(Path(path).parent)
+        self._persist_prefs()
+        self._set_status(f"{kind}: {out}")
 
     def _filter_kwargs_serializable(self) -> dict:
-        kw = self._filter_kwargs()
-        types = kw.get("types")
-        return {
-            "types": sorted(types) if isinstance(types, set) else types,
-            "hide_private": kw.get("hide_private"),
-            "hide_rewriter": kw.get("hide_rewriter"),
-            "hide_allowlisted": kw.get("hide_allowlisted"),
-            "only_denylisted": kw.get("only_denylisted"),
-            "actionable_only": kw.get("actionable_only"),
-            "search": kw.get("search"),
-            "source_file": kw.get("source_file"),
-        }
+        return self._current_filter_state().serializable()
 
     def import_lists(self) -> None:
         path = filedialog.askopenfilename(
@@ -2085,7 +2065,7 @@ class IocExtractorApp(ctk.CTk):
             "Горячие клавиши:\n"
             "  Ctrl+O — открыть файлы\n"
             "  Ctrl+Enter — извлечь из текста\n"
-            "  Ctrl+F — поиск · клик по IOC — копировать\n"
+            "  Ctrl+F — поиск · Enter/Ctrl+C — копировать выбранный IOC\n"
             "  Тикет / Msg-ID — шаблоны в буфер\n\n"
             f"Папка:\n{root}\n\n"
             f"allowlist ({list_mtime_label('allowlist.txt')}):\n{allowlist}\n"

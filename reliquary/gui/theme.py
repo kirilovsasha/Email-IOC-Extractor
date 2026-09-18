@@ -1,12 +1,12 @@
 """Visual theme for IOC Extractor GUI — dense SOC-analyst layout."""
 
 COLORS = {
-    "bg": "#0c1014",
-    "surface": "#151b22",
-    "surface_alt": "#1c2430",
-    "border": "#2a3544",
-    "text": "#e8eef4",
-    "muted": "#8494a7",
+    "bg": "#0a0e12",
+    "surface": "#121820",
+    "surface_alt": "#1a222c",
+    "border": "#2c3848",
+    "text": "#e6edf3",
+    "muted": "#8b9aab",
     "accent": "#3d9a8b",
     "accent_dim": "#2a6b60",
     "warn": "#d4a017",
@@ -17,6 +17,7 @@ COLORS = {
     "host": "#e08a4c",
     "crypto": "#d4a017",
     "value": "#f0f4f8",
+    "row_alt": "#151c24",
 }
 
 IOC_TYPE_COLORS = {

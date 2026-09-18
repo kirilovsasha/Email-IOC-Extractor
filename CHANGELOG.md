@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.8.0
+
+### CLI
+- Пакетная папка / несколько файлов, `--workers`, skip broken по умолчанию
+- Фильтры: `--actionable`, `--hide-rewriter|allowlisted|private`, `--only-denylisted`, `--search`, `--types`
+- `--case-pack`, `--case-pack-multi`, `--ticket` (файл или `-`)
+
+### GUI / архитектура
+- Вынесены `FilterState`, `batch` runner, `export_actions`; единый `formats`
+- Progress bar + ETA на пакетном разборе; колонка «Откуда» + 2×клик к фрагменту
+- Prefs: `max_workers`, `skip_broken`
+
+### Извлечение
+- PPTX/PPTM и глубже DOCM/XLSM: текст + гиперссылки
+- ZIP nest depth 4; явные ошибки «защищён паролем»
+- Меньше RAM: payload вложений только nested email / мелкие (<2 МБ), large nested сбрасывается после разбора
+- Тихие сбои OLE/QR/prefs чаще попадают в `result.errors`
+
+### Качество
+- CI: ruff + mypy (core) + pytest
+- Тесты: filters, batch, pptx, CLI, nested zip sample
+
 ## 1.7.0
 
 ### GUI
