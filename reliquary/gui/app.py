@@ -48,14 +48,26 @@ from reliquary.gui.ioc_table import IocTable
 from reliquary.gui.tabs import desired_result_tabs
 from reliquary.gui.theme import (
     BTN_H,
-    BTN_PRIMARY,
-    BTN_SECONDARY,
     COLORS,
+    FONT_BADGE,
+    FONT_BRAND,
+    FONT_CONTENT,
+    FONT_IOC,
+    FONT_META,
+    FONT_MONO,
+    FONT_SECTION,
+    FONT_STATUS,
+    FONT_SUMMARY,
+    FONT_UI,
+    FONT_UI_BODY,
     IOC_GROUPS,
     IOC_TYPE_COLORS,
     SEVERITY_COLORS,
     SEVERITY_LABELS_RU,
     VERDICT_COLORS,
+    btn_primary,
+    btn_secondary,
+    chrome_font,
 )
 from reliquary.gui.tooltips import HoverTip, muted_label, vsep
 
@@ -223,41 +235,41 @@ class IocExtractorApp(ctk.CTk):
     # ------------------------------------------------------------------ UI
     def _build(self) -> None:
         # —— Header: brand + secondary ——
-        header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=48)
+        header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=42)
         header.pack(fill="x")
         header.pack_propagate(False)
 
         ctk.CTkLabel(
             header,
             text=__app_name__,
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_BRAND, weight="bold"),
             text_color=COLORS["accent"],
-        ).pack(side="left", padx=(18, 10), pady=10)
+        ).pack(side="left", padx=(18, 10), pady=8)
 
         ctk.CTkLabel(
             header,
             text=f"v{__version__} · offline",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
             text_color=COLORS["muted"],
-        ).pack(side="left", pady=10)
+        ).pack(side="left", pady=8)
 
         self.lists_mtime = ctk.CTkLabel(
             header,
             text="",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
             text_color=COLORS["muted"],
         )
         self.lists_mtime.pack(side="left", padx=(14, 0), pady=10)
         self._refresh_lists_mtime()
 
         ctk.CTkButton(
-            header, text="О программе", width=110, command=self.show_about, **BTN_SECONDARY
+            header, text="О программе", width=110, command=self.show_about, **btn_secondary()
         ).pack(side="right", padx=(6, 16), pady=8)
         ctk.CTkButton(
-            header, text="Импорт списков", width=120, command=self.import_lists, **BTN_SECONDARY
+            header, text="Импорт списков", width=120, command=self.import_lists, **btn_secondary()
         ).pack(side="right", padx=(6, 0), pady=8)
         ctk.CTkButton(
-            header, text="Конфиги", width=90, command=self.open_configs, **BTN_SECONDARY
+            header, text="Конфиги", width=90, command=self.open_configs, **btn_secondary()
         ).pack(side="right", padx=0, pady=8)
 
         # —— Toolbar: источник → буфер → экспорт ——
@@ -268,12 +280,12 @@ class IocExtractorApp(ctk.CTk):
 
         muted_label(tb, "Источник").pack(side="left", padx=(0, 8))
         btn_open = ctk.CTkButton(
-            tb, text="Открыть файл", width=112, command=self.open_files, **BTN_PRIMARY
+            tb, text="Открыть файл", width=112, command=self.open_files, **btn_primary()
         )
         btn_open.pack(side="left", padx=(0, 6))
         HoverTip(btn_open, "Файл или несколько файлов (Ctrl+O)")
         btn_folder = ctk.CTkButton(
-            tb, text="Папка", width=72, command=self.open_folder, **BTN_SECONDARY
+            tb, text="Папка", width=72, command=self.open_folder, **btn_secondary()
         )
         btn_folder.pack(side="left", padx=(0, 4))
         HoverTip(btn_folder, "Рекурсивно обработать все поддерживаемые файлы в папке")
@@ -287,18 +299,19 @@ class IocExtractorApp(ctk.CTk):
             values=list(_COPY_FORMATS),
             width=112,
             height=BTN_H,
+            font=chrome_font(),
             fg_color=COLORS["surface_alt"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
         btn_copy = ctk.CTkButton(
-            tb, text="Копировать", width=100, command=self.copy_iocs, **BTN_SECONDARY
+            tb, text="Копировать", width=100, command=self.copy_iocs, **btn_secondary()
         )
         btn_copy.pack(side="left", padx=(0, 8))
         HoverTip(btn_copy, "Скопировать видимые IOC в выбранном формате")
         btn_ticket = ctk.CTkButton(
-            tb, text="Тикет", width=68, command=self.copy_ticket, **BTN_SECONDARY
+            tb, text="Тикет", width=68, command=self.copy_ticket, **btn_secondary()
         )
         btn_ticket.pack(side="left", padx=(0, 4))
         HoverTip(btn_ticket, "Шаблон handoff в буфер (для тикета в SD/SOAR)")
@@ -307,6 +320,7 @@ class IocExtractorApp(ctk.CTk):
             text="короткий",
             variable=self.ticket_short,
             command=self._persist_prefs,
+            font=chrome_font(),
             text_color=COLORS["muted"],
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_dim"],
@@ -316,7 +330,7 @@ class IocExtractorApp(ctk.CTk):
             checkbox_height=16,
         ).pack(side="left", padx=(0, 6))
         btn_msgid = ctk.CTkButton(
-            tb, text="Msg-ID", width=72, command=self.copy_message_id_block, **BTN_SECONDARY
+            tb, text="Msg-ID", width=72, command=self.copy_message_id_block, **btn_secondary()
         )
         btn_msgid.pack(side="left")
         HoverTip(btn_msgid, "Message-ID / campaign-блок для корреляции писем")
@@ -330,18 +344,19 @@ class IocExtractorApp(ctk.CTk):
             values=list(_EXPORT_CHOICES),
             width=128,
             height=BTN_H,
+            font=chrome_font(),
             fg_color=COLORS["surface_alt"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
         btn_export = ctk.CTkButton(
-            tb, text="Сохранить", width=96, command=self._export_clicked, **BTN_PRIMARY
+            tb, text="Сохранить", width=96, command=self._export_clicked, **btn_primary()
         )
         btn_export.pack(side="left", padx=(0, 6))
         HoverTip(btn_export, "Сохранить видимые IOC в выбранном формате")
         btn_att = ctk.CTkButton(
-            tb, text="Вложения", width=88, command=self.save_attachments, **BTN_SECONDARY
+            tb, text="Вложения", width=88, command=self.save_attachments, **btn_secondary()
         )
         btn_att.pack(side="left")
         HoverTip(btn_att, "Выгрузить вложения письма на диск")
@@ -353,13 +368,14 @@ class IocExtractorApp(ctk.CTk):
         row_types = ctk.CTkFrame(filters, fg_color="transparent")
         row_types.pack(fill="x", padx=10, pady=(8, 2))
 
-        muted_label(row_types, "Типы IOC", size=12).pack(side="left", padx=(0, 8))
+        muted_label(row_types, "Типы IOC").pack(side="left", padx=(0, 8))
         for name, var in self.cat_vars.items():
             cb = ctk.CTkCheckBox(
                 row_types,
                 text=name,
                 variable=var,
                 command=self._on_filter_change,
+                font=chrome_font(),
                 text_color=COLORS["text"],
                 fg_color=COLORS["accent"],
                 hover_color=COLORS["accent_dim"],
@@ -375,7 +391,8 @@ class IocExtractorApp(ctk.CTk):
             textvariable=self._search_var,
             placeholder_text="Ctrl+F поиск по IOC…",
             width=170,
-            height=26,
+            height=BTN_H,
+            font=chrome_font(),
             fg_color=COLORS["surface_alt"],
             border_color=COLORS["border"],
         )
@@ -384,22 +401,18 @@ class IocExtractorApp(ctk.CTk):
             row_types,
             text="Сброс",
             width=64,
-            height=26,
             command=self._reset_filters,
-            fg_color=COLORS["surface_alt"],
-            hover_color=COLORS["border"],
-            border_width=1,
-            border_color=COLORS["border"],
+            **btn_secondary(),
         ).pack(side="right")
 
         row_noise = ctk.CTkFrame(filters, fg_color="transparent")
         row_noise.pack(fill="x", padx=10, pady=(2, 4))
 
-        muted_label(row_noise, "Скрыть шум", size=12).pack(side="left", padx=(0, 6))
+        muted_label(row_noise, "Скрыть шум").pack(side="left", padx=(0, 6))
         ctk.CTkLabel(
             row_noise,
             text="(✓ = убрать из списка)",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
             text_color=COLORS["muted"],
         ).pack(side="left", padx=(0, 8))
         for text, attr, tip in _HIDE_NOISE_FILTERS:
@@ -408,6 +421,7 @@ class IocExtractorApp(ctk.CTk):
                 text=text,
                 variable=getattr(self, attr),
                 command=self._on_filter_change,
+                font=chrome_font(),
                 text_color=COLORS["text"],
                 fg_color=COLORS["accent"],
                 hover_color=COLORS["accent_dim"],
@@ -421,11 +435,11 @@ class IocExtractorApp(ctk.CTk):
 
         vsep(row_noise, height=18)
 
-        muted_label(row_noise, "Фокус", size=12).pack(side="left", padx=(0, 6))
+        muted_label(row_noise, "Фокус").pack(side="left", padx=(0, 6))
         ctk.CTkLabel(
             row_noise,
             text="(✓ = только это)",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
             text_color=COLORS["muted"],
         ).pack(side="left", padx=(0, 8))
         for text, attr, tip in _FOCUS_FILTERS:
@@ -434,6 +448,7 @@ class IocExtractorApp(ctk.CTk):
                 text=text,
                 variable=getattr(self, attr),
                 command=self._on_filter_change,
+                font=chrome_font(),
                 text_color=COLORS["text"],
                 fg_color=COLORS["accent"],
                 hover_color=COLORS["accent_dim"],
@@ -451,7 +466,7 @@ class IocExtractorApp(ctk.CTk):
                 "Шум — типичный мусор писем (прокси URL, allowlist, частные IP). "
                 "Сначала откройте файл → смотрите IOC → при необходимости включите «к разбору»."
             ),
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
             text_color=COLORS["muted"],
             anchor="w",
         )
@@ -462,7 +477,7 @@ class IocExtractorApp(ctk.CTk):
         self.focus_hint = ctk.CTkLabel(
             self.focus_hint_row,
             text="",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_UI_BODY, weight="bold"),
             text_color=COLORS["info"],
             anchor="w",
         )
@@ -498,11 +513,14 @@ class IocExtractorApp(ctk.CTk):
         ctk.CTkLabel(
             left_head,
             text="Источник",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_SECTION, weight="bold"),
             text_color=COLORS["text"],
         ).pack(side="left")
         self.source_meta = ctk.CTkLabel(
-            left_head, text="", font=ctk.CTkFont(size=11), text_color=COLORS["muted"]
+            left_head,
+            text="",
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
+            text_color=COLORS["muted"],
         )
         self.source_meta.pack(side="right")
 
@@ -510,7 +528,7 @@ class IocExtractorApp(ctk.CTk):
             left,
             fg_color=COLORS["surface_alt"],
             text_color=COLORS["muted"],
-            font=ctk.CTkFont(family="Consolas", size=12),
+            font=ctk.CTkFont(family=FONT_MONO, size=FONT_CONTENT),
             wrap="word",
             border_width=0,
         )
@@ -522,7 +540,7 @@ class IocExtractorApp(ctk.CTk):
             left,
             text="Извлечь из текста  (Ctrl+Enter)",
             command=self.analyze_text_area,
-            **BTN_PRIMARY,
+            **btn_primary(),
         ).pack(fill="x", padx=14, pady=(0, 14))
 
         # Right: results
@@ -530,39 +548,39 @@ class IocExtractorApp(ctk.CTk):
         right.grid(row=0, column=1, sticky="nsew")
 
         # Compact summary bar (IOC count + verdict badge)
-        summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6, height=52)
+        summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6, height=46)
         summary.pack(fill="x", padx=12, pady=(12, 6))
         summary.pack_propagate(False)
 
         self.ioc_summary_label = ctk.CTkLabel(
             summary,
             text="IOC —",
-            font=ctk.CTkFont(size=20, weight="bold"),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_SUMMARY, weight="bold"),
             text_color=COLORS["accent"],
         )
-        self.ioc_summary_label.pack(side="left", padx=(14, 12), pady=10)
+        self.ioc_summary_label.pack(side="left", padx=(14, 12), pady=8)
 
         self.verdict_badge = ctk.CTkLabel(
             summary,
             text="",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_BADGE, weight="bold"),
             text_color=COLORS["muted"],
         )
-        self.verdict_badge.pack(side="left", padx=(0, 12), pady=10)
+        self.verdict_badge.pack(side="left", padx=(0, 12), pady=8)
 
         self.ioc_breakdown = ctk.CTkLabel(
             summary,
             text="Откройте файл или вставьте текст",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_UI_BODY),
             text_color=COLORS["muted"],
             anchor="e",
         )
-        self.ioc_breakdown.pack(side="right", padx=14, pady=10)
+        self.ioc_breakdown.pack(side="right", padx=14, pady=8)
 
         self.filter_hint = ctk.CTkLabel(
             right,
             text="Фильтры влияют на список, копирование и экспорт · клик по IOC копирует значение",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_META),
             text_color=COLORS["muted"],
             anchor="w",
         )
@@ -582,13 +600,14 @@ class IocExtractorApp(ctk.CTk):
             values=["IOC"],
             variable=self._tab_var,
             command=self._on_tab_selected,
+            font=chrome_font(),
             fg_color=COLORS["surface_alt"],
             selected_color=COLORS["accent"],
             selected_hover_color=COLORS["accent_dim"],
             unselected_color=COLORS["surface_alt"],
             unselected_hover_color=COLORS["border"],
             text_color=COLORS["text"],
-            height=32,
+            height=BTN_H,
         )
         self._tab_seg.pack(fill="x", padx=2, pady=(2, 6))
 
@@ -603,7 +622,7 @@ class IocExtractorApp(ctk.CTk):
         self.ioc_empty_label = ctk.CTkLabel(
             self._tab_frames["ioc"],
             text="",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_UI_BODY),
             text_color=COLORS["muted"],
             anchor="w",
         )
@@ -621,17 +640,17 @@ class IocExtractorApp(ctk.CTk):
         mail_bar = ctk.CTkFrame(self._tab_frames["mail"], fg_color="transparent", height=32)
         mail_bar.pack(fill="x", padx=2, pady=(2, 0))
         ctk.CTkButton(
-            mail_bar, text="Copy From", width=90, command=self._copy_from, **BTN_SECONDARY
+            mail_bar, text="Copy From", width=90, command=self._copy_from, **btn_secondary()
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
             mail_bar,
             text="Copy Msg-ID",
             width=100,
             command=self._copy_message_id,
-            **BTN_SECONDARY,
+            **btn_secondary(),
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
-            mail_bar, text="Copy Auth", width=90, command=self._copy_auth, **BTN_SECONDARY
+            mail_bar, text="Copy Auth", width=90, command=self._copy_auth, **btn_secondary()
         ).pack(side="left")
         self.mail_box = self._make_text(self._tab_frames["mail"])
         self.err_box = self._make_text(self._tab_frames["err"])
@@ -640,13 +659,13 @@ class IocExtractorApp(ctk.CTk):
         self._tab_key_by_label = {"IOC": "ioc"}
 
         # —— Status bar ——
-        status_bar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=32)
+        status_bar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=30)
         status_bar.pack(fill="x", side="bottom")
         status_bar.pack_propagate(False)
         self.status = ctk.CTkLabel(
             status_bar,
             text="Готов",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_STATUS),
             text_color=COLORS["muted"],
             anchor="w",
         )
@@ -655,7 +674,7 @@ class IocExtractorApp(ctk.CTk):
             status_bar,
             text="Стоп",
             width=56,
-            height=28,
+            height=BTN_H,
             command=self.cancel_batch,
             fg_color=COLORS["danger"],
             hover_color="#a33c3c",
@@ -666,7 +685,7 @@ class IocExtractorApp(ctk.CTk):
             status_bar,
             text="Повтор failed",
             width=110,
-            height=28,
+            height=BTN_H,
             command=self.retry_failed,
             fg_color=COLORS["surface_alt"],
             hover_color=COLORS["border"],
@@ -678,7 +697,7 @@ class IocExtractorApp(ctk.CTk):
         ctk.CTkLabel(
             status_bar,
             text="1–6 вкладки · Ctrl+C/Shift+C · Ctrl+F · Ctrl+/− масштаб",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(family=FONT_UI, size=FONT_STATUS),
             text_color=COLORS["border"],
             anchor="e",
         ).pack(side="right", padx=8, pady=4)
@@ -760,7 +779,7 @@ class IocExtractorApp(ctk.CTk):
             parent,
             fg_color=COLORS["surface_alt"],
             text_color=COLORS["text"],
-            font=ctk.CTkFont(family="Consolas", size=12),
+            font=ctk.CTkFont(family=FONT_MONO, size=FONT_IOC),
             wrap="word",
             activate_scrollbars=True,
         )
@@ -775,9 +794,9 @@ class IocExtractorApp(ctk.CTk):
         widget = self._tk(box)
         if widget is None:
             return
-        base = ("Consolas", 12)
-        bold = ("Consolas", 12, "bold")
-        section = ("Segoe UI", 12, "bold")
+        base = (FONT_MONO, FONT_IOC)
+        bold = (FONT_MONO, FONT_IOC, "bold")
+        section = (FONT_UI, FONT_SECTION, "bold")
         widget.tag_configure(
             "section", foreground=COLORS["accent"], font=section, spacing1=8, spacing3=2
         )

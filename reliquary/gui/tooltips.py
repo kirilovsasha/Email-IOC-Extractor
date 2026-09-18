@@ -6,7 +6,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from reliquary.gui.theme import COLORS
+from reliquary.gui.theme import COLORS, FONT_TIP, FONT_UI, FONT_UI_LABEL
 
 
 class HoverTip:
@@ -36,7 +36,7 @@ class HoverTip:
             foreground=COLORS["text"],
             relief="solid",
             borderwidth=1,
-            font=("Segoe UI", 9),
+            font=(FONT_UI, FONT_TIP),
             padx=8,
             pady=5,
             wraplength=320,
@@ -50,11 +50,11 @@ class HoverTip:
             self._tip = None
 
 
-def muted_label(parent: object, text: str, *, size: int = 11) -> ctk.CTkLabel:
+def muted_label(parent: object, text: str, *, size: int | None = None) -> ctk.CTkLabel:
     return ctk.CTkLabel(
         parent,
         text=text,
-        font=ctk.CTkFont(size=size, weight="bold"),
+        font=ctk.CTkFont(family=FONT_UI, size=size or FONT_UI_LABEL, weight="bold"),
         text_color=COLORS["muted"],
     )
 

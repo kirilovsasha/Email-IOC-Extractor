@@ -9,7 +9,15 @@ from typing import Callable
 import customtkinter as ctk
 
 from reliquary.core.models import Ioc
-from reliquary.gui.theme import COLORS, IOC_TYPE_COLORS
+from reliquary.gui.theme import (
+    COLORS,
+    FONT_IOC,
+    FONT_IOC_ROW_H,
+    FONT_META,
+    FONT_MONO,
+    FONT_UI,
+    IOC_TYPE_COLORS,
+)
 
 
 class IocTable(ctk.CTkFrame):
@@ -43,15 +51,15 @@ class IocTable(ctk.CTkFrame):
             foreground=COLORS["text"],
             fieldbackground=COLORS["surface_alt"],
             borderwidth=0,
-            rowheight=24,
-            font=("Consolas", 10),
+            rowheight=FONT_IOC_ROW_H,
+            font=(FONT_MONO, FONT_IOC),
         )
         style.configure(
             "Ioc.Treeview.Heading",
             background=COLORS["surface"],
             foreground=COLORS["muted"],
             relief="flat",
-            font=("Segoe UI", 10, "bold"),
+            font=(FONT_UI, FONT_META, "bold"),
         )
         style.map(
             "Ioc.Treeview",
@@ -73,9 +81,9 @@ class IocTable(ctk.CTkFrame):
         self.tree.heading("value", text="Значение", command=lambda: self._sort_by("value"))
         self.tree.heading("tags", text="Теги", command=lambda: self._sort_by("tags"))
         self.tree.heading("file", text="Файл", command=lambda: self._sort_by("file"))
-        self.tree.column("type", width=100, minwidth=70, stretch=False)
-        self.tree.column("value", width=420, minwidth=160, stretch=True)
-        self.tree.column("tags", width=160, minwidth=80, stretch=False)
+        self.tree.column("type", width=108, minwidth=72, stretch=False)
+        self.tree.column("value", width=440, minwidth=180, stretch=True)
+        self.tree.column("tags", width=168, minwidth=80, stretch=False)
         self.tree.column("file", width=140, minwidth=60, stretch=False)
 
         vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)

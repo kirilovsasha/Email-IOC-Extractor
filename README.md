@@ -1,6 +1,6 @@
 # IOC Extractor
 
-**Extract. Normalize. Export.** · v1.7.0
+**Extract. Normalize. Export.** · v1.7.1
 
 Офлайн-приложение для извлечения IOC из писем, тикетов, PDF, HTML, Office и ZIP/7z/RAR.
 Экспорт: CSV (UTF-8 BOM для Excel), STIX 2.1, JSON, MISP, OpenCTI, **YARA**, **Case pack**.

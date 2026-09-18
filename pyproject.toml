@@ -1,5 +1,6 @@
+[project]
 name = "reliquary"
-version = "1.7.0"
+version = "1.7.1"
 description = "IOC Extractor — offline SOC IOC extractor for email, tickets, PDF/HTML"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +23,13 @@ dependencies = [
 rar = ["rarfile>=4.1"]
 qr = ["pyzbar>=0.1.9"]
 dev = ["pytest>=8.0", "pyinstaller>=6.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["reliquary*"]
 
 [project.scripts]
 reliquary = "reliquary.cli:main"
