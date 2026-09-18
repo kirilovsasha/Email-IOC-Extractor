@@ -38,6 +38,7 @@ def filter_iocs(
     hide_private: bool = False,
     hide_rewriter: bool = False,
     hide_allowlisted: bool = False,
+    only_denylisted: bool = False,
 ) -> list[Ioc]:
     out: list[Ioc] = []
     for ioc in result.iocs:
@@ -48,6 +49,8 @@ def filter_iocs(
         if hide_rewriter and ("url_rewriter" in ioc.tags or "noise_candidate" in ioc.tags):
             continue
         if hide_allowlisted and "allowlisted" in ioc.tags:
+            continue
+        if only_denylisted and "denylisted" not in ioc.tags:
             continue
         out.append(ioc)
     return out
@@ -219,7 +222,8 @@ def export_csv(result: AnalysisResult, path: str | Path) -> Path:
     ]
     verdict_level = result.verdict.level.value if result.verdict else ""
     score = result.verdict.score if result.verdict else ""
-    with out.open("w", encoding="utf-8", newline="") as fh:
+    # utf-8-sig → BOM so Excel on Windows opens Cyrillic correctly
+    with out.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         rows: Iterable[Ioc] = result.iocs

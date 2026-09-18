@@ -8,12 +8,22 @@ import sys
 from collections import Counter
 
 from reliquary import __app_name__, __version__
-from reliquary.core.exporters import export_csv, export_report_json, export_stix
+from reliquary.core.exporters import (
+    export_csv,
+    export_misp,
+    export_opencti,
+    export_report_json,
+    export_stix,
+    export_yara,
+)
 from reliquary.core.offline import enforce_offline
+from reliquary.core.paths import ensure_user_lists
 from reliquary.core.pipeline import analyze_file, analyze_text
 
 
-def _print_ioc_summary(result, stream=sys.stderr) -> None:
+def _print_ioc_summary(result, stream=None) -> None:
+    if stream is None:
+        stream = sys.stderr
     counts = Counter(i.ioc_type.value for i in result.iocs)
     total = len(result.iocs)
     print(f"\n[{__app_name__}] IOC извлечено: {total}", file=stream)
@@ -28,18 +38,26 @@ def _print_ioc_summary(result, stream=sys.stderr) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     enforce_offline()
+    ensure_user_lists()
     parser = argparse.ArgumentParser(
-        prog="reliquary",
+        prog="ioc-extractor",
         description=(
             f"{__app_name__} v{__version__} — offline IOC extraction for SOC "
             "(phishing check is optional)"
         ),
     )
-    parser.add_argument("path", nargs="?", help="Файл (.eml/.msg/.pdf/.html/.txt)")
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help="Файл (.eml/.msg/.pdf/.html/.txt/.docx/.xlsx/.zip)",
+    )
     parser.add_argument("-t", "--text", help="Извлечь IOC из строки / тикета")
-    parser.add_argument("--csv", dest="csv_out", help="Экспорт CSV")
+    parser.add_argument("--csv", dest="csv_out", help="Экспорт CSV (UTF-8 BOM)")
     parser.add_argument("--stix", dest="stix_out", help="Экспорт STIX 2.1 JSON")
     parser.add_argument("--json", dest="json_out", help="Полный отчёт JSON")
+    parser.add_argument("--misp", dest="misp_out", help="Экспорт MISP event JSON")
+    parser.add_argument("--opencti", dest="opencti_out", help="Экспорт OpenCTI JSON")
+    parser.add_argument("--yara", dest="yara_out", help="Экспорт YARA rules")
     parser.add_argument(
         "-o",
         "--stdout-json",
@@ -76,6 +94,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_out:
         export_report_json(result, args.json_out)
         print(f"JSON → {args.json_out}", file=sys.stderr)
+    if args.misp_out:
+        export_misp(result, args.misp_out)
+        print(f"MISP → {args.misp_out}", file=sys.stderr)
+    if args.opencti_out:
+        export_opencti(result, args.opencti_out)
+        print(f"OpenCTI → {args.opencti_out}", file=sys.stderr)
+    if args.yara_out:
+        export_yara(result, args.yara_out)
+        print(f"YARA → {args.yara_out}", file=sys.stderr)
 
     _print_ioc_summary(result)
 
@@ -88,13 +115,23 @@ def main(argv: list[str] | None = None) -> int:
         for reason in v.reasons[:8]:
             print(f"  • {reason}", file=sys.stderr)
 
+    exported = any(
+        (
+            args.csv_out,
+            args.stix_out,
+            args.json_out,
+            args.misp_out,
+            args.opencti_out,
+            args.yara_out,
+            args.iocs_only,
+        )
+    )
     if args.iocs_only:
         print(json.dumps([i.to_dict() for i in result.iocs], ensure_ascii=False, indent=2))
-    elif args.stdout_json or not any((args.csv_out, args.stix_out, args.json_out, args.iocs_only)):
-        # Default machine output: full report still available; human summary already on stderr
+    elif args.stdout_json or not exported:
         if args.stdout_json:
             print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
-        elif not any((args.csv_out, args.stix_out, args.json_out)):
+        elif not exported:
             print(json.dumps([i.to_dict() for i in result.iocs], ensure_ascii=False, indent=2))
 
     return 0
