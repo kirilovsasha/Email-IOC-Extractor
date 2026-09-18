@@ -6,6 +6,7 @@ import email
 import email.policy
 import hashlib
 import io
+from copy import copy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,6 +31,14 @@ from reliquary.core.paths import file_mtime_iso, config_path, ensure_user_lists
 from reliquary.core.url_rewrite import find_and_unwrap
 from reliquary.core.verdict import render_verdict
 
+
+def _tag_file(ioc: Ioc, filename: str) -> Ioc:
+    tag = f"file:{filename}"
+    if tag in ioc.tags:
+        return ioc
+    tagged = copy(ioc)
+    tagged.tags = list(ioc.tags) + [tag]
+    return tagged
 
 def _ioc_priority(ioc: Ioc) -> int:
     """Higher = keep when merging duplicates / competing signals."""
@@ -327,6 +336,8 @@ def analyze_file(path: str | Path) -> AnalysisResult:
     _lift_attachment_iocs(result.attachments, iocs)
 
     result.iocs = _finalize_iocs(iocs)
+    fname = path.name
+    result.iocs = [_tag_file(i, fname) for i in result.iocs]
     result.verdict = render_verdict(result)
     result.file_rows = [file_triage_row(result)]
     return result
@@ -380,7 +391,9 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
     iocs: list[Ioc] = []
     mail_sources: list[str] = []
     for r in results:
-        iocs.extend(r.iocs)
+        fname = Path(r.source_path).name
+        for ioc in r.iocs:
+            iocs.append(_tag_file(ioc, fname))
         merged.url_rewrites.extend(r.url_rewrites)
         merged.attachments.extend(r.attachments)
         merged.headers.extend(r.headers)

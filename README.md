@@ -1,9 +1,19 @@
 # IOC Extractor
 
-**Extract. Normalize. Export.** · v1.5.0
+**Extract. Normalize. Export.** · v1.6.0
 
 Офлайн-приложение для извлечения IOC из писем, тикетов, PDF, HTML, Office и ZIP/7z/RAR.
 Экспорт: CSV (UTF-8 BOM для Excel), STIX 2.1, JSON, MISP, OpenCTI, **YARA**, **Case pack**.
+
+## GUI (удобство)
+
+- Контекстные вкладки со счётчиками; **Пакет** только при ≥2 файлах
+- Поиск IOC (`Ctrl+F`), фильтр **actionable**, сортировка denylist→unwrapped→hashes
+- `Ctrl+C` / `Ctrl+Shift+C` — value / defanged; `1–6` — вкладки; `Ctrl+/−` — масштаб
+- ПКМ по IOC: copy / defang / allowlist / denylist (+ комментарий тикета)
+- **Тикет** полный/короткий; клик по строке в **Пакет** → фокус IOC файла
+- Case pack и **Case pack (по файлам)**; Стоп / Повтор failed в статус-баре
+- Prefs рядом с exe: `ui_prefs.json` (папка, форматы, масштаб, фильтры)
 
 ## Что извлекает
 

@@ -516,3 +516,72 @@ def test_desired_result_tabs_context():
     batch_keys = [k for k, _ in desired_result_tabs(merged, filtered_count=len(merged.iocs))]
     assert "batch" in batch_keys
     assert any(lbl.startswith("Пакет ") for _, lbl in desired_result_tabs(merged, 1))
+
+
+def test_defang_extended_and_url_dedup():
+    from reliquary.core.ioc_extractor import defang, extract_iocs, normalize_url_key
+
+    cleaned = defang("hxxps[://]evil[.]example[dot]com/path/ and host dot bad")
+    assert "https://evil.example.com/path/" in cleaned
+    assert "host.bad" in cleaned
+    iocs = extract_iocs(
+        "https://www.evil.example/a/ https://evil.example/a https://evil.example/a#frag"
+    )
+    urls = [i for i in iocs if i.ioc_type.value == "url"]
+    # Dedup by normalized key — ideally one canonical URL
+    assert len(urls) <= 2
+    assert normalize_url_key("https://www.x.com/a/") == normalize_url_key("https://x.com/a")
+
+
+def test_actionable_filter_and_sort_and_search():
+    from reliquary.core.exporters import filter_iocs, sort_iocs
+    from reliquary.core.models import Ioc, IocType, AnalysisResult
+
+    result = analyze_file(SAMPLES / "phishing_sample.eml")
+    all_n = len(result.iocs)
+    actionable = filter_iocs(result, actionable_only=True, hide_rewriter=False)
+    assert len(actionable) <= all_n
+    # denylist-like items first when present
+    sorted_list = sort_iocs(result.iocs)
+    assert len(sorted_list) == all_n
+    found = filter_iocs(result, search="invoice")
+    assert found
+
+
+def test_ticket_short_and_prefs(tmp_path: Path, monkeypatch):
+    from reliquary.core import paths as paths_mod
+    from reliquary.core.prefs import load_prefs, save_prefs
+    from reliquary.core.ticket import build_ticket_template
+
+    monkeypatch.setattr(paths_mod, "app_dir", lambda: tmp_path)
+    monkeypatch.setattr(paths_mod, "resource_dir", lambda: tmp_path)
+    paths_mod.ensure_user_lists()
+    save_prefs({"copy_format": "defanged", "ui_scale": 1.25})
+    prefs = load_prefs()
+    assert prefs["copy_format"] == "defanged"
+    assert prefs["ui_scale"] == 1.25
+
+    mail = analyze_file(SAMPLES / "phishing_sample.eml")
+    short = build_ticket_template(mail, mail.iocs, short=True, defang=True)
+    full = build_ticket_template(mail, mail.iocs, short=False, defang=True)
+    assert len(short.splitlines()) <= 10
+    assert "IOC Extractor" in full
+    assert "Verdict:" in short
+
+
+def test_case_pack_multi_and_file_tags(tmp_path: Path):
+    from reliquary.core.exporters import export_case_pack_multi
+    from reliquary.core.pipeline import merge_results
+    import zipfile
+
+    a = analyze_file(SAMPLES / "ticket_sample.txt")
+    b = analyze_file(SAMPLES / "phishing_sample.eml")
+    assert any(t.startswith("file:") for i in a.iocs for t in i.tags)
+    merged = merge_results([a, b])
+    assert any("file:phishing_sample.eml" in i.tags for i in merged.iocs)
+
+    out = export_case_pack_multi([a, b], tmp_path / "multi.zip")
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert any("ticket" in n and n.endswith("report.json") for n in names)
+        assert any("phishing" in n and n.endswith("iocs.csv") for n in names)

@@ -14,10 +14,15 @@ def build_ticket_template(
     *,
     defang: bool = True,
     max_iocs: int = 40,
+    short: bool = False,
 ) -> str:
     """Plain-text triage note suitable for ITSM / chat handoff."""
     items = iocs if iocs is not None else result.iocs
     mid = result.mail_identity
+
+    if short:
+        return _short_ticket(result, items, defang=defang)
+
     lines: list[str] = [
         "=== IOC Extractor — triage note ===",
         f"Source: {result.source_path}",
@@ -101,6 +106,42 @@ def build_ticket_template(
     return "\n".join(lines)
 
 
+def _short_ticket(
+    result: AnalysisResult, items: list[Ioc], *, defang: bool
+) -> str:
+    mid = result.mail_identity
+    v = result.verdict
+    subject = (mid.subject if mid and mid.subject else result.subject) or "—"
+    sender = (mid.from_header if mid and mid.from_header else result.sender) or "—"
+    mid_s = (mid.message_id if mid else "") or "—"
+    verdict = (
+        f"{v.level.value.upper()} {v.score}" if v else "—"
+    )
+    lines = [
+        f"Verdict: {verdict} | {Path(result.source_path).name}",
+        f"From: {sender}",
+        f"Subject: {subject}",
+        f"Msg-ID: {mid_s}",
+    ]
+    if mid:
+        lines.append(
+            f"Auth: SPF={mid.spf or '—'} DKIM={mid.dkim or '—'} DMARC={mid.dmarc or '—'}"
+        )
+    unwrap = next((u.unwrapped for u in result.url_rewrites if u.changed), "")
+    if unwrap:
+        lines.append(f"URL: {defang_value(unwrap) if defang else unwrap}")
+    if result.attachments:
+        a = result.attachments[0]
+        lines.append(f"Att: {a.filename} sha256={a.sha256[:16]}…")
+    top = items[:5]
+    if top:
+        vals = []
+        for ioc in top:
+            vals.append(defang_value(ioc.value) if defang else ioc.value)
+        lines.append("IOC: " + " | ".join(vals))
+    return "\n".join(lines)
+
+
 def build_message_id_block(result: AnalysisResult) -> str:
     """Message-ID (+ subject) for campaign correlation."""
     mid = result.mail_identity
@@ -117,7 +158,6 @@ def build_message_id_block(result: AnalysisResult) -> str:
         for row in result.file_rows:
             if row.message_id:
                 parts.append(row.message_id)
-    # Dedup
     seen: set[str] = set()
     out: list[str] = []
     for p in parts:
