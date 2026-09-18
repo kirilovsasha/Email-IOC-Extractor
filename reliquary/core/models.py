@@ -82,6 +82,7 @@ class AttachmentInfo:
     sha256: str
     risk_flags: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    archive_entries: list[str] = field(default_factory=list)
     data: bytes | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,6 +95,7 @@ class AttachmentInfo:
             "sha256": self.sha256,
             "risk_flags": self.risk_flags,
             "notes": self.notes,
+            "archive_entries": list(self.archive_entries),
         }
 
 

@@ -5,3 +5,4 @@ cd "$(dirname "$0")/.."
 pip install -r requirements.txt pyinstaller
 python -m PyInstaller build/reliquary.spec --noconfirm
 echo "Artifact: dist/IOC_Extractor (or dist/IOC_Extractor.exe on Windows)"
+echo "Place/edit allowlist.txt and denylist.txt next to the exe."

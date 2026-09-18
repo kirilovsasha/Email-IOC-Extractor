@@ -1,12 +1,12 @@
-"""Visual theme for IOC Extractor GUI."""
+"""Visual theme for IOC Extractor GUI — dense SOC-analyst layout."""
 
 COLORS = {
-    "bg": "#0f1419",
-    "surface": "#1a222c",
-    "surface_alt": "#232d3a",
-    "border": "#2e3a4a",
-    "text": "#e7ecf1",
-    "muted": "#8b9aab",
+    "bg": "#0c1014",
+    "surface": "#151b22",
+    "surface_alt": "#1c2430",
+    "border": "#2a3544",
+    "text": "#e8eef4",
+    "muted": "#8494a7",
     "accent": "#3d9a8b",
     "accent_dim": "#2a6b60",
     "warn": "#d4a017",
@@ -19,7 +19,6 @@ COLORS = {
     "value": "#f0f4f8",
 }
 
-# Colors for IOC type badges in result panes.
 IOC_TYPE_COLORS = {
     "ipv4": COLORS["info"],
     "ipv6": COLORS["info"],
@@ -64,3 +63,21 @@ SEVERITY_LABELS_RU = {
     "low": "низко",
     "info": "инфо",
 }
+
+VERDICT_COLORS = {
+    "malicious": COLORS["danger"],
+    "suspicious": COLORS["warn"],
+    "unknown": COLORS["info"],
+    "benign": COLORS["ok"],
+}
+
+# Shared button sizes for denser chrome
+BTN_H = 32
+BTN_PRIMARY = dict(height=BTN_H, fg_color=COLORS["accent"], hover_color=COLORS["accent_dim"])
+BTN_SECONDARY = dict(
+    height=BTN_H,
+    fg_color=COLORS["surface_alt"],
+    hover_color=COLORS["border"],
+    border_width=1,
+    border_color=COLORS["border"],
+)

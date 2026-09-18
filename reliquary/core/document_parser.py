@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from reliquary.core.attachment_inspector import inspect_bytes
 from reliquary.core.models import AttachmentInfo
+from reliquary.core.office_extract import clean_extracted, extract_docx_text, extract_xlsx_text
 
 
 @dataclass
@@ -278,6 +279,45 @@ def parse_text(path: Path) -> ParsedDocument:
     )
 
 
+def parse_docx(path: Path) -> ParsedDocument:
+    raw = path.read_bytes()
+    text, errors = extract_docx_text(raw)
+    return ParsedDocument(
+        kind="office",
+        path=str(path),
+        text=clean_extracted(text),
+        attachments=[inspect_bytes(path.name, raw)],
+        errors=errors,
+    )
+
+
+def parse_xlsx(path: Path) -> ParsedDocument:
+    raw = path.read_bytes()
+    text, errors = extract_xlsx_text(raw)
+    return ParsedDocument(
+        kind="office",
+        path=str(path),
+        text=clean_extracted(text),
+        attachments=[inspect_bytes(path.name, raw)],
+        errors=errors,
+    )
+
+
+def parse_zip(path: Path) -> ParsedDocument:
+    """Inventory zip as a document — names become analyzable text, no unpack."""
+    raw = path.read_bytes()
+    att = inspect_bytes(path.name, raw)
+    lines = ["ZIP archive inventory:", path.name, ""]
+    lines.extend(att.archive_entries or [])
+    return ParsedDocument(
+        kind="archive",
+        path=str(path),
+        text="\n".join(lines),
+        attachments=[att],
+        errors=[],
+    )
+
+
 def parse_document(path: str | Path) -> ParsedDocument:
     p = Path(path)
     if not p.exists():
@@ -291,6 +331,12 @@ def parse_document(path: str | Path) -> ParsedDocument:
         return parse_pdf(p)
     if suffix in {".html", ".htm"}:
         return parse_html(p)
+    if suffix == ".docx":
+        return parse_docx(p)
+    if suffix == ".xlsx":
+        return parse_xlsx(p)
+    if suffix == ".zip":
+        return parse_zip(p)
     if suffix in {".txt", ".csv", ".log", ".md", ".json"}:
         return parse_text(p)
     # Fallback: treat as ticket/text

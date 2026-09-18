@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import re
+import zipfile
 from pathlib import Path
 
 import filetype
 
 from reliquary.core.models import AttachmentInfo
+
+# Keep raw bytes for "Save attachments" only up to this size (avoid OOM on big mailboxes).
+MAX_KEEP_BYTES = 15 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 200
 
 DANGEROUS_EXTENSIONS = {
     ".exe",
@@ -71,8 +77,56 @@ def _guess_mime(data: bytes, filename: str) -> str:
         ".zip": "application/zip",
         ".doc": "application/msword",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }
     return fallback.get(ext, "application/octet-stream")
+
+
+def _inventory_zip(data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Return (entries, risk_flags, notes) for a ZIP/OOXML container. No full extract."""
+    entries: list[str] = []
+    flags: list[str] = []
+    notes: list[str] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = [zi.filename for zi in zf.infolist() if not zi.is_dir()]
+    except zipfile.BadZipFile:
+        notes.append("ZIP: повреждённый или нестандартный контейнер")
+        return entries, flags, notes
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"ZIP inventory: {exc}")
+        return entries, flags, notes
+
+    entries = names[:MAX_ARCHIVE_ENTRIES]
+    if len(names) > MAX_ARCHIVE_ENTRIES:
+        notes.append(f"В архиве {len(names)} файлов — показаны первые {MAX_ARCHIVE_ENTRIES}")
+    else:
+        notes.append(f"Содержимое архива: {len(names)} файл(ов)")
+
+    dangerous_hits: list[str] = []
+    double_hits: list[str] = []
+    for name in names:
+        base = Path(name).name
+        lower = base.lower()
+        if DOUBLE_EXT_RE.search(lower):
+            double_hits.append(base)
+        ext = Path(lower).suffix
+        if ext in DANGEROUS_EXTENSIONS:
+            dangerous_hits.append(base)
+
+    if double_hits:
+        flags.append("archive_double_extension")
+        notes.append("Двойное расширение внутри архива: " + ", ".join(double_hits[:8]))
+    if dangerous_hits:
+        flags.append("archive_dangerous_member")
+        notes.append("Опасные члены архива: " + ", ".join(dangerous_hits[:8]))
+
+    # Nested archive heuristic
+    if any(Path(n).suffix.lower() in ARCHIVE_EXTENSIONS for n in names):
+        flags.append("nested_archive")
+        notes.append("Внутри есть вложенный архив")
+
+    return entries, flags, notes
 
 
 def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
@@ -80,6 +134,7 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
     mime = _guess_mime(data, filename)
     flags: list[str] = []
     notes: list[str] = []
+    archive_entries: list[str] = []
 
     lower = filename.lower()
     ext = Path(lower).suffix
@@ -121,12 +176,24 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
         except Exception as exc:  # noqa: BLE001
             notes.append(f"OLE разбор ограничен: {exc}")
 
-    # ZIP / OOXML
+    # ZIP / OOXML inventory (no full extract)
     if data[:2] == b"PK":
         flags.append("zip_container")
         if b"word/vbaProject.bin" in data or b"xl/vbaProject.bin" in data:
             flags.append("ooxml_vba")
             notes.append("В OOXML найден vbaProject.bin — макросы")
+        # Inventory plain zip archives (not every OOXML — still useful for .docx names)
+        if ext in ARCHIVE_EXTENSIONS or ext == ".zip" or mime == "application/zip":
+            entries, zflags, znotes = _inventory_zip(data)
+            archive_entries = entries
+            flags.extend(zflags)
+            notes.extend(znotes)
+        elif ext in {".docx", ".xlsx", ".pptx", ".docm", ".xlsm", ".pptm"}:
+            # Light namelist for Office packages
+            entries, zflags, znotes = _inventory_zip(data)
+            archive_entries = entries
+            flags.extend(zflags)
+            notes.extend(znotes)
 
     # Password-protected zip heuristic
     if ext == ".zip" and b"Encrypt" in data[:4096]:
@@ -149,6 +216,12 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
         flags.append("mime_mismatch")
         notes.append(f"Расширение {ext}, но MIME похож на executable ({mime})")
 
+    keep = data if len(data) <= MAX_KEEP_BYTES else None
+    if keep is None and data:
+        notes.append(
+            f"Содержимое не сохранено в памяти (>{MAX_KEEP_BYTES // (1024 * 1024)} МБ) — только хеши"
+        )
+
     return AttachmentInfo(
         filename=filename,
         size=len(data),
@@ -158,7 +231,8 @@ def inspect_bytes(filename: str, data: bytes) -> AttachmentInfo:
         sha256=sha256,
         risk_flags=flags,
         notes=notes,
-        data=data,
+        archive_entries=archive_entries,
+        data=keep,
     )
 
 

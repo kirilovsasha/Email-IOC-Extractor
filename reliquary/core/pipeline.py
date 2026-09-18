@@ -162,6 +162,19 @@ def analyze_file(path: str | Path) -> AnalysisResult:
                     tags=list(att.risk_flags),
                 )
             )
+        for entry in att.archive_entries or []:
+            base = Path(entry).name
+            if not base or base.startswith("."):
+                continue
+            iocs.append(
+                Ioc(
+                    value=base,
+                    ioc_type=IocType.FILENAME,
+                    source="archive",
+                    context=f"in:{att.filename}",
+                    tags=["archive_member", *att.risk_flags],
+                )
+            )
 
     result.iocs = _finalize_iocs(iocs)
     result.verdict = render_verdict(result)
@@ -210,15 +223,44 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
         )[:8000],
     )
     iocs: list[Ioc] = []
+    mail_sources: list[str] = []
     for r in results:
         iocs.extend(r.iocs)
         merged.url_rewrites.extend(r.url_rewrites)
         merged.attachments.extend(r.attachments)
         merged.headers.extend(r.headers)
         merged.errors.extend(r.errors)
-        if r.mail_identity and merged.mail_identity is None:
-            merged.mail_identity = r.mail_identity
-            merged.raw_headers = dict(r.raw_headers)
+        if r.mail_identity:
+            mail_sources.append(Path(r.source_path).name)
+            if merged.mail_identity is None:
+                merged.mail_identity = r.mail_identity
+                merged.raw_headers = dict(r.raw_headers)
+    if len(mail_sources) > 1:
+        merged.errors.append(
+            f"Batch: карточка почты от первого письма; всего писем с identity: "
+            f"{len(mail_sources)} ({', '.join(mail_sources[:5])}"
+            + ("…" if len(mail_sources) > 5 else "")
+            + ")"
+        )
     merged.iocs = _finalize_iocs(iocs)
-    merged.verdict = render_verdict(merged)
+    # Verdict only when the batch includes at least one email
+    if any(r.source_kind == "email" for r in results):
+        email_only = AnalysisResult(
+            source_path=merged.source_path,
+            source_kind="email",
+            subject=merged.subject,
+            sender=merged.sender,
+            recipients=list(merged.recipients),
+            iocs=list(merged.iocs),
+            headers=list(merged.headers),
+            raw_headers=dict(merged.raw_headers),
+            mail_identity=merged.mail_identity,
+            url_rewrites=list(merged.url_rewrites),
+            attachments=list(merged.attachments),
+            raw_text_preview=merged.raw_text_preview,
+            errors=list(merged.errors),
+        )
+        merged.verdict = render_verdict(email_only)
+    else:
+        merged.verdict = None
     return merged

@@ -4,21 +4,34 @@ Build:
   pyinstaller build/reliquary.spec
 
 The produced binary is fully offline — no network calls in application code.
+UPX is disabled to reduce corporate AV false positives.
 """
 
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 block_cipher = None
+ROOT = Path(SPECPATH).resolve().parent
 
 ctk_datas, ctk_binaries, ctk_hidden = collect_all("customtkinter")
 stix_datas = collect_data_files("stix2")
 
+list_datas = []
+for name in ("allowlist.txt", "denylist.txt"):
+    src = ROOT / name
+    if src.is_file():
+        list_datas.append((str(src), "."))
+
+_version = str(ROOT / "build" / "version_info.txt") if sys.platform == "win32" else None
+
 a = Analysis(
-    ["../run_reliquary.py"],
+    [str(ROOT / "run_reliquary.py")],
     pathex=[],
     binaries=ctk_binaries,
-    datas=ctk_datas + stix_datas,
+    datas=ctk_datas + stix_datas + list_datas,
     hiddenimports=ctk_hidden
     + [
         "extract_msg",
@@ -29,9 +42,12 @@ a = Analysis(
         "pypdf",
         "chardet",
         "stix2",
+        "windnd",
         "reliquary",
         "reliquary.gui.app",
         "reliquary.cli",
+        "reliquary.core.office_extract",
+        "reliquary.core.paths",
     ],
     hookspath=[],
     hooksconfig={},
@@ -56,14 +72,15 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # GUI app — no console window on Windows
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+    version=_version,
 )

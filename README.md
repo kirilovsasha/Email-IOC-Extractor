@@ -1,25 +1,27 @@
 # IOC Extractor
 
-**Extract. Normalize. Export.**
+**Extract. Normalize. Export.** · v1.4.0
 
-Офлайн-приложение для извлечения IOC из писем, тикетов, PDF и HTML.
-Экспорт: CSV, STIX 2.1, JSON, MISP, OpenCTI, **YARA**.
+Офлайн-приложение для извлечения IOC из писем, тикетов, PDF, HTML, Office и ZIP.
+Экспорт: CSV (UTF-8 BOM для Excel), STIX 2.1, JSON, MISP, OpenCTI, **YARA**.
 
 ## Что извлекает
 
 | Тип | Примеры |
 |-----|---------|
-| Сеть | IPv4/IPv6, `ip:port`, домены (в т.ч. punycode), URL, email |
+| Сеть | IPv4/IPv6, `ip:port`, домены (широкие TLD / punycode), URL, email |
 | Хеши | MD5, SHA1, SHA256 (в т.ч. вложений) |
 | Host | Windows-пути, UNC, registry, mutex, `command_line` |
 | Crypto / IM | Bitcoin, Monero, Telegram, Discord |
-| Прочее | CVE, имена вложений |
+| Прочее | CVE, имена вложений / членов ZIP |
 
-Письма (`.eml` / `.msg`): тело, URL rewrite, вложения, карточка identity
-(From / Return-Path / SPF·DKIM·DMARC / hops), сырые заголовки.
+Письма (`.eml` / `.msg`): тело, URL rewrite, вложения, карточка identity,
+**вердикт triage (только для писем)**, сырые заголовки.
 
 Шум: теги `private`, `url_rewriter`, `allowlisted` — скрываются фильтрами в GUI.
-Свои списки: [`allowlist.txt`](allowlist.txt), [`denylist.txt`](denylist.txt).
+`denylist.txt` → тег `denylisted` + фильтр «Только denylist».
+Списки рядом с exe: [`allowlist.txt`](allowlist.txt), [`denylist.txt`](denylist.txt)
+(кнопка **Конфиги** в GUI).
 
 ## Быстрый старт (Windows)
 
@@ -31,21 +33,24 @@ pip install -r requirements.txt
 run_gui.bat
 ```
 
-При ошибке запуска смотрите `ioc_extractor_error.log` рядом с bat.
+При ошибке запуска смотрите `ioc_extractor_error.log` рядом с bat/exe.
 
 CLI:
 
 ```bash
 python -m reliquary.cli samples/ticket_sample.txt --csv out.csv --stix out.json
-python -m reliquary.cli samples/phishing_sample.eml --iocs-only
+python -m reliquary.cli samples/phishing_sample.eml --iocs-only --phishing
+python -m reliquary.cli samples/ticket_sample.txt --misp misp.json --yara rules.yar
 ```
 
 ## GUI
 
-- Открыть несколько файлов / папку, drag-and-drop
-- Фильтры: Сеть / Хеши / Хост / Крипто + скрытие private / rewriter / allowlist
-- Копировать IOC, сохранить вложения
-- Экспорт: CSV · STIX · JSON · MISP · OpenCTI · YARA
+- Компактный chrome: действия слева (открыть), справа (копировать / экспорт)
+- Фильтры одной полосой; список IOC — главная область
+- Вердикт писем — бейдж в шапке результатов + детали во вкладке **Письмо**
+- Горячие клавиши: `Ctrl+O`, `Ctrl+Enter`; клик по IOC копирует значение
+- Папка рекурсивно, прогресс `N/M`, вкладка **Ошибки**
+- Фильтр denylist; конфиги рядом с exe
 
 ## Сборка EXE
 
@@ -54,13 +59,15 @@ pip install -r requirements.txt
 pyinstaller build/reliquary.spec
 ```
 
-`dist/IOC_Extractor.exe` — без консоли; лог ошибок — `ioc_extractor_error.log` рядом с exe.
+`dist/IOC_Extractor.exe` — без консоли, **без UPX**, с FileDescription в свойствах.
+Рядом с exe появятся/ожидаются `allowlist.txt` и `denylist.txt`.
+Лог ошибок — `ioc_extractor_error.log`.
 
 ## Структура
 
 ```
 reliquary/
-  core/          # парсеры, IOC, allowlist, экспорт
+  core/          # парсеры, IOC, allowlist, экспорт, paths
   gui/           # desktop UI
 samples/
 allowlist.txt
