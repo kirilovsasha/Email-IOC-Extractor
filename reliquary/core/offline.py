@@ -1,4 +1,4 @@
-"""Hard offline guarantee — Reliquary must never phone home.
+"""Hard offline guarantee — IOC Extractor must never phone home.
 
 Imported at app start. Blocks common outbound helpers if somehow called.
 """
@@ -14,7 +14,7 @@ class OfflineViolation(RuntimeError):
 
 def _blocked(*_args, **_kwargs):
     raise OfflineViolation(
-        "Reliquary работает строго офлайн: сетевые соединения запрещены."
+        "IOC Extractor работает строго офлайн: сетевые соединения запрещены."
     )
 
 

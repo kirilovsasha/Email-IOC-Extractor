@@ -1,4 +1,4 @@
-"""Unit tests for Reliquary core — no network."""
+"""Unit tests for IOC Extractor core — no network."""
 
 from __future__ import annotations
 

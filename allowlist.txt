@@ -1,4 +1,4 @@
-# Reliquary allowlist — one domain or IPv4 per line.
+# IOC Extractor allowlist — one domain or IPv4 per line.
 # Matched IOCs get tag "allowlisted" (can be hidden in GUI).
 # Lines starting with # are ignored.
 

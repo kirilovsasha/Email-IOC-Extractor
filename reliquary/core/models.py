@@ -1,4 +1,4 @@
-"""Shared data models for Reliquary analysis pipeline."""
+"""Shared data models for IOC Extractor analysis pipeline."""
 
 from __future__ import annotations
 

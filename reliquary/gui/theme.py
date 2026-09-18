@@ -1,4 +1,4 @@
-"""Visual theme for Reliquary GUI."""
+"""Visual theme for IOC Extractor GUI."""
 
 COLORS = {
     "bg": "#0f1419",

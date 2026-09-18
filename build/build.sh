@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build Reliquary binary with PyInstaller (run on target OS, usually Windows).
+# Build IOC Extractor binary with PyInstaller (run on target OS, usually Windows).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python -m pip install -r requirements.txt
+pip install -r requirements.txt pyinstaller
 python -m PyInstaller build/reliquary.spec --noconfirm
-echo "Artifact: dist/Reliquary (or dist/Reliquary.exe on Windows)"
+echo "Artifact: dist/IOC_Extractor (or dist/IOC_Extractor.exe on Windows)"

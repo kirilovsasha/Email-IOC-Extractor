@@ -1,4 +1,4 @@
-"""Reliquary desktop GUI — extract IOCs from files and text (CustomTkinter 6)."""
+"""IOC Extractor desktop GUI — extract IOCs from files and text (CustomTkinter 6)."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ _EXPORT_CHOICES = (
 _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
 
-class ReliquaryApp(ctk.CTk):
+class IocExtractorApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"{__app_name__} — {__tagline__}")
@@ -1010,7 +1010,7 @@ class ReliquaryApp(ctk.CTk):
             path = filedialog.asksaveasfilename(
                 defaultextension=".yar",
                 filetypes=[("YARA", "*.yar *.yara"), ("All", "*.*")],
-                initialfile="reliquary_iocs.yar",
+                initialfile="ioc_extractor_iocs.yar",
             )
             if path:
                 export_yara(filtered, path, iocs=iocs)
@@ -1032,7 +1032,7 @@ class ReliquaryApp(ctk.CTk):
 def run() -> None:
     enforce_offline()
     try:
-        app = ReliquaryApp()
+        app = IocExtractorApp()
     except tk.TclError as exc:
         raise SystemExit(
             f"GUI недоступен ({exc}). Используйте CLI: python -m reliquary.cli <файл>"

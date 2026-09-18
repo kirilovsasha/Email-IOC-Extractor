@@ -1,4 +1,4 @@
-"""PyInstaller build spec for Reliquary (Windows .exe / Linux binary).
+"""PyInstaller build spec for IOC Extractor (Windows .exe / Linux binary).
 
 Build:
   pyinstaller build/reliquary.spec
@@ -52,7 +52,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="Reliquary",
+    name="IOC_Extractor",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
