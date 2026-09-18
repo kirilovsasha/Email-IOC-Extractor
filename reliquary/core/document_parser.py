@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import email
 import email.policy
+import io
 from dataclasses import dataclass, field
 from email.message import Message
 from pathlib import Path
@@ -13,6 +14,11 @@ from bs4 import BeautifulSoup
 from reliquary.core.attachment_inspector import inspect_bytes
 from reliquary.core.models import AttachmentInfo
 from reliquary.core.office_extract import clean_extracted, extract_docx_text, extract_xlsx_text
+
+# Guardrails for large documents (IOC extract still useful on the head of the file).
+MAX_TEXT_CHARS = 2_000_000
+MAX_HTML_CHARS = 2_000_000
+MAX_PDF_PAGES = 80
 
 
 @dataclass
@@ -27,6 +33,28 @@ class ParsedDocument:
     message: Message | None = None
     attachments: list[AttachmentInfo] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+
+def _clip_text(text: str, limit: int = MAX_TEXT_CHARS) -> tuple[str, list[str]]:
+    if len(text) <= limit:
+        return text, []
+    return text[:limit], [f"Текст обрезан до {limit:,} символов для разбора".replace(",", " ")]
+
+
+def _read_bytes(path: Path, data: bytes | None) -> bytes:
+    if data is not None:
+        return data
+    return path.read_bytes()
+
+
+def _decode_bytes(raw: bytes) -> str:
+    try:
+        import chardet
+
+        encoding = (chardet.detect(raw).get("encoding") or "utf-8")
+    except Exception:
+        encoding = "utf-8"
+    return raw.decode(encoding, errors="replace")
 
 
 def _html_to_text(html: str) -> str:
@@ -108,14 +136,19 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
     return "\n".join(text_parts), "\n".join(html_parts), attachments
 
 
-def parse_eml(path: Path) -> ParsedDocument:
-    raw = path.read_bytes()
+def parse_eml(path: Path, data: bytes | None = None) -> ParsedDocument:
+    raw = _read_bytes(path, data)
     msg = email.message_from_bytes(raw, policy=email.policy.default)
     text, html, attachments = _walk_attachments(msg)
     if html and not text.strip():
         text = _html_to_text(html)
     elif html:
         text = text + "\n" + _html_to_text(html)
+    notes: list[str] = []
+    text, clip_notes = _clip_text(text)
+    notes.extend(clip_notes)
+    html, html_notes = _clip_text(html, MAX_HTML_CHARS)
+    notes.extend(html_notes)
     return ParsedDocument(
         kind="email",
         path=str(path),
@@ -126,10 +159,12 @@ def parse_eml(path: Path) -> ParsedDocument:
         recipients=_collect_recipients(msg),
         message=msg,
         attachments=attachments,
+        errors=notes,
     )
 
 
-def parse_msg(path: Path) -> ParsedDocument:
+def parse_msg(path: Path, data: bytes | None = None) -> ParsedDocument:
+    _ = data  # extract-msg needs a path on disk
     try:
         import extract_msg
     except ImportError as exc:
@@ -158,12 +193,11 @@ def parse_msg(path: Path) -> ParsedDocument:
     try:
         for att in msg_file.attachments:
             name = getattr(att, "longFilename", None) or getattr(att, "shortFilename", None) or "attachment"
-            data = att.data or b""
-            attachments.append(inspect_bytes(str(name), data))
+            adata = att.data or b""
+            attachments.append(inspect_bytes(str(name), adata))
     except Exception as exc:  # noqa: BLE001
         errors.append(f"Вложения MSG: {exc}")
 
-    # Build a minimal RFC822-like message for header analysis
     eml_bytes = None
     try:
         eml_bytes = msg_file.asEmailMessage() if hasattr(msg_file, "asEmailMessage") else None
@@ -174,7 +208,6 @@ def parse_msg(path: Path) -> ParsedDocument:
     if eml_bytes is not None:
         message = eml_bytes
     else:
-        # Synthesize headers for analysis.
         synthetic = email.message.EmailMessage()
         if msg_file.sender:
             synthetic["From"] = str(msg_file.sender)
@@ -192,11 +225,17 @@ def parse_msg(path: Path) -> ParsedDocument:
     except Exception:
         pass
 
+    text, clip_notes = _clip_text(text)
+    errors.extend(clip_notes)
+    html_s = html if isinstance(html, str) else ""
+    html_s, html_notes = _clip_text(html_s, MAX_HTML_CHARS)
+    errors.extend(html_notes)
+
     return ParsedDocument(
         kind="email",
         path=str(path),
         text=text,
-        html=html if isinstance(html, str) else "",
+        html=html_s,
         subject=subject,
         sender=sender,
         recipients=recipients,
@@ -206,20 +245,24 @@ def parse_msg(path: Path) -> ParsedDocument:
     )
 
 
-def parse_pdf(path: Path) -> ParsedDocument:
+def parse_pdf(path: Path, data: bytes | None = None) -> ParsedDocument:
+    raw = _read_bytes(path, data)
     errors: list[str] = []
     text_parts: list[str] = []
     try:
         from pypdf import PdfReader
 
-        reader = PdfReader(str(path))
-        for page in reader.pages:
+        reader = PdfReader(io.BytesIO(raw))
+        pages = list(reader.pages)
+        if len(pages) > MAX_PDF_PAGES:
+            errors.append(f"PDF: разобраны первые {MAX_PDF_PAGES} из {len(pages)} страниц")
+            pages = pages[:MAX_PDF_PAGES]
+        for page in pages:
             try:
                 text_parts.append(page.extract_text() or "")
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"Страница PDF: {exc}")
-        # Annotations / URIs
-        for page in reader.pages:
+        for page in pages:
             annots = page.get("/Annots") or []
             for annot in annots:
                 try:
@@ -232,80 +275,81 @@ def parse_pdf(path: Path) -> ParsedDocument:
     except Exception as exc:  # noqa: BLE001
         errors.append(str(exc))
 
-    attachments = [inspect_bytes(path.name, path.read_bytes())]
+    text, clip_notes = _clip_text("\n".join(text_parts))
+    errors.extend(clip_notes)
+    attachments = [inspect_bytes(path.name, raw)]
     return ParsedDocument(
         kind="pdf",
         path=str(path),
-        text="\n".join(text_parts),
+        text=text,
         attachments=attachments,
         errors=errors,
     )
 
 
-def parse_html(path: Path) -> ParsedDocument:
-    raw = path.read_bytes()
-    try:
-        import chardet
-
-        detected = chardet.detect(raw)
-        encoding = detected.get("encoding") or "utf-8"
-    except Exception:
-        encoding = "utf-8"
-    html = raw.decode(encoding, errors="replace")
+def parse_html(path: Path, data: bytes | None = None) -> ParsedDocument:
+    raw = _read_bytes(path, data)
+    html = _decode_bytes(raw)
+    notes: list[str] = []
+    html, html_notes = _clip_text(html, MAX_HTML_CHARS)
+    notes.extend(html_notes)
     text = _html_to_text(html)
+    text, clip_notes = _clip_text(text)
+    notes.extend(clip_notes)
     return ParsedDocument(
         kind="html",
         path=str(path),
         text=text,
         html=html,
         attachments=[inspect_bytes(path.name, raw)],
+        errors=notes,
     )
 
 
-def parse_text(path: Path) -> ParsedDocument:
-    raw = path.read_bytes()
-    try:
-        import chardet
-
-        encoding = (chardet.detect(raw).get("encoding") or "utf-8")
-    except Exception:
-        encoding = "utf-8"
-    text = raw.decode(encoding, errors="replace")
+def parse_text(path: Path, data: bytes | None = None) -> ParsedDocument:
+    raw = _read_bytes(path, data)
+    text = _decode_bytes(raw)
+    text, notes = _clip_text(text)
     return ParsedDocument(
         kind="ticket",
         path=str(path),
         text=text,
         attachments=[inspect_bytes(path.name, raw)],
+        errors=notes,
     )
 
 
-def parse_docx(path: Path) -> ParsedDocument:
-    raw = path.read_bytes()
+def parse_docx(path: Path, data: bytes | None = None) -> ParsedDocument:
+    raw = _read_bytes(path, data)
     text, errors = extract_docx_text(raw)
+    text, clip_notes = _clip_text(clean_extracted(text))
+    errors.extend(clip_notes)
     return ParsedDocument(
         kind="office",
         path=str(path),
-        text=clean_extracted(text),
+        text=text,
         attachments=[inspect_bytes(path.name, raw)],
         errors=errors,
     )
 
 
-def parse_xlsx(path: Path) -> ParsedDocument:
-    raw = path.read_bytes()
+def parse_xlsx(path: Path, data: bytes | None = None) -> ParsedDocument:
+    raw = _read_bytes(path, data)
     text, errors = extract_xlsx_text(raw)
+    text, clip_notes = _clip_text(clean_extracted(text))
+    errors.extend(clip_notes)
     return ParsedDocument(
         kind="office",
         path=str(path),
-        text=clean_extracted(text),
+        text=text,
         attachments=[inspect_bytes(path.name, raw)],
         errors=errors,
     )
 
 
-def parse_zip(path: Path) -> ParsedDocument:
+def parse_zip(path: Path, data: bytes | None = None) -> ParsedDocument:
     """Inventory zip as a document — names become analyzable text, no unpack."""
-    raw = path.read_bytes()
+    raw = _read_bytes(path, data)
     att = inspect_bytes(path.name, raw)
     lines = ["ZIP archive inventory:", path.name, ""]
     lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
@@ -318,9 +362,9 @@ def parse_zip(path: Path) -> ParsedDocument:
     )
 
 
-def parse_archive_generic(path: Path) -> ParsedDocument:
+def parse_archive_generic(path: Path, data: bytes | None = None) -> ParsedDocument:
     """RAR/7z as archive document via attachment inspector inventory."""
-    raw = path.read_bytes()
+    raw = _read_bytes(path, data)
     att = inspect_bytes(path.name, raw)
     lines = [f"{path.suffix.upper().lstrip('.')} archive inventory:", path.name, ""]
     lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
@@ -333,28 +377,29 @@ def parse_archive_generic(path: Path) -> ParsedDocument:
     )
 
 
-def parse_document(path: str | Path) -> ParsedDocument:
+def parse_document(path: str | Path, data: bytes | None = None) -> ParsedDocument:
     p = Path(path)
-    if not p.exists():
+    if data is None and not p.exists():
         return ParsedDocument(kind="unknown", path=str(p), text="", errors=["Файл не найден"])
+    if data is None and not p.is_file():
+        return ParsedDocument(kind="unknown", path=str(p), text="", errors=["Не файл"])
     suffix = p.suffix.lower()
     if suffix == ".eml":
-        return parse_eml(p)
+        return parse_eml(p, data)
     if suffix == ".msg":
-        return parse_msg(p)
+        return parse_msg(p, data)
     if suffix == ".pdf":
-        return parse_pdf(p)
+        return parse_pdf(p, data)
     if suffix in {".html", ".htm"}:
-        return parse_html(p)
+        return parse_html(p, data)
     if suffix == ".docx":
-        return parse_docx(p)
+        return parse_docx(p, data)
     if suffix == ".xlsx":
-        return parse_xlsx(p)
+        return parse_xlsx(p, data)
     if suffix == ".zip":
-        return parse_zip(p)
+        return parse_zip(p, data)
     if suffix in {".7z", ".rar"}:
-        return parse_archive_generic(p)
+        return parse_archive_generic(p, data)
     if suffix in {".txt", ".csv", ".log", ".md", ".json"}:
-        return parse_text(p)
-    # Fallback: treat as ticket/text
-    return parse_text(p)
+        return parse_text(p, data)
+    return parse_text(p, data)

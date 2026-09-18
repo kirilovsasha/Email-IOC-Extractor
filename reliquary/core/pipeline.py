@@ -98,12 +98,16 @@ def _finalize_iocs(iocs: list[Ioc]) -> list[Ioc]:
     return _dedup_iocs(iocs)
 
 
+def _source_hash_bytes(data: bytes) -> tuple[str, int]:
+    return hashlib.sha256(data).hexdigest(), len(data)
+
+
 def _source_hash(path: Path) -> tuple[str, int]:
     try:
         data = path.read_bytes()
     except OSError:
         return "", 0
-    return hashlib.sha256(data).hexdigest(), len(data)
+    return _source_hash_bytes(data)
 
 
 def _build_meta(source_path: str, *, source_sha256: str = "", source_size: int | None = None) -> AnalysisMeta:
@@ -265,8 +269,17 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
 
 def analyze_file(path: str | Path) -> AnalysisResult:
     path = Path(path)
-    parsed = parse_document(path)
-    source_sha, source_size = _source_hash(path)
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return AnalysisResult(
+            source_path=str(path),
+            source_kind="unknown",
+            errors=[f"Чтение файла: {exc}"],
+            meta=_build_meta(str(path)),
+        )
+    source_sha, source_size = _source_hash_bytes(data)
+    parsed = parse_document(path, data=data)
 
     result = AnalysisResult(
         source_path=str(path),

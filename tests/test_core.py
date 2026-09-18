@@ -492,7 +492,7 @@ def test_report_json_has_meta(tmp_path: Path):
 
 
 def test_desired_result_tabs_context():
-    from reliquary.gui.app import desired_result_tabs
+    from reliquary.gui.tabs import desired_result_tabs
     from reliquary.core.pipeline import merge_results
 
     assert desired_result_tabs(None) == [("ioc", "IOC")]
@@ -518,34 +518,28 @@ def test_desired_result_tabs_context():
     assert any(lbl.startswith("Пакет ") for _, lbl in desired_result_tabs(merged, 1))
 
 
-def test_defang_extended_and_url_dedup():
-    from reliquary.core.ioc_extractor import defang, extract_iocs, normalize_url_key
+def test_hash_guid_fp_and_private_ranges():
+    from reliquary.core.ioc_extractor import extract_iocs
 
-    cleaned = defang("hxxps[://]evil[.]example[dot]com/path/ and host dot bad")
-    assert "https://evil.example.com/path/" in cleaned
-    assert "host.bad" in cleaned
-    iocs = extract_iocs(
-        "https://www.evil.example/a/ https://evil.example/a https://evil.example/a#frag"
-    )
-    urls = [i for i in iocs if i.ioc_type.value == "url"]
-    # Dedup by normalized key — ideally one canonical URL
-    assert len(urls) <= 2
-    assert normalize_url_key("https://www.x.com/a/") == normalize_url_key("https://x.com/a")
+    guid = "550e8400-e29b-41d4-a716-446655440000"
+    iocs = extract_iocs(f"id={guid} and noise abcdefabcdefabcdefabcdefabcdefab")
+    hashes = [i for i in iocs if i.ioc_type.value in ("md5", "sha1", "sha256")]
+    # all-alpha hex rejected; GUID must not become MD5
+    assert not any(i.value == "abcdefabcdefabcdefabcdefabcdefab" for i in hashes)
+    assert not any("550e8400e29b41d4a716446655440000" in i.value for i in hashes)
 
+    real = extract_iocs("md5 44d88612fea8a8f36de82e1278abb02f of malware.exe")
+    assert any(i.ioc_type.value == "md5" and i.value.startswith("44d88612") for i in real)
 
-def test_actionable_filter_and_sort_and_search():
-    from reliquary.core.exporters import filter_iocs, sort_iocs
-    from reliquary.core.models import Ioc, IocType, AnalysisResult
+    priv = extract_iocs("cgnat 100.64.1.5 ula fd12:3456:789a::1 link fe80::1")
+    tags = {i.value: i.tags for i in priv if i.ioc_type.value in ("ipv4", "ipv6")}
+    assert "private" in tags.get("100.64.1.5", [])
+    assert any("private" in t for t in tags.values())
 
-    result = analyze_file(SAMPLES / "phishing_sample.eml")
-    all_n = len(result.iocs)
-    actionable = filter_iocs(result, actionable_only=True, hide_rewriter=False)
-    assert len(actionable) <= all_n
-    # denylist-like items first when present
-    sorted_list = sort_iocs(result.iocs)
-    assert len(sorted_list) == all_n
-    found = filter_iocs(result, search="invoice")
-    assert found
+    bare = extract_iocs("User ran cmd.exe today without args")
+    assert not any(i.ioc_type.value == "command_line" for i in bare)
+    sig = extract_iocs("cmdline powershell.exe -enc SQBFAFgA more text")
+    assert any(i.ioc_type.value == "command_line" for i in sig)
 
 
 def test_ticket_short_and_prefs(tmp_path: Path, monkeypatch):
@@ -563,10 +557,60 @@ def test_ticket_short_and_prefs(tmp_path: Path, monkeypatch):
 
     mail = analyze_file(SAMPLES / "phishing_sample.eml")
     short = build_ticket_template(mail, mail.iocs, short=True, defang=True)
-    full = build_ticket_template(mail, mail.iocs, short=False, defang=True)
+    full = build_ticket_template(mail, mail.iocs, short=False, defang=True, lang="en")
     assert len(short.splitlines()) <= 10
     assert "IOC Extractor" in full
-    assert "Verdict:" in short
+    assert "Verdict:" in full or "Вердикт:" in short
+    ru = build_ticket_template(mail, mail.iocs, short=False, lang="ru")
+    assert "Источник:" in ru or "Источник" in ru
+
+
+def test_nested_zip_inventory(tmp_path: Path):
+    from reliquary.core.attachment_inspector import inspect_bytes
+
+    inner_buf = io.BytesIO()
+    with zipfile.ZipFile(inner_buf, "w") as zf:
+        zf.writestr("payload.exe", b"MZ")
+    outer_buf = io.BytesIO()
+    with zipfile.ZipFile(outer_buf, "w") as zf:
+        zf.writestr("inner.zip", inner_buf.getvalue())
+        zf.writestr("readme.txt", b"hi")
+    att = inspect_bytes("outer.zip", outer_buf.getvalue())
+    assert "nested_archive" in att.risk_flags
+    assert any("payload.exe" in e for e in (att.archive_entries or []))
+
+
+def test_html_sample_extracts_urls():
+    result = analyze_file(SAMPLES / "landing_sample.html")
+    assert result.source_kind == "html"
+    assert result.iocs
+
+
+def test_defang_extended_and_url_dedup():
+    from reliquary.core.ioc_extractor import defang, extract_iocs, normalize_url_key
+
+    cleaned = defang("hxxps[://]evil[.]example[dot]com/path/ and host dot bad")
+    assert "https://evil.example.com/path/" in cleaned
+    assert "host.bad" in cleaned
+    iocs = extract_iocs(
+        "https://www.evil.example/a/ https://evil.example/a https://evil.example/a#frag"
+    )
+    urls = [i for i in iocs if i.ioc_type.value == "url"]
+    assert len(urls) <= 2
+    assert normalize_url_key("https://www.x.com/a/") == normalize_url_key("https://x.com/a")
+
+
+def test_actionable_filter_and_sort_and_search():
+    from reliquary.core.exporters import filter_iocs, sort_iocs
+
+    result = analyze_file(SAMPLES / "phishing_sample.eml")
+    all_n = len(result.iocs)
+    actionable = filter_iocs(result, actionable_only=True, hide_rewriter=False)
+    assert len(actionable) <= all_n
+    sorted_list = sort_iocs(result.iocs)
+    assert len(sorted_list) == all_n
+    found = filter_iocs(result, search="invoice")
+    assert found
 
 
 def test_case_pack_multi_and_file_tags(tmp_path: Path):

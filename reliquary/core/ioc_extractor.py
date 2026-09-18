@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import ipaddress
 import re
 from urllib.parse import unquote, urlparse
 
@@ -120,10 +122,15 @@ _FILE_LIKE_TLDS = frozenset(
 )
 
 # Note: gTLDs like zip/mov/win are allowed — used in phishing campaigns.
-MD5_RE = re.compile(r"\b[a-fA-F0-9]{32}\b")
-SHA1_RE = re.compile(r"\b[a-fA-F0-9]{40}\b")
-SHA256_RE = re.compile(r"\b[a-fA-F0-9]{64}\b")
+# Word-ish boundaries: avoid eating hex out of GUID/UUID middle segments.
+MD5_RE = re.compile(r"(?<![A-Fa-f0-9])[a-fA-F0-9]{32}(?![A-Fa-f0-9])")
+SHA1_RE = re.compile(r"(?<![A-Fa-f0-9])[a-fA-F0-9]{40}(?![A-Fa-f0-9])")
+SHA256_RE = re.compile(r"(?<![A-Fa-f0-9])[a-fA-F0-9]{64}(?![A-Fa-f0-9])")
 CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
+# GUID / UUID shapes that look like 32 hex when dashes are ignored — reject as hashes.
+_GUID_RE = re.compile(
+    r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
+)
 
 # Host artifacts
 WIN_PATH_RE = re.compile(
@@ -158,7 +165,13 @@ CMDLINE_RE = re.compile(
     r"(?i)((?:powershell(?:\.exe)?|pwsh(?:\.exe)?|cmd(?:\.exe)?|wscript(?:\.exe)?|"
     r"cscript(?:\.exe)?|mshta(?:\.exe)?|rundll32(?:\.exe)?|regsvr32(?:\.exe)?|"
     r"certutil(?:\.exe)?|bitsadmin(?:\.exe)?)"
-    r"[^\n\r]{8,400})"
+    r"[^\n\r]{0,400})"
+)
+# Require at least one suspicious signal so bare "cmd.exe" in prose is not an IOC.
+_CMDLINE_SIGNAL_RE = re.compile(
+    r"(?i)(?:-enc(?:odedcommand)?\b|-e\b|/c\b|-nop\b|-w(?:indowstyle)?\s+hidden|"
+    r"-executionpolicy|downloadstring|iex\b|frombase64|invoke-|https?://|"
+    r"\\\\[^\s\\]+\\|:[\\/]|%[a-z0-9_]+%|\$env:)"
 )
 
 PRIVATE_IPV4_PREFIXES = (
@@ -166,8 +179,10 @@ PRIVATE_IPV4_PREFIXES = (
     "127.",
     "169.254.",
     "192.168.",
+    "100.64.",  # CGNAT start; full /10 checked below
 )
 PRIVATE_IPV4_RANGES_16 = tuple(f"172.{i}." for i in range(16, 32))
+_BASE58_ALPHABET = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 REWRITER_DOMAIN_SUFFIXES = (
     "safelinks.protection.outlook.com",
@@ -200,6 +215,9 @@ def defang(text: str) -> str:
         ("[@]", "@"),
         ("[at]", "@"),
         ("(at)", "@"),
+        ("hxxp[:]//", "http://"),
+        ("hxxps[:]//", "https://"),
+        ("\\.", "."),
     )
     for old, new in replacements:
         out = out.replace(old, new)
@@ -250,12 +268,61 @@ def normalize_domain_key(domain: str) -> str:
     return d
 
 
+def _is_cgnat_ipv4(ip: str) -> bool:
+    """RFC 6598 shared address space 100.64.0.0/10."""
+    parts = ip.split(".")
+    if len(parts) != 4:
+        return False
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        return False
+    return a == 100 and 64 <= b <= 127
+
+
 def _is_private_ipv4(ip: str) -> bool:
     if ip.startswith(PRIVATE_IPV4_PREFIXES) or ip.startswith(PRIVATE_IPV4_RANGES_16):
+        return True
+    if _is_cgnat_ipv4(ip):
         return True
     if ip.startswith("0.") or ip == "255.255.255.255":
         return True
     return False
+
+
+def _is_private_ipv6(ip: str) -> bool:
+    try:
+        addr = ipaddress.IPv6Address(ip.split("%", 1)[0])
+    except ValueError:
+        return False
+    return bool(
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or (
+            addr.ipv4_mapped is not None
+            and _is_private_ipv4(str(addr.ipv4_mapped))
+        )
+    )
+
+
+def _hash_looks_like_guid_context(text: str, start: int, end: int) -> bool:
+    """Reject hex that sits inside a dashed GUID / UUID."""
+    window = text[max(0, start - 8) : min(len(text), end + 8)]
+    if _GUID_RE.search(window):
+        return True
+    # Contiguous hex longer than the match → fragment of a larger blob / GUID stripped
+    left = start > 0 and text[start - 1] in "0123456789abcdefABCDEF"
+    right = end < len(text) and text[end] in "0123456789abcdefABCDEF"
+    return left or right
+
+
+def _hash_has_digit_and_letter(val: str) -> bool:
+    """All-digit or all-alpha hex strings are usually not file hashes in tickets."""
+    has_digit = any(c.isdigit() for c in val)
+    has_alpha = any(c.isalpha() for c in val)
+    return has_digit and has_alpha
 
 
 def _context_snippet(text: str, match: re.Match[str], radius: int = 60) -> str:
@@ -298,10 +365,84 @@ def _valid_port(port: str) -> bool:
     return 1 <= n <= 65535
 
 
+def _b58decode(s: str) -> bytes | None:
+    try:
+        n = 0
+        for ch in s.encode("ascii"):
+            n = n * 58 + _BASE58_ALPHABET.index(ch)
+    except (ValueError, UnicodeEncodeError):
+        return None
+    # Preserve leading zeros (Base58 '1')
+    pad = 0
+    for ch in s:
+        if ch == "1":
+            pad += 1
+        else:
+            break
+    full = n.to_bytes((n.bit_length() + 7) // 8 or 1, "big")
+    return b"\x00" * pad + full
+
+
+def _bitcoin_base58check(addr: str) -> bool:
+    raw = _b58decode(addr)
+    if raw is None or len(raw) < 25:
+        return False
+    payload, checksum = raw[:-4], raw[-4:]
+    digest = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+    return checksum == digest
+
+
+def _bech32_polymod(values: list[int]) -> int:
+    gen = (0x3B6A57B2, 0x26508E6D, 0x1EA119FA, 0x3D4233DD, 0x2A1462B3)
+    chk = 1
+    for v in values:
+        b = chk >> 25
+        chk = ((chk & 0x1FFFFFF) << 5) ^ v
+        for i in range(5):
+            chk ^= gen[i] if ((b >> i) & 1) else 0
+    return chk
+
+
+def _bitcoin_bech32(addr: str) -> bool:
+    """Lightweight Bech32/Bech32m check for bc1… addresses."""
+    s = addr.lower()
+    if not (14 <= len(s) <= 74) or not s.startswith("bc1"):
+        return False
+    charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    pos = s.rfind("1")
+    if pos < 1:
+        return False
+    hrp, data_part = s[:pos], s[pos + 1 :]
+    if hrp != "bc" or len(data_part) < 6:
+        return False
+    try:
+        data = [charset.index(c) for c in data_part]
+    except ValueError:
+        return False
+    hrp_expand = [ord(c) >> 5 for c in hrp] + [0] + [ord(c) & 31 for c in hrp]
+    mod = _bech32_polymod(hrp_expand + data)
+    return mod in (1, 0x2BC830A3)  # bech32 / bech32m
+
+
 def _looks_like_bitcoin(addr: str) -> bool:
-    if addr.lower().startswith("bc1"):
-        return 14 <= len(addr) <= 74
-    return 26 <= len(addr) <= 35
+    low = addr.lower()
+    if low.startswith("bc1"):
+        return _bitcoin_bech32(addr)
+    if not (26 <= len(addr) <= 35):
+        return False
+    return _bitcoin_base58check(addr)
+
+
+def _trim_cmdline(cmd: str) -> str:
+    """Keep the process invocation; drop trailing ticket prose."""
+    cmd = cmd.strip().rstrip(".,;")
+    # Cut at double-space + capital letter run typical of pasted prose
+    m = re.search(r"\s{2,}(?=[A-ZА-Я])", cmd)
+    if m and m.start() >= 12:
+        cmd = cmd[: m.start()]
+    if len(cmd) > 240:
+        cmd = cmd[:240].rstrip()
+    return cmd
 
 
 def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
@@ -344,15 +485,18 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
             tags=list(tags or []),
         )
 
+    messenger_urls: set[str] = set()
     for m in MESSENGER_RE.finditer(cleaned):
         raw = m.group(1).rstrip(".,;:!?")
         value = raw if "://" in raw.lower() else f"https://{raw}"
         tags = ["telegram"] if "t.me" in value.lower() or "telegram" in value.lower() else ["discord"]
         add(value, IocType.MESSENGER, m, tags)
-        add(value, IocType.URL, m, ["messenger", *tags])
+        messenger_urls.add(normalize_url_key(value))
 
     for m in URL_RE.finditer(cleaned):
         url = m.group(0).rstrip(".,;:!?")
+        if normalize_url_key(url) in messenger_urls:
+            continue
         tags = []
         if "hxxp" in m.group(0).lower():
             tags.append("was_defanged")
@@ -388,19 +532,34 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         add(ip, IocType.IPV4, m, tags)
 
     for m in IPV6_RE.finditer(cleaned):
-        add(m.group(0), IocType.IPV6, m)
+        ip6 = m.group(0)
+        tags = ["private"] if _is_private_ipv6(ip6) else []
+        add(ip6, IocType.IPV6, m, tags)
 
     for m in SHA256_RE.finditer(cleaned):
-        add(m.group(0).lower(), IocType.SHA256, m)
+        val = m.group(0).lower()
+        if _hash_looks_like_guid_context(cleaned, m.start(), m.end()):
+            continue
+        if not _hash_has_digit_and_letter(val):
+            continue
+        add(val, IocType.SHA256, m)
 
     for m in SHA1_RE.finditer(cleaned):
         val = m.group(0).lower()
+        if _hash_looks_like_guid_context(cleaned, m.start(), m.end()):
+            continue
+        if not _hash_has_digit_and_letter(val):
+            continue
         if any(i.ioc_type == IocType.SHA256 and val in i.value for i in found.values()):
             continue
         add(val, IocType.SHA1, m)
 
     for m in MD5_RE.finditer(cleaned):
         val = m.group(0).lower()
+        if _hash_looks_like_guid_context(cleaned, m.start(), m.end()):
+            continue
+        if not _hash_has_digit_and_letter(val):
+            continue
         if any(
             i.ioc_type in (IocType.SHA1, IocType.SHA256) and val in i.value
             for i in found.values()
@@ -437,9 +596,10 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         add(m.group(1), IocType.MONERO, m)
 
     for m in CMDLINE_RE.finditer(cleaned):
-        cmd = m.group(1).strip().rstrip(".,;")
-        if len(cmd) >= 12:
-            add(cmd, IocType.COMMAND_LINE, m, ["process"])
+        cmd = _trim_cmdline(m.group(1))
+        if len(cmd) < 12 or not _CMDLINE_SIGNAL_RE.search(cmd):
+            continue
+        add(cmd, IocType.COMMAND_LINE, m, ["process"])
 
     for m in DOMAIN_RE.finditer(cleaned):
         domain = m.group(0).lower().rstrip(".")

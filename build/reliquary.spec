@@ -20,7 +20,7 @@ ctk_datas, ctk_binaries, ctk_hidden = collect_all("customtkinter")
 stix_datas = collect_data_files("stix2")
 
 list_datas = []
-for name in ("allowlist.txt", "denylist.txt", "verdict.ini"):
+for name in ("allowlist.txt", "denylist.txt", "verdict.ini", "ticket.ini"):
     src = ROOT / name
     if src.is_file():
         list_datas.append((str(src), "."))
@@ -47,12 +47,17 @@ a = Analysis(
         "PIL",
         "reliquary",
         "reliquary.gui.app",
+        "reliquary.gui.tabs",
+        "reliquary.gui.tooltips",
+        "reliquary.gui.ioc_table",
+        "reliquary.gui.theme",
         "reliquary.cli",
         "reliquary.core.office_extract",
         "reliquary.core.paths",
         "reliquary.core.qr_scan",
         "reliquary.core.ticket",
         "reliquary.core.defang",
+        "reliquary.core.prefs",
     ],
     hookspath=[],
     hooksconfig={},

@@ -2,78 +2,184 @@
 
 from __future__ import annotations
 
+import configparser
 from pathlib import Path
 
 from reliquary.core.defang import defang_value
 from reliquary.core.models import AnalysisResult, Ioc
+from reliquary.core.paths import config_path, ensure_user_lists
+
+_BUILTIN: dict[str, dict[str, str]] = {
+    "ru": {
+        "title": "=== IOC Extractor — заметка triage ===",
+        "source": "Источник",
+        "kind": "Тип",
+        "analyzed": "Разобрано",
+        "app": "Приложение",
+        "source_sha": "SHA256 источника",
+        "verdict": "Вердикт",
+        "summary": "Итог",
+        "reasons": "Причины",
+        "mail": "--- Письмо ---",
+        "subject": "Тема",
+        "from": "From",
+        "reply_to": "Reply-To",
+        "return_path": "Return-Path",
+        "message_id": "Message-ID",
+        "auth": "Auth",
+        "date": "Дата",
+        "urls": "--- Раскрытые URL ---",
+        "none": "(нет)",
+        "attachments": "--- Вложения ---",
+        "iocs": "--- IOC (топ {max}) ---",
+        "batch": "--- Пакет файлов ---",
+        "end": "=== конец ===",
+    },
+    "en": {
+        "title": "=== IOC Extractor — triage note ===",
+        "source": "Source",
+        "kind": "Kind",
+        "analyzed": "Analyzed",
+        "app": "App",
+        "source_sha": "Source SHA256",
+        "verdict": "Verdict",
+        "summary": "Summary",
+        "reasons": "Reasons",
+        "mail": "--- Mail ---",
+        "subject": "Subject",
+        "from": "From",
+        "reply_to": "Reply-To",
+        "return_path": "Return-Path",
+        "message_id": "Message-ID",
+        "auth": "Auth",
+        "date": "Date",
+        "urls": "--- Unwrapped URLs ---",
+        "none": "(none)",
+        "attachments": "--- Attachments ---",
+        "iocs": "--- IOC (top {max}) ---",
+        "batch": "--- Batch files ---",
+        "end": "=== end ===",
+    },
+}
+
+
+def load_ticket_config() -> tuple[str, bool, int, dict[str, str]]:
+    """Return (lang, defang_default, max_iocs, labels)."""
+    ensure_user_lists()
+    lang = "ru"
+    do_defang = True
+    max_iocs = 40
+    path = config_path("ticket.ini")
+    cp = configparser.ConfigParser()
+    if path.is_file():
+        try:
+            cp.read(path, encoding="utf-8")
+        except (OSError, configparser.Error):
+            cp = configparser.ConfigParser()
+    if cp.has_section("ticket"):
+        lang = (cp.get("ticket", "lang", fallback=lang) or lang).strip().lower()
+        if lang not in _BUILTIN:
+            lang = "ru"
+        do_defang = cp.getboolean("ticket", "defang", fallback=do_defang)
+        try:
+            max_iocs = max(5, min(200, cp.getint("ticket", "max_iocs", fallback=max_iocs)))
+        except ValueError:
+            pass
+    labels = dict(_BUILTIN[lang])
+    section = f"labels.{lang}"
+    if cp.has_section(section):
+        for key, val in cp.items(section):
+            labels[key] = val
+    return lang, do_defang, max_iocs, labels
 
 
 def build_ticket_template(
     result: AnalysisResult,
     iocs: list[Ioc] | None = None,
     *,
-    defang: bool = True,
-    max_iocs: int = 40,
+    defang: bool | None = None,
+    max_iocs: int | None = None,
     short: bool = False,
+    lang: str | None = None,
 ) -> str:
     """Plain-text triage note suitable for ITSM / chat handoff."""
+    cfg_lang, cfg_defang, cfg_max, labels = load_ticket_config()
+    if lang in _BUILTIN:
+        labels = dict(_BUILTIN[lang])
+        # Merge optional file overrides for that language
+        path = config_path("ticket.ini")
+        if path.is_file():
+            cp = configparser.ConfigParser()
+            try:
+                cp.read(path, encoding="utf-8")
+                section = f"labels.{lang}"
+                if cp.has_section(section):
+                    for key, val in cp.items(section):
+                        labels[key] = val
+            except (OSError, configparser.Error):
+                pass
+    elif cfg_lang:
+        pass  # labels already from config
+    use_defang = cfg_defang if defang is None else defang
+    use_max = cfg_max if max_iocs is None else max_iocs
     items = iocs if iocs is not None else result.iocs
     mid = result.mail_identity
 
     if short:
-        return _short_ticket(result, items, defang=defang)
+        return _short_ticket(result, items, defang=use_defang, labels=labels)
 
+    L = labels
     lines: list[str] = [
-        "=== IOC Extractor — triage note ===",
-        f"Source: {result.source_path}",
-        f"Kind: {result.source_kind}",
+        L["title"],
+        f"{L['source']}: {result.source_path}",
+        f"{L['kind']}: {result.source_kind}",
     ]
     if result.meta:
-        lines.append(f"Analyzed: {result.meta.analyzed_at}")
-        lines.append(f"App: v{result.meta.app_version}")
+        lines.append(f"{L['analyzed']}: {result.meta.analyzed_at}")
+        lines.append(f"{L['app']}: v{result.meta.app_version}")
         if result.meta.source_sha256:
-            lines.append(f"Source SHA256: {result.meta.source_sha256}")
+            lines.append(f"{L['source_sha']}: {result.meta.source_sha256}")
 
     if result.verdict:
         lines.append(
-            f"Verdict: {result.verdict.level.value.upper()} (score {result.verdict.score})"
+            f"{L['verdict']}: {result.verdict.level.value.upper()} (score {result.verdict.score})"
         )
-        lines.append(f"Summary: {result.verdict.summary}")
+        lines.append(f"{L['summary']}: {result.verdict.summary}")
         if result.verdict.reasons:
-            lines.append("Reasons:")
+            lines.append(f"{L['reasons']}:")
             for r in result.verdict.reasons[:8]:
                 lines.append(f"  - {r}")
 
     lines.append("")
-    lines.append("--- Mail ---")
+    lines.append(L["mail"])
     subject = (mid.subject if mid and mid.subject else result.subject) or "—"
     sender = (mid.from_header if mid and mid.from_header else result.sender) or "—"
     reply_to = (mid.reply_to if mid else "") or "—"
-    lines.append(f"Subject: {subject}")
-    lines.append(f"From: {sender}")
-    lines.append(f"Reply-To: {reply_to}")
+    lines.append(f"{L['subject']}: {subject}")
+    lines.append(f"{L['from']}: {sender}")
+    lines.append(f"{L['reply_to']}: {reply_to}")
     if mid:
-        lines.append(f"Return-Path: {mid.return_path or '—'}")
-        lines.append(f"Message-ID: {mid.message_id or '—'}")
+        lines.append(f"{L['return_path']}: {mid.return_path or '—'}")
+        lines.append(f"{L['message_id']}: {mid.message_id or '—'}")
         lines.append(
-            f"Auth: SPF={mid.spf or '—'} DKIM={mid.dkim or '—'} DMARC={mid.dmarc or '—'}"
+            f"{L['auth']}: SPF={mid.spf or '—'} DKIM={mid.dkim or '—'} DMARC={mid.dmarc or '—'}"
         )
-        lines.append(f"Date: {mid.date or '—'}")
+        lines.append(f"{L['date']}: {mid.date or '—'}")
 
     lines.append("")
-    lines.append("--- Unwrapped URLs ---")
+    lines.append(L["urls"])
     rewrites = [u for u in result.url_rewrites if u.changed]
     if not rewrites:
-        lines.append("(none)")
+        lines.append(L["none"])
     else:
         for u in rewrites[:20]:
-            val = defang_value(u.unwrapped) if defang else u.unwrapped
+            val = defang_value(u.unwrapped) if use_defang else u.unwrapped
             lines.append(f"  {u.rewriter}: {val}")
 
     lines.append("")
-    lines.append("--- Attachments ---")
+    lines.append(L["attachments"])
     if not result.attachments:
-        lines.append("(none)")
+        lines.append(L["none"])
     else:
         for a in result.attachments[:30]:
             flags = ",".join(a.risk_flags) if a.risk_flags else "-"
@@ -82,19 +188,19 @@ def build_ticket_template(
                 lines.append(f"    OLE streams: {', '.join(a.ole_streams[:8])}")
 
     lines.append("")
-    lines.append(f"--- IOC (top {max_iocs}) ---")
+    lines.append(L["iocs"].replace("{max}", str(use_max)))
     if not items:
-        lines.append("(none)")
+        lines.append(L["none"])
     else:
-        for ioc in items[:max_iocs]:
-            val = defang_value(ioc.value) if defang else ioc.value
+        for ioc in items[:use_max]:
+            val = defang_value(ioc.value) if use_defang else ioc.value
             tags = ",".join(ioc.tags) if ioc.tags else ""
             suffix = f" [{tags}]" if tags else ""
             lines.append(f"  {ioc.ioc_type.value}|{val}{suffix}")
 
     if result.file_rows and len(result.file_rows) > 1:
         lines.append("")
-        lines.append("--- Batch files ---")
+        lines.append(L["batch"])
         for row in result.file_rows:
             name = Path(row.path).name
             v = row.verdict_level or "-"
@@ -102,30 +208,28 @@ def build_ticket_template(
             lines.append(f"  {name} | {row.kind} | {v} | iocs={row.ioc_count}{err}")
 
     lines.append("")
-    lines.append("=== end ===")
+    lines.append(L["end"])
     return "\n".join(lines)
 
 
 def _short_ticket(
-    result: AnalysisResult, items: list[Ioc], *, defang: bool
+    result: AnalysisResult, items: list[Ioc], *, defang: bool, labels: dict[str, str]
 ) -> str:
     mid = result.mail_identity
     v = result.verdict
     subject = (mid.subject if mid and mid.subject else result.subject) or "—"
     sender = (mid.from_header if mid and mid.from_header else result.sender) or "—"
     mid_s = (mid.message_id if mid else "") or "—"
-    verdict = (
-        f"{v.level.value.upper()} {v.score}" if v else "—"
-    )
+    verdict = f"{v.level.value.upper()} {v.score}" if v else "—"
     lines = [
-        f"Verdict: {verdict} | {Path(result.source_path).name}",
-        f"From: {sender}",
-        f"Subject: {subject}",
+        f"{labels['verdict']}: {verdict} | {Path(result.source_path).name}",
+        f"{labels['from']}: {sender}",
+        f"{labels['subject']}: {subject}",
         f"Msg-ID: {mid_s}",
     ]
     if mid:
         lines.append(
-            f"Auth: SPF={mid.spf or '—'} DKIM={mid.dkim or '—'} DMARC={mid.dmarc or '—'}"
+            f"{labels['auth']}: SPF={mid.spf or '—'} DKIM={mid.dkim or '—'} DMARC={mid.dmarc or '—'}"
         )
     unwrap = next((u.unwrapped for u in result.url_rewrites if u.changed), "")
     if unwrap:
@@ -135,9 +239,7 @@ def _short_ticket(
         lines.append(f"Att: {a.filename} sha256={a.sha256[:16]}…")
     top = items[:5]
     if top:
-        vals = []
-        for ioc in top:
-            vals.append(defang_value(ioc.value) if defang else ioc.value)
+        vals = [defang_value(ioc.value) if defang else ioc.value for ioc in top]
         lines.append("IOC: " + " | ".join(vals))
     return "\n".join(lines)
 

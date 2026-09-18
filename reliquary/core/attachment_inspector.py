@@ -15,6 +15,9 @@ from reliquary.core.models import AttachmentInfo
 
 MAX_KEEP_BYTES = 15 * 1024 * 1024
 MAX_ARCHIVE_ENTRIES = 200
+MAX_NEST_DEPTH = 2
+MAX_NESTED_MEMBER_BYTES = 5 * 1024 * 1024
+MAX_NESTED_MEMBERS = 8
 
 DANGEROUS_EXTENSIONS = {
     ".exe",
@@ -103,15 +106,92 @@ def _zip_encrypted(data: bytes) -> bool:
     return False
 
 
-def _inventory_zip(data: bytes) -> tuple[list[str], list[str], list[str]]:
+def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str], list[str]]:
     """Return (entries, risk_flags, notes) for a ZIP/OOXML container. No full extract."""
     entries: list[str] = []
     flags: list[str] = []
     notes: list[str] = []
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
-            names = [zi.filename for zi in zf.infolist() if not zi.is_dir()]
+            infos = [zi for zi in zf.infolist() if not zi.is_dir()]
+            names = [zi.filename for zi in infos]
             encrypted = any(zi.flag_bits & 0x1 for zi in zf.infolist())
+
+            if encrypted or _zip_encrypted(data):
+                flags.append("encrypted_archive")
+                notes.append(
+                    "ZIP с паролем / encrypted members — inventory по именам без извлечения"
+                )
+
+            entries = names[:MAX_ARCHIVE_ENTRIES]
+            if len(names) > MAX_ARCHIVE_ENTRIES:
+                notes.append(
+                    f"В архиве {len(names)} файлов — показаны первые {MAX_ARCHIVE_ENTRIES}"
+                )
+            else:
+                notes.append(f"Содержимое архива: {len(names)} файл(ов)")
+
+            dangerous_hits: list[str] = []
+            double_hits: list[str] = []
+            nested_mail: list[str] = []
+            for name in names:
+                base = Path(name).name
+                lower = base.lower()
+                if DOUBLE_EXT_RE.search(lower):
+                    double_hits.append(base)
+                ext = Path(lower).suffix
+                if ext in DANGEROUS_EXTENSIONS:
+                    dangerous_hits.append(base)
+                if ext in NESTED_MAIL_EXT:
+                    nested_mail.append(base)
+
+            if double_hits:
+                flags.append("archive_double_extension")
+                notes.append("Двойное расширение внутри архива: " + ", ".join(double_hits[:8]))
+            if dangerous_hits:
+                flags.append("archive_dangerous_member")
+                notes.append("Опасные члены архива: " + ", ".join(dangerous_hits[:8]))
+            if nested_mail:
+                flags.append("archive_nested_email")
+                notes.append("Вложенные письма в архиве: " + ", ".join(nested_mail[:8]))
+
+            nested_archives = [
+                zi
+                for zi in infos
+                if Path(zi.filename).suffix.lower() in ARCHIVE_EXTENSIONS
+            ]
+            if nested_archives:
+                flags.append("nested_archive")
+                notes.append("Внутри есть вложенный архив")
+
+            if depth < MAX_NEST_DEPTH and nested_archives:
+                peeked = 0
+                for zi in nested_archives:
+                    if peeked >= MAX_NESTED_MEMBERS:
+                        notes.append(
+                            f"Вложенные архивы: разобраны первые {MAX_NESTED_MEMBERS}"
+                        )
+                        break
+                    if zi.file_size > MAX_NESTED_MEMBER_BYTES:
+                        notes.append(
+                            f"Пропуск крупного вложенного архива: {Path(zi.filename).name}"
+                        )
+                        continue
+                    try:
+                        nested_data = zf.read(zi)
+                    except Exception as exc:  # noqa: BLE001
+                        notes.append(f"Не прочитан {zi.filename}: {exc}")
+                        continue
+                    peeked += 1
+                    n_entries, n_flags, n_notes = _inventory_zip(nested_data, depth=depth + 1)
+                    prefix = zi.filename.rstrip("/")
+                    entries.extend(f"{prefix}::{e}" for e in n_entries[:80])
+                    for fl in n_flags:
+                        if fl not in flags:
+                            flags.append(fl)
+                    for note in n_notes[:4]:
+                        notes.append(f"[{Path(zi.filename).name}] {note}")
+
     except zipfile.BadZipFile:
         notes.append("ZIP: повреждённый или нестандартный контейнер")
         if _zip_encrypted(data):
@@ -121,44 +201,6 @@ def _inventory_zip(data: bytes) -> tuple[list[str], list[str], list[str]]:
     except Exception as exc:  # noqa: BLE001
         notes.append(f"ZIP inventory: {exc}")
         return entries, flags, notes
-
-    if encrypted or _zip_encrypted(data):
-        flags.append("encrypted_archive")
-        notes.append("ZIP с паролем / encrypted members — inventory по именам без извлечения")
-
-    entries = names[:MAX_ARCHIVE_ENTRIES]
-    if len(names) > MAX_ARCHIVE_ENTRIES:
-        notes.append(f"В архиве {len(names)} файлов — показаны первые {MAX_ARCHIVE_ENTRIES}")
-    else:
-        notes.append(f"Содержимое архива: {len(names)} файл(ов)")
-
-    dangerous_hits: list[str] = []
-    double_hits: list[str] = []
-    nested_mail: list[str] = []
-    for name in names:
-        base = Path(name).name
-        lower = base.lower()
-        if DOUBLE_EXT_RE.search(lower):
-            double_hits.append(base)
-        ext = Path(lower).suffix
-        if ext in DANGEROUS_EXTENSIONS:
-            dangerous_hits.append(base)
-        if ext in NESTED_MAIL_EXT:
-            nested_mail.append(base)
-
-    if double_hits:
-        flags.append("archive_double_extension")
-        notes.append("Двойное расширение внутри архива: " + ", ".join(double_hits[:8]))
-    if dangerous_hits:
-        flags.append("archive_dangerous_member")
-        notes.append("Опасные члены архива: " + ", ".join(dangerous_hits[:8]))
-    if nested_mail:
-        flags.append("archive_nested_email")
-        notes.append("Вложенные письма в архиве: " + ", ".join(nested_mail[:8]))
-
-    if any(Path(n).suffix.lower() in ARCHIVE_EXTENSIONS for n in names):
-        flags.append("nested_archive")
-        notes.append("Внутри есть вложенный архив")
 
     return entries, flags, notes
 

@@ -1,11 +1,10 @@
-[project]
 name = "reliquary"
-version = "1.6.0"
+version = "1.7.0"
 description = "IOC Extractor — offline SOC IOC extractor for email, tickets, PDF/HTML"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "customtkinter>=5.2.2",
+  "customtkinter>=5.2.2,<7",
   "beautifulsoup4>=4.12.3",
   "lxml>=5.2.1",
   "pypdf>=4.3.1",
@@ -18,6 +17,11 @@ dependencies = [
   "pillow>=10.0.0",
   "windnd>=1.0.7; platform_system=='Windows'",
 ]
+
+[project.optional-dependencies]
+rar = ["rarfile>=4.1"]
+qr = ["pyzbar>=0.1.9"]
+dev = ["pytest>=8.0", "pyinstaller>=6.0"]
 
 [project.scripts]
 reliquary = "reliquary.cli:main"

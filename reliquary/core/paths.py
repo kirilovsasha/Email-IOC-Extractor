@@ -45,6 +45,64 @@ weight_urgency=15
 weight_links_and_attachments=10
 """
 
+_DEFAULT_TICKET = """# Шаблоны тикета для буфера. Язык: ru | en
+
+[ticket]
+lang = ru
+defang = true
+max_iocs = 40
+
+[labels.ru]
+title = === IOC Extractor — заметка triage ===
+source = Источник
+kind = Тип
+analyzed = Разобрано
+app = Приложение
+source_sha = SHA256 источника
+verdict = Вердикт
+summary = Итог
+reasons = Причины
+mail = --- Письмо ---
+subject = Тема
+from = From
+reply_to = Reply-To
+return_path = Return-Path
+message_id = Message-ID
+auth = Auth
+date = Дата
+urls = --- Раскрытые URL ---
+none = (нет)
+attachments = --- Вложения ---
+iocs = --- IOC (топ {max}) ---
+batch = --- Пакет файлов ---
+end = === конец ===
+
+[labels.en]
+title = === IOC Extractor — triage note ===
+source = Source
+kind = Kind
+analyzed = Analyzed
+app = App
+source_sha = Source SHA256
+verdict = Verdict
+summary = Summary
+reasons = Reasons
+mail = --- Mail ---
+subject = Subject
+from = From
+reply_to = Reply-To
+return_path = Return-Path
+message_id = Message-ID
+auth = Auth
+date = Date
+urls = --- Unwrapped URLs ---
+none = (none)
+attachments = --- Attachments ---
+iocs = --- IOC (top {max}) ---
+batch = --- Batch files ---
+end = === end ===
+"""
+
 
 def app_dir() -> Path:
     """Directory next to the .exe (frozen) or project root (dev)."""
@@ -74,7 +132,7 @@ def file_mtime_iso(path: Path) -> str:
 
 
 def ensure_user_lists() -> Path:
-    """Create allowlist.txt / denylist.txt / verdict.ini next to the app if missing.
+    """Create allowlist/denylist/verdict/ticket configs next to the app if missing.
 
     Prefers bundled copies from the PyInstaller archive; otherwise writes stubs.
     Returns the app directory.
@@ -84,6 +142,7 @@ def ensure_user_lists() -> Path:
         "allowlist.txt": _DEFAULT_ALLOWLIST,
         "denylist.txt": _DEFAULT_DENYLIST,
         "verdict.ini": _DEFAULT_VERDICT,
+        "ticket.ini": _DEFAULT_TICKET,
     }
     for name, stub in defaults.items():
         dest = root / name

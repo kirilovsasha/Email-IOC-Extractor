@@ -122,8 +122,8 @@ def sort_iocs(iocs: list[Ioc]) -> list[Ioc]:
     return sorted(iocs, key=rank)
 
 
-def _with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
-    """Shallow copy result with replaced IOC list for exporters."""
+def with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
+    """Shallow copy result with replaced IOC list for exporters / GUI."""
     return AnalysisResult(
         source_path=result.source_path,
         source_kind=result.source_kind,
@@ -144,6 +144,10 @@ def _with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
     )
 
 
+# Back-compat alias
+_with_iocs = with_iocs
+
+
 def _stix_pattern(ioc: Ioc) -> str | None:
     v = ioc.value.replace("\\", "\\\\").replace("'", "\\'")
     mapping = {
@@ -158,17 +162,16 @@ def _stix_pattern(ioc: Ioc) -> str | None:
         IocType.MESSENGER: f"[url:value = '{v}']",
         IocType.FILEPATH: f"[file:name = '{v}']",
         IocType.UNC: f"[file:name = '{v}']",
-        IocType.MUTEX: f"[file:name = '{v}']",
-        IocType.BITCOIN: f"[file:name = '{v}']",
-        IocType.MONERO: f"[file:name = '{v}']",
+        IocType.MUTEX: f"[mutex:name = '{v}']",
+        IocType.BITCOIN: f"[file:name = 'btc:{v}']",
+        IocType.MONERO: f"[file:name = 'xmr:{v}']",
         IocType.FILENAME: f"[file:name = '{v}']",
         IocType.COMMAND_LINE: f"[process:command_line = '{v}']",
+        IocType.REGISTRY: f"[windows-registry-key:key = '{v}']",
     }
     if ioc.ioc_type == IocType.IP_PORT and ":" in ioc.value:
         ip = ioc.value.rsplit(":", 1)[0].replace("\\", "\\\\").replace("'", "\\'")
         return f"[ipv4-addr:value = '{ip}']"
-    if ioc.ioc_type == IocType.REGISTRY:
-        return f"[windows-registry-key:key = '{v}']"
     return mapping.get(ioc.ioc_type)
 
 

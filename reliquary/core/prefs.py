@@ -11,15 +11,23 @@ from reliquary.core.paths import app_dir, ensure_user_lists
 _PREFS_NAME = "ui_prefs.json"
 _DEFAULTS: dict[str, Any] = {
     "last_dir": "",
+    "last_export_dir": "",
     "copy_format": "type|value",
     "export_choice": "CSV",
     "ticket_short": False,
+    "ticket_lang": "ru",
     "ui_scale": 1.0,
+    "window_geometry": "1320x820",
     "hide_rewriter": True,
     "hide_allowlisted": True,
     "hide_private": False,
     "only_denylisted": False,
     "actionable_only": False,
+    "cat_network": True,
+    "cat_hashes": True,
+    "cat_host": True,
+    "cat_crypto": True,
+    "folder_warn_threshold": 80,
 }
 
 
@@ -43,6 +51,10 @@ def load_prefs() -> dict[str, Any]:
                 data[key] = raw[key]
             elif key not in data:
                 data[key] = default
+        # Preserve unknown keys from older prefs
+        for key, val in raw.items():
+            if key not in data:
+                data[key] = val
     return data
 
 
