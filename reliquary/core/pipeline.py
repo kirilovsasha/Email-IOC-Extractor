@@ -243,5 +243,24 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
             + ")"
         )
     merged.iocs = _finalize_iocs(iocs)
-    merged.verdict = render_verdict(merged)
+    # Verdict only when the batch includes at least one email
+    if any(r.source_kind == "email" for r in results):
+        email_only = AnalysisResult(
+            source_path=merged.source_path,
+            source_kind="email",
+            subject=merged.subject,
+            sender=merged.sender,
+            recipients=list(merged.recipients),
+            iocs=list(merged.iocs),
+            headers=list(merged.headers),
+            raw_headers=dict(merged.raw_headers),
+            mail_identity=merged.mail_identity,
+            url_rewrites=list(merged.url_rewrites),
+            attachments=list(merged.attachments),
+            raw_text_preview=merged.raw_text_preview,
+            errors=list(merged.errors),
+        )
+        merged.verdict = render_verdict(email_only)
+    else:
+        merged.verdict = None
     return merged

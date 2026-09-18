@@ -1,7 +1,6 @@
 """Optional phishing / mail-triage heuristics (fully offline).
 
-Not the primary IOC Extractor output — IOC extraction and STIX/CSV export are.
-This module adds a secondary score + actions when analyzing email artifacts.
+Only applied to email artifacts (.eml / .msg). IOC extraction remains primary.
 """
 
 from __future__ import annotations
@@ -187,7 +186,11 @@ def build_actions(level: VerdictLevel, result: AnalysisResult) -> list[ActionRec
     return actions
 
 
-def render_verdict(result: AnalysisResult) -> Verdict:
+def render_verdict(result: AnalysisResult) -> Verdict | None:
+    """Phishing / mail triage score — only for email artifacts."""
+    if result.source_kind != "email":
+        return None
+
     score = 0
     reasons: list[str] = []
 

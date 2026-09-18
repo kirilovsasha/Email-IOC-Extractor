@@ -823,8 +823,9 @@ class IocExtractorApp(ctk.CTk):
 
     # -------------------------------------------------------- mail / verdict
     def _update_verdict_card(self, result: AnalysisResult) -> None:
+        # Email-only (batch may carry a verdict derived from included .eml/.msg)
         v = result.verdict
-        if not v:
+        if not v or result.source_kind not in ("email", "batch"):
             self.verdict_card.pack_forget()
             return
         color = _VERDICT_COLORS.get(v.level.value, COLORS["text"])
@@ -1235,6 +1236,7 @@ class IocExtractorApp(ctk.CTk):
             f"{__app_name__} v{__version__}\n"
             f"{__tagline__}\n\n"
             "Офлайн IOC-экстрактор для SOC: письма, PDF, HTML, Office, ZIP, текст.\n"
+            "Вердикт triage — только для писем (.eml / .msg).\n"
             "Без сетевых запросов (enforce_offline).\n\n"
             "Экспорт: CSV (UTF-8 BOM), STIX, JSON, MISP, OpenCTI, YARA.\n\n"
             f"Папка приложения:\n{app_dir()}\n\n"

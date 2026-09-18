@@ -227,7 +227,7 @@ def test_paths_app_dir_and_lists(tmp_path: Path, monkeypatch):
 
 def test_analyze_ticket_sample():
     result = analyze_file(SAMPLES / "ticket_sample.txt")
-    assert result.verdict is not None
+    assert result.verdict is None  # verdict only for emails
     values = {i.value for i in result.iocs}
     assert any("paypa1-secure.xyz" in v or "malicious.example.com" in v for v in values)
     assert any(i.ioc_type.value == "sha256" for i in result.iocs)
@@ -264,11 +264,20 @@ def test_export_csv_bom_and_stix(tmp_path: Path):
 
 
 def test_verdict_actions_present():
-    """Phishing verdict is optional add-on; still produced for emails."""
+    """Phishing verdict is email-only; still produced for .eml."""
     result = analyze_file(SAMPLES / "phishing_sample.eml")
     assert result.verdict is not None
     assert len(result.verdict.actions) >= 1
     assert len(result.iocs) >= 1
+
+
+def test_verdict_only_for_email():
+    ticket = analyze_text("Host 1.2.3.4 https://evil.example.phishing/a")
+    assert ticket.source_kind == "ticket"
+    assert ticket.verdict is None
+    mail = analyze_file(SAMPLES / "phishing_sample.eml")
+    assert mail.source_kind == "email"
+    assert mail.verdict is not None
 
 
 def test_cli_defaults_to_ioc_list(capsys):
