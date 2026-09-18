@@ -534,18 +534,17 @@ class IocExtractorApp(ctk.CTk):
         mail_bar = ctk.CTkFrame(self._tab_frames["mail"], fg_color="transparent", height=32)
         mail_bar.pack(fill="x", padx=2, pady=(2, 0))
         ctk.CTkButton(
-            mail_bar, text="Copy From", width=90, height=26, command=self._copy_from, **BTN_SECONDARY
+            mail_bar, text="Copy From", width=90, command=self._copy_from, **BTN_SECONDARY
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
             mail_bar,
             text="Copy Msg-ID",
             width=100,
-            height=26,
             command=self._copy_message_id,
             **BTN_SECONDARY,
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
-            mail_bar, text="Copy Auth", width=90, height=26, command=self._copy_auth, **BTN_SECONDARY
+            mail_bar, text="Copy Auth", width=90, command=self._copy_auth, **BTN_SECONDARY
         ).pack(side="left")
         self.mail_box = self._make_text(self._tab_frames["mail"])
         self.err_box = self._make_text(self._tab_frames["err"])
