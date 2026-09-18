@@ -17,9 +17,17 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from reliquary import __app_name__, __tagline__, __version__
-from reliquary.core.allowlist import list_file_path
+from reliquary.core.allowlist import (
+    append_list_entries,
+    import_entries_from_csv,
+    import_entries_from_misp,
+    list_file_path,
+    list_mtime_label,
+)
+from reliquary.core.defang import defang_ioc_line, defang_value
 from reliquary.core.exporters import (
     _with_iocs,
+    export_case_pack,
     export_csv,
     export_misp,
     export_opencti,
@@ -32,6 +40,7 @@ from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
 from reliquary.core.paths import app_dir, ensure_user_lists
 from reliquary.core.pipeline import analyze_file, analyze_text, merge_results
+from reliquary.core.ticket import build_message_id_block, build_ticket_template
 from reliquary.gui.theme import (
     BTN_H,
     BTN_PRIMARY,
@@ -66,6 +75,8 @@ _SUPPORTED_GLOBS = (
     "*.docx",
     "*.xlsx",
     "*.zip",
+    "*.7z",
+    "*.rar",
 )
 _SUPPORTED_SUFFIXES = {g[1:].lower() for g in _SUPPORTED_GLOBS}
 
@@ -76,8 +87,8 @@ _CATEGORY_TYPES: dict[str, set[str]] = {
     "Крипто": set(IOC_GROUPS[3][1]),
 }
 
-_EXPORT_CHOICES = ("CSV", "STIX", "JSON", "MISP", "OpenCTI", "YARA")
-_COPY_FORMATS = ("type|value", "value", "csv")
+_EXPORT_CHOICES = ("CSV", "STIX", "JSON", "MISP", "OpenCTI", "YARA", "Case pack")
+_COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
 _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
 
@@ -135,9 +146,21 @@ class IocExtractorApp(ctk.CTk):
             text_color=COLORS["muted"],
         ).pack(side="left", pady=10)
 
+        self.lists_mtime = ctk.CTkLabel(
+            header,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["muted"],
+        )
+        self.lists_mtime.pack(side="left", padx=(14, 0), pady=10)
+        self._refresh_lists_mtime()
+
         ctk.CTkButton(
             header, text="О программе", width=110, command=self.show_about, **BTN_SECONDARY
         ).pack(side="right", padx=(6, 16), pady=8)
+        ctk.CTkButton(
+            header, text="Импорт списков", width=120, command=self.import_lists, **BTN_SECONDARY
+        ).pack(side="right", padx=(6, 0), pady=8)
         ctk.CTkButton(
             header, text="Конфиги", width=90, command=self.open_configs, **BTN_SECONDARY
         ).pack(side="right", padx=0, pady=8)
@@ -197,6 +220,12 @@ class IocExtractorApp(ctk.CTk):
             width=96,
             command=self.save_attachments,
             **BTN_SECONDARY,
+        ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            right_actions, text="Тикет", width=72, command=self.copy_ticket, **BTN_SECONDARY
+        ).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(
+            right_actions, text="Msg-ID", width=72, command=self.copy_message_id_block, **BTN_SECONDARY
         ).pack(side="left")
 
         # —— Compact filters (one strip) ——
@@ -361,10 +390,11 @@ class IocExtractorApp(ctk.CTk):
         )
         self.tabs.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-        for name in ("IOC", "URL", "Вложения", "Письмо", "Ошибки"):
+        for name in ("IOC", "Пакет", "URL", "Вложения", "Письмо", "Ошибки"):
             self.tabs.add(name)
 
         self.ioc_box = self._make_text(self.tabs.tab("IOC"))
+        self.batch_box = self._make_text(self.tabs.tab("Пакет"))
         self.url_box = self._make_text(self.tabs.tab("URL"))
         self.att_box = self._make_text(self.tabs.tab("Вложения"))
         self.mail_box = self._make_text(self.tabs.tab("Письмо"))
@@ -543,6 +573,11 @@ class IocExtractorApp(ctk.CTk):
     def _set_status(self, text: str) -> None:
         self.status.configure(text=text)
 
+    def _refresh_lists_mtime(self) -> None:
+        allow = list_mtime_label("allowlist.txt")
+        deny = list_mtime_label("denylist.txt")
+        self.lists_mtime.configure(text=f"allow {allow} · deny {deny}")
+
     # ----------------------------------------------------------- filtering
     def _reset_filters(self) -> None:
         for var in self.cat_vars.values():
@@ -621,6 +656,7 @@ class IocExtractorApp(ctk.CTk):
 
         self._update_verdict_badge(self.result)
         self._fill_iocs(self.result, filtered)
+        self._fill_batch(self.result)
         self._fill_urls(self.result)
         self._fill_attachments(self.result)
         self._fill_mail_tab(self.result)
@@ -644,11 +680,11 @@ class IocExtractorApp(ctk.CTk):
             filetypes=[
                 (
                     "Все поддерживаемые",
-                    "*.eml *.msg *.pdf *.html *.htm *.txt *.csv *.log *.docx *.xlsx *.zip",
+                    "*.eml *.msg *.pdf *.html *.htm *.txt *.csv *.log *.docx *.xlsx *.zip *.7z *.rar",
                 ),
                 ("Email", "*.eml *.msg"),
                 ("Office", "*.docx *.xlsx"),
-                ("Архив", "*.zip"),
+                ("Архив", "*.zip *.7z *.rar"),
                 ("PDF", "*.pdf"),
                 ("HTML", "*.html *.htm"),
                 ("Текст / тикет", "*.txt *.csv *.log *.md"),
@@ -668,7 +704,7 @@ class IocExtractorApp(ctk.CTk):
             messagebox.showinfo(
                 __app_name__,
                 "В папке нет поддерживаемых файлов "
-                "(.eml .msg .pdf .html .txt .docx .xlsx .zip).",
+                "(.eml .msg .pdf .html .txt .docx .xlsx .zip .7z .rar).",
             )
             return
         self._analyze_paths(paths)
@@ -814,7 +850,73 @@ class IocExtractorApp(ctk.CTk):
         self.clipboard_append(value)
         self._set_status("Message-ID скопирован")
 
+    def copy_message_id_block(self) -> None:
+        if not self.result:
+            messagebox.showinfo(__app_name__, "Сначала извлеките IOC")
+            return
+        text = build_message_id_block(self.result)
+        if not text.strip():
+            messagebox.showinfo(__app_name__, "Message-ID не найден")
+            return
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self._set_status("Message-ID / campaign блок скопирован")
+
+    def copy_ticket(self) -> None:
+        if not self.result:
+            messagebox.showinfo(__app_name__, "Сначала извлеките IOC")
+            return
+        text = build_ticket_template(self.result, self._filtered_iocs(), defang=True)
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self._set_status("Шаблон тикета скопирован (defanged)")
+
     # ----------------------------------------------------------- fillers
+    def _fill_batch(self, result: AnalysisResult) -> None:
+        self._clear_box(self.batch_box)
+        rows = result.file_rows or []
+        if not rows:
+            self._put(
+                self.batch_box,
+                "Пакетная таблица появится при открытии нескольких файлов / папки.\n",
+                "empty",
+            )
+            return
+        self._put(
+            self.batch_box,
+            f"▸ Файлы  ({len(rows)})  — путь · вердикт · IOC · топ · ошибки\n\n",
+            "section",
+        )
+        for row in rows:
+            name = Path(row.path).name
+            level = (row.verdict_level or "—").upper()
+            color = {
+                "MALICIOUS": "danger",
+                "SUSPICIOUS": "warn",
+                "UNKNOWN": "info",
+                "BENIGN": "ok",
+            }.get(level, "muted")
+            score = f" {row.verdict_score}" if row.verdict_score is not None else ""
+            self._put(self.batch_box, f"  {name}\n", "value")
+            self._put(self.batch_box, f"      {row.kind} · ", "muted")
+            self._put(self.batch_box, f"{level}{score}", color)
+            self._put(self.batch_box, f" · IOC {row.ioc_count}\n", "muted")
+            if row.subject:
+                self._put(self.batch_box, f"      Subject  {row.subject[:120]}\n", "meta")
+            if row.sender:
+                self._put(self.batch_box, f"      From     {row.sender[:120]}\n", "muted")
+            if row.message_id:
+                self._put(self.batch_box, f"      Msg-ID   {row.message_id}\n", "info")
+            if row.top_iocs:
+                self._put(self.batch_box, f"      Топ      {', '.join(row.top_iocs[:5])}\n", "value")
+            if row.errors:
+                self._put(
+                    self.batch_box,
+                    f"      Ошибки   {'; '.join(row.errors[:3])}\n",
+                    "danger",
+                )
+            self._put(self.batch_box, "\n")
+
     def _fill_iocs(self, result: AnalysisResult, filtered) -> None:
         self._clear_box(self.ioc_box)
         self._ioc_by_tag.clear()
@@ -921,17 +1023,39 @@ class IocExtractorApp(ctk.CTk):
             self._put(self.att_box, f"      SHA256  {a.sha256}\n", "value")
             if a.risk_flags:
                 self._put(self.att_box, f"      флаги   {', '.join(a.risk_flags)}\n", "warn")
-            if a.archive_entries:
-                preview = ", ".join(Path(e).name for e in a.archive_entries[:12])
-                more = len(a.archive_entries) - 12
+            if a.ole_streams:
+                preview = ", ".join(a.ole_streams[:10])
+                more = len(a.ole_streams) - 10
                 self._put(
                     self.att_box,
-                    f"      архив   {preview}"
+                    f"      OLE     {preview}"
                     + (f" …+{more}" if more > 0 else "")
                     + "\n",
-                    "meta",
+                    "info",
                 )
-            for note in a.notes[:3]:
+            if a.nested_kind:
+                self._put(self.att_box, f"      nested  {a.nested_kind}\n", "meta")
+            if a.archive_entries:
+                # Hide QR: stash lines from archive preview — show separately
+                members = [e for e in a.archive_entries if not e.startswith("QR:")]
+                qr_lines = [e[3:] for e in a.archive_entries if e.startswith("QR:")]
+                if members:
+                    preview = ", ".join(Path(e).name for e in members[:12])
+                    more = len(members) - 12
+                    self._put(
+                        self.att_box,
+                        f"      архив   {preview}"
+                        + (f" …+{more}" if more > 0 else "")
+                        + "\n",
+                        "meta",
+                    )
+                if qr_lines:
+                    self._put(
+                        self.att_box,
+                        f"      QR      {'; '.join(qr_lines[:5])}\n",
+                        "danger",
+                    )
+            for note in a.notes[:5]:
                 self._put(self.att_box, f"      — {note}\n", "muted")
             self._put(self.att_box, "\n")
 
@@ -1062,6 +1186,12 @@ class IocExtractorApp(ctk.CTk):
             for i in iocs:
                 writer.writerow([i.ioc_type.value, i.value, "|".join(i.tags)])
             return buf.getvalue()
+        if fmt == "defanged":
+            return "\n".join(defang_value(i.value) for i in iocs)
+        if fmt == "defanged|type":
+            return "\n".join(
+                defang_ioc_line(i.ioc_type.value, i.value, with_type=True) for i in iocs
+            )
         return "\n".join(f"{i.ioc_type.value}|{i.value}" for i in iocs)
 
     def copy_iocs(self) -> None:
@@ -1127,7 +1257,6 @@ class IocExtractorApp(ctk.CTk):
         dialogs = {
             "csv": (".csv", [("CSV", "*.csv")], "iocs.csv", export_csv),
             "stix": (".json", [("STIX JSON", "*.json")], "iocs_stix.json", export_stix),
-            "json": (".json", [("JSON", "*.json")], "iocs_report.json", export_report_json),
         }
         if kind_l in dialogs:
             ext, ftypes, initial, fn = dialogs[kind_l]
@@ -1137,6 +1266,19 @@ class IocExtractorApp(ctk.CTk):
             if path:
                 fn(filtered, path)
                 self._set_status(f"{kind_l.upper()}: {path}")
+            return
+
+        if kind_l == "json":
+            path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON", "*.json")],
+                initialfile="iocs_report.json",
+            )
+            if path:
+                export_report_json(
+                    filtered, path, filters_applied=self._filter_kwargs_serializable()
+                )
+                self._set_status(f"JSON: {path}")
             return
 
         if kind_l == "misp":
@@ -1166,11 +1308,79 @@ class IocExtractorApp(ctk.CTk):
             if path:
                 export_yara(filtered, path, iocs=iocs)
                 self._set_status(f"YARA: {path}")
+        elif kind_l in ("case pack", "case_pack", "casepack"):
+            path = filedialog.asksaveasfilename(
+                defaultextension=".zip",
+                filetypes=[("Case pack ZIP", "*.zip")],
+                initialfile="case_pack.zip",
+            )
+            if path:
+                out = export_case_pack(
+                    filtered,
+                    path,
+                    filters_applied=self._filter_kwargs_serializable(),
+                    include_attachments=True,
+                )
+                self._set_status(f"Case pack: {out}")
+
+    def _filter_kwargs_serializable(self) -> dict:
+        kw = self._filter_kwargs()
+        types = kw.get("types")
+        return {
+            "types": sorted(types) if isinstance(types, set) else types,
+            "hide_private": kw.get("hide_private"),
+            "hide_rewriter": kw.get("hide_rewriter"),
+            "hide_allowlisted": kw.get("hide_allowlisted"),
+            "only_denylisted": kw.get("only_denylisted"),
+        }
+
+    def import_lists(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Импорт в allowlist/denylist (CSV или MISP JSON)",
+            filetypes=[
+                ("CSV / MISP JSON", "*.csv *.json"),
+                ("CSV", "*.csv"),
+                ("MISP JSON", "*.json"),
+                ("Все файлы", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        p = Path(path)
+        try:
+            if p.suffix.lower() == ".json":
+                entries = import_entries_from_misp(p)
+            else:
+                entries = import_entries_from_csv(p)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(__app_name__, f"Не удалось прочитать файл:\n{exc}")
+            return
+        if not entries:
+            messagebox.showinfo(__app_name__, "Индикаторы не найдены")
+            return
+        target = messagebox.askyesnocancel(
+            __app_name__,
+            f"Найдено записей: {len(entries)}\n\n"
+            "Да = denylist\nНет = allowlist\nОтмена = ничего",
+        )
+        if target is None:
+            return
+        name = "denylist.txt" if target else "allowlist.txt"
+        comment = f"import:{p.name}"
+        added = append_list_entries(name, entries, comment=comment)
+        self._refresh_lists_mtime()
+        messagebox.showinfo(
+            __app_name__,
+            f"В {name} добавлено: {added} (из {len(entries)}, дубликаты пропущены).\n"
+            "Перезапустите анализ, чтобы теги обновились.",
+        )
+        self._set_status(f"Импорт в {name}: +{added}")
 
     def open_configs(self) -> None:
         root = ensure_user_lists()
         allow = list_file_path("allowlist.txt")
         deny = list_file_path("denylist.txt")
+        self._refresh_lists_mtime()
         try:
             if sys.platform.startswith("win"):
                 os.startfile(str(root))  # type: ignore[attr-defined]
@@ -1181,7 +1391,8 @@ class IocExtractorApp(ctk.CTk):
         except Exception:
             messagebox.showinfo(
                 __app_name__,
-                f"Папка конфигов:\n{root}\n\nallowlist:\n{allow}\ndenylist:\n{deny}",
+                f"Папка конфигов:\n{root}\n\nallowlist:\n{allow}\ndenylist:\n{deny}\n"
+                f"verdict.ini:\n{root / 'verdict.ini'}",
             )
             return
         self._set_status(f"Конфиги: {root}")
@@ -1194,14 +1405,17 @@ class IocExtractorApp(ctk.CTk):
             f"{__app_name__} v{__version__}\n"
             f"{__tagline__}\n\n"
             "Офлайн IOC-экстрактор для SOC.\n"
-            "Вердикт triage — только для писем (.eml / .msg).\n\n"
+            "Сеть заблокирована (socket/DNS/SSL).\n"
+            "Вердикт triage — только для писем (.eml / .msg);\n"
+            "веса в verdict.ini рядом с exe.\n\n"
             "Горячие клавиши:\n"
             "  Ctrl+O — открыть файлы\n"
             "  Ctrl+Enter — извлечь из текста\n"
-            "  клик по IOC — копировать значение\n\n"
+            "  клик по IOC — копировать значение\n"
+            "  Тикет / Msg-ID — шаблоны в буфер\n\n"
             f"Папка:\n{app_dir()}\n\n"
-            f"allowlist:\n{allowlist}\n"
-            f"denylist:\n{denylist}",
+            f"allowlist ({list_mtime_label('allowlist.txt')}):\n{allowlist}\n"
+            f"denylist ({list_mtime_label('denylist.txt')}):\n{denylist}",
         )
 
 

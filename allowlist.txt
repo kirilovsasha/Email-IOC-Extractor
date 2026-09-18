@@ -1,5 +1,7 @@
 # IOC Extractor allowlist — one domain or IPv4 per line.
 # Matched IOCs get tag "allowlisted" (can be hidden in GUI).
+# Wildcards: *.corp.local  |  prefix*  |  *suffix
+# Comments after entry: mail.company.ru  # INC-12345
 # Lines starting with # are ignored.
 
 # company.local

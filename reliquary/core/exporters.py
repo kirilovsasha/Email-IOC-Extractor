@@ -73,6 +73,8 @@ def _with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
         verdict=result.verdict,
         raw_text_preview=result.raw_text_preview,
         errors=list(result.errors),
+        file_rows=list(result.file_rows),
+        meta=result.meta,
     )
 
 
@@ -262,12 +264,87 @@ def export_csv(result: AnalysisResult, path: str | Path) -> Path:
     return out
 
 
-def export_report_json(result: AnalysisResult, path: str | Path) -> Path:
+def export_report_json(
+    result: AnalysisResult,
+    path: str | Path,
+    *,
+    filters_applied: dict | None = None,
+) -> Path:
     out = Path(path)
-    out.write_text(
-        json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    payload = result.to_dict()
+    if result.meta is not None and filters_applied is not None:
+        meta = dict(payload.get("meta") or {})
+        meta["filters_applied"] = filters_applied
+        payload["meta"] = meta
+    elif filters_applied is not None:
+        payload["meta"] = {
+            "filters_applied": filters_applied,
+        }
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
+def export_case_pack(
+    result: AnalysisResult,
+    path: str | Path,
+    *,
+    filters_applied: dict | None = None,
+    include_attachments: bool = True,
+) -> Path:
+    """Write a ZIP case pack: report JSON + CSV + optional attachment files."""
+    import zipfile
+    from reliquary.core.ticket import build_ticket_template
+
+    out = Path(path)
+    if out.suffix.lower() != ".zip":
+        out = out.with_suffix(".zip")
+
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", Path(result.source_path).stem)[:80] or "case"
+    buf_csv = Path(str(out) + ".tmp.csv")
+    buf_json = Path(str(out) + ".tmp.json")
+    try:
+        export_csv(result, buf_csv)
+        export_report_json(result, buf_json, filters_applied=filters_applied)
+        ticket = build_ticket_template(result, result.iocs, defang=True)
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{safe}/report.json", buf_json.read_text(encoding="utf-8"))
+            zf.writestr(f"{safe}/iocs.csv", buf_csv.read_bytes())
+            zf.writestr(f"{safe}/ticket.txt", ticket)
+            if result.file_rows:
+                rows = ["path\tkind\tverdict\tscore\tiocs\ttop\terrors\tmessage_id\n"]
+                for r in result.file_rows:
+                    rows.append(
+                        f"{r.path}\t{r.kind}\t{r.verdict_level}\t{r.verdict_score}\t"
+                        f"{r.ioc_count}\t{' | '.join(r.top_iocs)}\t"
+                        f"{' | '.join(r.errors)}\t{r.message_id}\n"
+                    )
+                zf.writestr(f"{safe}/batch_files.tsv", "".join(rows))
+            if include_attachments:
+                used: set[str] = set()
+                for att in result.attachments:
+                    if not att.data:
+                        continue
+                    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", att.filename or "att.bin")
+                    name = name.strip(" .") or "att.bin"
+                    candidate = name
+                    n = 1
+                    while candidate.lower() in used:
+                        stem = Path(name).stem
+                        suffix = Path(name).suffix
+                        candidate = f"{stem}_{n}{suffix}"
+                        n += 1
+                    used.add(candidate.lower())
+                    zf.writestr(f"{safe}/attachments/{candidate}", att.data)
+                    zf.writestr(
+                        f"{safe}/attachments/{candidate}.sha256.txt",
+                        f"{att.sha256}  {candidate}\n",
+                    )
+    finally:
+        for tmp in (buf_csv, buf_json):
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
     return out
 
 

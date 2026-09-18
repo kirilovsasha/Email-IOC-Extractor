@@ -308,13 +308,28 @@ def parse_zip(path: Path) -> ParsedDocument:
     raw = path.read_bytes()
     att = inspect_bytes(path.name, raw)
     lines = ["ZIP archive inventory:", path.name, ""]
-    lines.extend(att.archive_entries or [])
+    lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
     return ParsedDocument(
         kind="archive",
         path=str(path),
         text="\n".join(lines),
         attachments=[att],
         errors=[],
+    )
+
+
+def parse_archive_generic(path: Path) -> ParsedDocument:
+    """RAR/7z as archive document via attachment inspector inventory."""
+    raw = path.read_bytes()
+    att = inspect_bytes(path.name, raw)
+    lines = [f"{path.suffix.upper().lstrip('.')} archive inventory:", path.name, ""]
+    lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
+    return ParsedDocument(
+        kind="archive",
+        path=str(path),
+        text="\n".join(lines),
+        attachments=[att],
+        errors=list(att.notes) if not att.archive_entries else [],
     )
 
 
@@ -337,6 +352,8 @@ def parse_document(path: str | Path) -> ParsedDocument:
         return parse_xlsx(p)
     if suffix == ".zip":
         return parse_zip(p)
+    if suffix in {".7z", ".rar"}:
+        return parse_archive_generic(p)
     if suffix in {".txt", ".csv", ".log", ".md", ".json"}:
         return parse_text(p)
     # Fallback: treat as ticket/text

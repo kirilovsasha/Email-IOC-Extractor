@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import email
+import email.policy
+import hashlib
+import io
+from datetime import datetime, timezone
 from pathlib import Path
 
-from reliquary.core.allowlist import build_allowlist, build_denylist, tag_allowlist_denylist
+from reliquary import __version__
+from reliquary.core.allowlist import build_allowlist, build_denylist, list_mtime_label, tag_allowlist_denylist
 from reliquary.core.document_parser import parse_document
 from reliquary.core.header_analyzer import (
     analyze_headers,
@@ -12,7 +18,15 @@ from reliquary.core.header_analyzer import (
     extract_raw_headers,
 )
 from reliquary.core.ioc_extractor import extract_iocs
-from reliquary.core.models import AnalysisResult, Ioc, IocType
+from reliquary.core.models import (
+    AnalysisMeta,
+    AnalysisResult,
+    AttachmentInfo,
+    FileTriageRow,
+    Ioc,
+    IocType,
+)
+from reliquary.core.paths import file_mtime_iso, config_path, ensure_user_lists
 from reliquary.core.url_rewrite import find_and_unwrap
 from reliquary.core.verdict import render_verdict
 
@@ -49,7 +63,6 @@ def _dedup_iocs(iocs: list[Ioc]) -> list[Ioc]:
             if ioc.rewritten_from and not prev.rewritten_from:
                 prev.rewritten_from = ioc.rewritten_from
 
-    # Prefer unwrapped URL domains over rewriter hosts when both present as domain IOCs
     domains = [i for i in dedup.values() if i.ioc_type == IocType.DOMAIN]
     rewriter_keys = {
         (i.ioc_type.value, i.value.lower())
@@ -61,7 +74,6 @@ def _dedup_iocs(iocs: list[Ioc]) -> list[Ioc]:
         for key in list(dedup.keys()):
             ioc = dedup[key]
             if key in rewriter_keys and "url_rewriter" in ioc.tags:
-                # keep but mark as noise-candidate; do not drop — GUI filter hides them
                 if "noise_candidate" not in ioc.tags:
                     ioc.tags.append("noise_candidate")
 
@@ -77,19 +89,186 @@ def _finalize_iocs(iocs: list[Ioc]) -> list[Ioc]:
     return _dedup_iocs(iocs)
 
 
+def _source_hash(path: Path) -> tuple[str, int]:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return "", 0
+    return hashlib.sha256(data).hexdigest(), len(data)
+
+
+def _build_meta(source_path: str, *, source_sha256: str = "", source_size: int | None = None) -> AnalysisMeta:
+    ensure_user_lists()
+    return AnalysisMeta(
+        app_version=__version__,
+        analyzed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        source_sha256=source_sha256,
+        source_size=source_size,
+        allowlist_mtime=list_mtime_label("allowlist.txt"),
+        denylist_mtime=list_mtime_label("denylist.txt"),
+        verdict_config_mtime=file_mtime_iso(config_path("verdict.ini")) or "—",
+    )
+
+
+def _top_ioc_strings(iocs: list[Ioc], n: int = 5) -> list[str]:
+    ranked = sorted(iocs, key=_ioc_priority, reverse=True)
+    out: list[str] = []
+    for ioc in ranked:
+        if "allowlisted" in ioc.tags or "url_rewriter" in ioc.tags or "private" in ioc.tags:
+            continue
+        out.append(f"{ioc.ioc_type.value}:{ioc.value}")
+        if len(out) >= n:
+            break
+    if len(out) < n:
+        for ioc in ranked:
+            s = f"{ioc.ioc_type.value}:{ioc.value}"
+            if s not in out:
+                out.append(s)
+            if len(out) >= n:
+                break
+    return out
+
+
+def file_triage_row(result: AnalysisResult) -> FileTriageRow:
+    mid = result.mail_identity
+    return FileTriageRow(
+        path=result.source_path,
+        kind=result.source_kind,
+        verdict_level=result.verdict.level.value if result.verdict else "",
+        verdict_score=result.verdict.score if result.verdict else None,
+        ioc_count=len(result.iocs),
+        top_iocs=_top_ioc_strings(result.iocs),
+        errors=list(result.errors),
+        message_id=(mid.message_id if mid else "") or "",
+        subject=result.subject or (mid.subject if mid else ""),
+        sender=result.sender or (mid.from_header if mid else ""),
+    )
+
+
+def _lift_attachment_iocs(attachments: list[AttachmentInfo], iocs: list[Ioc]) -> None:
+    for att in attachments:
+        for algo, value, itype in (
+            ("md5", att.md5, IocType.MD5),
+            ("sha1", att.sha1, IocType.SHA1),
+            ("sha256", att.sha256, IocType.SHA256),
+        ):
+            if value:
+                iocs.append(
+                    Ioc(
+                        value=value,
+                        ioc_type=itype,
+                        source="attachment",
+                        context=att.filename,
+                        tags=["attachment_hash", algo, *att.risk_flags],
+                    )
+                )
+        if att.filename:
+            iocs.append(
+                Ioc(
+                    value=att.filename,
+                    ioc_type=IocType.FILENAME,
+                    source="attachment",
+                    context=f"size={att.size}; mime={att.mime_guess}",
+                    tags=list(att.risk_flags),
+                )
+            )
+        for entry in att.archive_entries or []:
+            if entry.startswith("QR:"):
+                payload = entry[3:]
+                for qi in extract_iocs(payload, source="qr"):
+                    if "qr" not in qi.tags:
+                        qi.tags.append("qr")
+                    if "from_image" not in qi.tags:
+                        qi.tags.append("from_image")
+                    qi.context = qi.context or att.filename
+                    iocs.append(qi)
+                continue
+            base = Path(entry).name
+            if not base or base.startswith("."):
+                continue
+            iocs.append(
+                Ioc(
+                    value=base,
+                    ioc_type=IocType.FILENAME,
+                    source="archive",
+                    context=f"in:{att.filename}",
+                    tags=["archive_member", *att.risk_flags],
+                )
+            )
+
+
+def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
+    """Return (extra_text, errors) from nested .eml/.msg bytes."""
+    if not att.data or "nested_email" not in att.risk_flags:
+        return "", []
+    errors: list[str] = []
+    name = att.filename.lower()
+    try:
+        if name.endswith(".msg"):
+            try:
+                import extract_msg
+            except ImportError as exc:
+                return "", [f"nested MSG {att.filename}: {exc}"]
+            msg_file = extract_msg.Message(io.BytesIO(att.data))
+            body = msg_file.body or ""
+            html = getattr(msg_file, "htmlBody", None) or ""
+            if isinstance(html, bytes):
+                html = html.decode("utf-8", errors="replace")
+            subj = str(msg_file.subject or "")
+            sender = str(msg_file.sender or "")
+            try:
+                msg_file.close()
+            except Exception:
+                pass
+            return f"Nested MSG {att.filename}\nFrom: {sender}\nSubject: {subj}\n{body}\n{html}", errors
+        # .eml / rfc822
+        msg = email.message_from_bytes(att.data, policy=email.policy.default)
+        parts: list[str] = [
+            f"Nested EML {att.filename}",
+            f"From: {msg.get('From', '')}",
+            f"Subject: {msg.get('Subject', '')}",
+            f"Message-ID: {msg.get('Message-ID', '')}",
+        ]
+        if msg.is_multipart():
+            for part in msg.walk():
+                ctype = part.get_content_type()
+                if part.get_filename():
+                    parts.append(f"Nested-Att: {part.get_filename()}")
+                    continue
+                if ctype in ("text/plain", "text/html"):
+                    try:
+                        payload = part.get_payload(decode=True) or b""
+                        charset = part.get_content_charset() or "utf-8"
+                        parts.append(payload.decode(charset, errors="replace"))
+                    except Exception:
+                        continue
+        else:
+            try:
+                payload = msg.get_payload(decode=True) or b""
+                charset = msg.get_content_charset() or "utf-8"
+                parts.append(payload.decode(charset, errors="replace"))
+            except Exception:
+                parts.append(str(msg.get_payload()))
+        return "\n".join(parts), errors
+    except Exception as exc:  # noqa: BLE001
+        return "", [f"Nested mail {att.filename}: {exc}"]
+
+
 def analyze_file(path: str | Path) -> AnalysisResult:
     path = Path(path)
     parsed = parse_document(path)
+    source_sha, source_size = _source_hash(path)
 
     result = AnalysisResult(
         source_path=str(path),
         source_kind=parsed.kind,
         subject=parsed.subject,
         sender=parsed.sender,
-        recipients=parsed.recipients,
+        recipients=list(parsed.recipients),
         attachments=list(parsed.attachments),
         raw_text_preview=(parsed.text or "")[:4000],
         errors=list(parsed.errors),
+        meta=_build_meta(str(path), source_sha256=source_sha, source_size=source_size),
     )
 
     if parsed.message is not None:
@@ -101,6 +280,15 @@ def analyze_file(path: str | Path) -> AnalysisResult:
             result.errors.append(f"Заголовки: {exc}")
 
     blob = f"{parsed.text}\n{parsed.html}"
+
+    # Nested emails inside attachments
+    for att in result.attachments:
+        nested_text, nested_errs = _parse_nested_email_attachment(att)
+        if nested_text:
+            blob += "\n" + nested_text
+            att.notes.append("Вложенное письмо разобрано локально")
+        result.errors.extend(nested_errs)
+
     try:
         result.url_rewrites = find_and_unwrap(blob)
     except Exception as exc:  # noqa: BLE001
@@ -136,48 +324,11 @@ def analyze_file(path: str | Path) -> AnalysisResult:
             if "url_rewriter" not in ioc.tags:
                 ioc.tags.append("url_rewriter")
 
-    for att in result.attachments:
-        for algo, value, itype in (
-            ("md5", att.md5, IocType.MD5),
-            ("sha1", att.sha1, IocType.SHA1),
-            ("sha256", att.sha256, IocType.SHA256),
-        ):
-            if value:
-                iocs.append(
-                    Ioc(
-                        value=value,
-                        ioc_type=itype,
-                        source="attachment",
-                        context=att.filename,
-                        tags=["attachment_hash", algo, *att.risk_flags],
-                    )
-                )
-        if att.filename:
-            iocs.append(
-                Ioc(
-                    value=att.filename,
-                    ioc_type=IocType.FILENAME,
-                    source="attachment",
-                    context=f"size={att.size}; mime={att.mime_guess}",
-                    tags=list(att.risk_flags),
-                )
-            )
-        for entry in att.archive_entries or []:
-            base = Path(entry).name
-            if not base or base.startswith("."):
-                continue
-            iocs.append(
-                Ioc(
-                    value=base,
-                    ioc_type=IocType.FILENAME,
-                    source="archive",
-                    context=f"in:{att.filename}",
-                    tags=["archive_member", *att.risk_flags],
-                )
-            )
+    _lift_attachment_iocs(result.attachments, iocs)
 
     result.iocs = _finalize_iocs(iocs)
     result.verdict = render_verdict(result)
+    result.file_rows = [file_triage_row(result)]
     return result
 
 
@@ -187,6 +338,7 @@ def analyze_text(text: str, label: str = "clipboard") -> AnalysisResult:
         source_path=label,
         source_kind="ticket",
         raw_text_preview=text[:4000],
+        meta=_build_meta(label),
     )
     result.url_rewrites = find_and_unwrap(text)
     enriched = text
@@ -203,13 +355,14 @@ def analyze_text(text: str, label: str = "clipboard") -> AnalysisResult:
                         ioc.tags.append("unwrapped")
     result.iocs = _finalize_iocs(iocs)
     result.verdict = render_verdict(result)
+    result.file_rows = [file_triage_row(result)]
     return result
 
 
 def merge_results(results: list[AnalysisResult], label: str = "batch") -> AnalysisResult:
     """Merge multiple file analyses into one result (batch open)."""
     if not results:
-        return AnalysisResult(source_path=label, source_kind="batch")
+        return AnalysisResult(source_path=label, source_kind="batch", meta=_build_meta(label))
     if len(results) == 1:
         return results[0]
 
@@ -221,6 +374,8 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
         raw_text_preview="\n---\n".join(
             f"[{r.source_path}]\n{r.raw_text_preview}" for r in results
         )[:8000],
+        meta=_build_meta(label),
+        file_rows=[file_triage_row(r) for r in results],
     )
     iocs: list[Ioc] = []
     mail_sources: list[str] = []
@@ -240,10 +395,9 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
             f"Batch: карточка почты от первого письма; всего писем с identity: "
             f"{len(mail_sources)} ({', '.join(mail_sources[:5])}"
             + ("…" if len(mail_sources) > 5 else "")
-            + ")"
+            + ") — см. вкладку «Пакет»"
         )
     merged.iocs = _finalize_iocs(iocs)
-    # Verdict only when the batch includes at least one email
     if any(r.source_kind == "email" for r in results):
         email_only = AnalysisResult(
             source_path=merged.source_path,

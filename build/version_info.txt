@@ -3,8 +3,8 @@
 # PyInstaller VERSIONINFO for Windows File Properties.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 4, 0, 0),
-    prodvers=(1, 4, 0, 0),
+    filevers=(1, 5, 0, 0),
+    prodvers=(1, 5, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -20,12 +20,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'SOC Tools'),
             StringStruct(u'FileDescription', u'IOC Extractor — offline SOC IOC extraction'),
-            StringStruct(u'FileVersion', u'1.4.0'),
+            StringStruct(u'FileVersion', u'1.5.0'),
             StringStruct(u'InternalName', u'IOC_Extractor'),
             StringStruct(u'LegalCopyright', u''),
             StringStruct(u'OriginalFilename', u'IOC_Extractor.exe'),
             StringStruct(u'ProductName', u'IOC Extractor'),
-            StringStruct(u'ProductVersion', u'1.4.0'),
+            StringStruct(u'ProductVersion', u'1.5.0'),
           ]
         )
       ]
