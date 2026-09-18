@@ -1,4 +1,4 @@
-"""IOC Extractor desktop GUI — extract IOCs from files and text (CustomTkinter)."""
+"""IOC Extractor desktop GUI — SOC-first dense layout (CustomTkinter)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from reliquary import __app_name__, __tagline__, __version__
+from reliquary.core.allowlist import list_file_path
 from reliquary.core.exporters import (
     _with_iocs,
     export_csv,
@@ -27,28 +28,29 @@ from reliquary.core.exporters import (
     export_yara,
     filter_iocs,
 )
-from reliquary.core.allowlist import list_file_path
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
 from reliquary.core.paths import app_dir, ensure_user_lists
 from reliquary.core.pipeline import analyze_file, analyze_text, merge_results
 from reliquary.gui.theme import (
+    BTN_H,
+    BTN_PRIMARY,
+    BTN_SECONDARY,
     COLORS,
     IOC_GROUPS,
     IOC_TYPE_COLORS,
     SEVERITY_COLORS,
     SEVERITY_LABELS_RU,
+    VERDICT_COLORS,
 )
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 _PLACEHOLDER = (
-    "Вставьте текст тикета или откройте файл.\n\n"
-    "Форматы: .eml .msg .pdf .html .txt .docx .xlsx .zip\n"
-    "Письма: IOC, URL, вложения, заголовки, вердикт.\n"
-    "Перетащите файлы/папки или откройте папку (рекурсивно).\n\n"
-    "Клик по IOC — копировать значение. Офлайн."
+    "Вставьте текст тикета сюда или откройте файл.\n\n"
+    ".eml .msg .pdf .html .txt .docx .xlsx .zip\n"
+    "Ctrl+O — файл · Ctrl+Enter — извлечь из текста · клик по IOC — копировать"
 )
 
 _SUPPORTED_GLOBS = (
@@ -75,15 +77,8 @@ _CATEGORY_TYPES: dict[str, set[str]] = {
 }
 
 _EXPORT_CHOICES = ("CSV", "STIX", "JSON", "MISP", "OpenCTI", "YARA")
-_COPY_FORMATS = ("value", "type|value", "csv")
+_COPY_FORMATS = ("type|value", "value", "csv")
 _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
-
-_VERDICT_COLORS = {
-    "malicious": COLORS["danger"],
-    "suspicious": COLORS["warn"],
-    "unknown": COLORS["info"],
-    "benign": COLORS["ok"],
-}
 
 
 def _collect_supported(root: Path, *, recursive: bool = True) -> list[str]:
@@ -99,8 +94,8 @@ class IocExtractorApp(ctk.CTk):
         super().__init__()
         ensure_user_lists()
         self.title(f"{__app_name__} — {__tagline__}")
-        self.geometry("1280x860")
-        self.minsize(1000, 700)
+        self.geometry("1320x820")
+        self.minsize(1024, 680)
         self.configure(fg_color=COLORS["bg"])
 
         self.result: AnalysisResult | None = None
@@ -121,115 +116,102 @@ class IocExtractorApp(ctk.CTk):
 
     # ------------------------------------------------------------------ UI
     def _build(self) -> None:
-        header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=64)
+        # —— Header: brand + secondary ——
+        header = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=48)
         header.pack(fill="x")
         header.pack_propagate(False)
 
         ctk.CTkLabel(
             header,
-            text=__app_name__.upper(),
-            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
+            text=__app_name__,
+            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=COLORS["accent"],
-        ).pack(side="left", padx=(24, 12), pady=14)
+        ).pack(side="left", padx=(18, 10), pady=10)
 
         ctk.CTkLabel(
             header,
-            text=f"{__tagline__}  ·  v{__version__}  ·  offline",
-            font=ctk.CTkFont(size=13),
+            text=f"v{__version__} · offline",
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["muted"],
-        ).pack(side="left", pady=14)
-
-        toolbar = ctk.CTkFrame(self, fg_color=COLORS["bg"])
-        toolbar.pack(fill="x", padx=20, pady=(16, 8))
-
-        btn_kw = dict(hover_color=COLORS["border"], fg_color=COLORS["surface_alt"])
+        ).pack(side="left", pady=10)
 
         ctk.CTkButton(
-            toolbar,
-            text="Открыть",
-            command=self.open_files,
-            fg_color=COLORS["accent"],
-            hover_color=COLORS["accent_dim"],
-            width=100,
+            header, text="О программе", width=110, command=self.show_about, **BTN_SECONDARY
+        ).pack(side="right", padx=(6, 16), pady=8)
+        ctk.CTkButton(
+            header, text="Конфиги", width=90, command=self.open_configs, **BTN_SECONDARY
+        ).pack(side="right", padx=0, pady=8)
+
+        # —— Toolbar: input | output ——
+        toolbar = ctk.CTkFrame(self, fg_color=COLORS["bg"], height=48)
+        toolbar.pack(fill="x", padx=16, pady=(10, 4))
+
+        left_actions = ctk.CTkFrame(toolbar, fg_color="transparent")
+        left_actions.pack(side="left")
+
+        ctk.CTkButton(
+            left_actions, text="Открыть", width=96, command=self.open_files, **BTN_PRIMARY
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            left_actions, text="Папка", width=80, command=self.open_folder, **BTN_SECONDARY
         ).pack(side="left", padx=(0, 6))
 
-        ctk.CTkButton(toolbar, text="Папка", command=self.open_folder, width=90, **btn_kw).pack(
-            side="left", padx=(0, 6)
-        )
-        ctk.CTkButton(
-            toolbar, text="Из текста", command=self.analyze_text_area, width=110, **btn_kw
-        ).pack(side="left", padx=(0, 6))
+        sep = ctk.CTkFrame(toolbar, fg_color=COLORS["border"], width=1, height=28)
+        sep.pack(side="left", padx=10)
+
+        right_actions = ctk.CTkFrame(toolbar, fg_color="transparent")
+        right_actions.pack(side="left")
 
         ctk.CTkOptionMenu(
-            toolbar,
+            right_actions,
             variable=self._copy_format,
             values=list(_COPY_FORMATS),
-            width=110,
+            width=108,
+            height=BTN_H,
             fg_color=COLORS["surface_alt"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
-            toolbar, text="Копировать", command=self.copy_iocs, width=110, **btn_kw
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            toolbar,
-            text="Сохранить вложения",
-            command=self.save_attachments,
-            width=150,
-            **btn_kw,
-        ).pack(side="left", padx=(0, 6))
+            right_actions, text="Копировать", width=104, command=self.copy_iocs, **BTN_SECONDARY
+        ).pack(side="left", padx=(0, 8))
 
         ctk.CTkOptionMenu(
-            toolbar,
+            right_actions,
             variable=self._export_choice,
             values=list(_EXPORT_CHOICES),
-            width=120,
+            width=100,
+            height=BTN_H,
             fg_color=COLORS["surface_alt"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
-            toolbar,
-            text="Экспорт",
-            command=self._export_clicked,
-            width=90,
-            fg_color=COLORS["accent"],
-            hover_color=COLORS["accent_dim"],
-        ).pack(side="left", padx=(0, 6))
-
+            right_actions, text="Экспорт", width=88, command=self._export_clicked, **BTN_PRIMARY
+        ).pack(side="left", padx=(0, 8))
         ctk.CTkButton(
-            toolbar, text="Конфиги", command=self.open_configs, width=100, **btn_kw
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            toolbar, text="О программе", command=self.show_about, width=120, **btn_kw
-        ).pack(side="left", padx=(0, 6))
+            right_actions,
+            text="Вложения",
+            width=96,
+            command=self.save_attachments,
+            **BTN_SECONDARY,
+        ).pack(side="left")
 
-        self.status = ctk.CTkLabel(
-            toolbar,
-            text="Готов — откройте файл, папку или вставьте текст",
-            text_color=COLORS["muted"],
-        )
-        self.status.pack(side="right")
+        # —— Compact filters (one strip) ——
+        filters = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=6, height=40)
+        filters.pack(fill="x", padx=16, pady=(6, 6))
 
-        filter_panel = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=8)
-        filter_panel.pack(fill="x", padx=20, pady=(0, 10))
+        inner = ctk.CTkFrame(filters, fg_color="transparent")
+        inner.pack(fill="x", padx=10, pady=6)
 
-        row1 = ctk.CTkFrame(filter_panel, fg_color="transparent")
-        row1.pack(fill="x", padx=12, pady=(10, 4))
         ctk.CTkLabel(
-            row1,
-            text="Типы IOC:",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLORS["text"],
-            width=90,
-            anchor="w",
+            inner, text="Типы", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["muted"]
         ).pack(side="left", padx=(0, 8))
         for name, var in self.cat_vars.items():
             ctk.CTkCheckBox(
-                row1,
+                inner,
                 text=name,
                 variable=var,
                 command=self._refresh_views,
@@ -237,36 +219,26 @@ class IocExtractorApp(ctk.CTk):
                 fg_color=COLORS["accent"],
                 hover_color=COLORS["accent_dim"],
                 border_color=COLORS["border"],
-                width=90,
-            ).pack(side="left", padx=(0, 10))
-        ctk.CTkButton(
-            row1,
-            text="Сбросить",
-            width=90,
-            height=28,
-            fg_color=COLORS["surface_alt"],
-            hover_color=COLORS["border"],
-            command=self._reset_filters,
-        ).pack(side="right")
+                width=70,
+                checkbox_width=18,
+                checkbox_height=18,
+            ).pack(side="left", padx=(0, 6))
 
-        row2 = ctk.CTkFrame(filter_panel, fg_color="transparent")
-        row2.pack(fill="x", padx=12, pady=(0, 4))
+        ctk.CTkFrame(inner, fg_color=COLORS["border"], width=1, height=18).pack(
+            side="left", padx=8
+        )
+
         ctk.CTkLabel(
-            row2,
-            text="Убрать шум:",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLORS["text"],
-            width=90,
-            anchor="w",
+            inner, text="Шум", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["muted"]
         ).pack(side="left", padx=(0, 8))
         for text, var in (
-            ("Шлюзы почты (SafeLinks…)", self.hide_rewriter),
-            ("Из allowlist", self.hide_allowlisted),
-            ("Частные IP", self.hide_private),
-            ("Только denylist", self.only_denylisted),
+            ("SafeLinks", self.hide_rewriter),
+            ("allowlist", self.hide_allowlisted),
+            ("private IP", self.hide_private),
+            ("denylist", self.only_denylisted),
         ):
             ctk.CTkCheckBox(
-                row2,
+                inner,
                 text=text,
                 variable=var,
                 command=self._refresh_views,
@@ -274,135 +246,108 @@ class IocExtractorApp(ctk.CTk):
                 fg_color=COLORS["accent"],
                 hover_color=COLORS["accent_dim"],
                 border_color=COLORS["border"],
-            ).pack(side="left", padx=(0, 14))
+                width=88,
+                checkbox_width=18,
+                checkbox_height=18,
+            ).pack(side="left", padx=(0, 4))
 
-        self.filter_hint = ctk.CTkLabel(
-            filter_panel,
-            text="Фильтр → IOC / копирование / экспорт · клик по IOC копирует значение",
-            font=ctk.CTkFont(size=12),
-            text_color=COLORS["muted"],
-            anchor="w",
-        )
-        self.filter_hint.pack(fill="x", padx=12, pady=(0, 10))
+        ctk.CTkButton(
+            inner,
+            text="Сброс",
+            width=64,
+            height=26,
+            command=self._reset_filters,
+            fg_color=COLORS["surface_alt"],
+            hover_color=COLORS["border"],
+            border_width=1,
+            border_color=COLORS["border"],
+        ).pack(side="right")
 
+        # —— Body: source | results ——
         body = ctk.CTkFrame(self, fg_color=COLORS["bg"])
-        body.pack(fill="both", expand=True, padx=20, pady=(0, 16))
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=2)
+        body.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+        body.grid_columnconfigure(0, weight=2, minsize=280)
+        body.grid_columnconfigure(1, weight=5, minsize=520)
         body.grid_rowconfigure(0, weight=1)
 
+        # Left: source
         left = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
 
+        left_head = ctk.CTkFrame(left, fg_color="transparent")
+        left_head.pack(fill="x", padx=14, pady=(12, 4))
         ctk.CTkLabel(
-            left,
+            left_head,
             text="Источник",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             text_color=COLORS["text"],
-        ).pack(anchor="w", padx=16, pady=(16, 8))
+        ).pack(side="left")
+        self.source_meta = ctk.CTkLabel(
+            left_head, text="", font=ctk.CTkFont(size=11), text_color=COLORS["muted"]
+        )
+        self.source_meta.pack(side="right")
 
         self.input_box = ctk.CTkTextbox(
             left,
             fg_color=COLORS["surface_alt"],
             text_color=COLORS["muted"],
-            font=ctk.CTkFont(family="Consolas", size=13),
+            font=ctk.CTkFont(family="Consolas", size=12),
             wrap="word",
+            border_width=0,
         )
-        self.input_box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self.input_box.pack(fill="both", expand=True, padx=14, pady=(0, 8))
         self.input_box.insert("1.0", _PLACEHOLDER)
         self._bind_placeholder()
 
+        ctk.CTkButton(
+            left,
+            text="Извлечь из текста  (Ctrl+Enter)",
+            command=self.analyze_text_area,
+            **BTN_PRIMARY,
+        ).pack(fill="x", padx=14, pady=(0, 14))
+
+        # Right: results
         right = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
         right.grid(row=0, column=1, sticky="nsew")
 
-        summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
-        summary.pack(fill="x", padx=16, pady=(16, 8))
+        # Compact summary bar (IOC count + verdict badge)
+        summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6, height=52)
+        summary.pack(fill="x", padx=12, pady=(12, 6))
+        summary.pack_propagate(False)
 
         self.ioc_summary_label = ctk.CTkLabel(
             summary,
-            text="IOC: —",
-            font=ctk.CTkFont(size=22, weight="bold"),
+            text="IOC —",
+            font=ctk.CTkFont(size=20, weight="bold"),
             text_color=COLORS["accent"],
         )
-        self.ioc_summary_label.pack(anchor="w", padx=16, pady=(12, 4))
+        self.ioc_summary_label.pack(side="left", padx=(14, 12), pady=10)
+
+        self.verdict_badge = ctk.CTkLabel(
+            summary,
+            text="",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["muted"],
+        )
+        self.verdict_badge.pack(side="left", padx=(0, 12), pady=10)
 
         self.ioc_breakdown = ctk.CTkLabel(
             summary,
             text="Откройте файл или вставьте текст",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             text_color=COLORS["muted"],
-            wraplength=520,
-            justify="left",
+            anchor="e",
+        )
+        self.ioc_breakdown.pack(side="right", padx=14, pady=10)
+
+        self.filter_hint = ctk.CTkLabel(
+            right,
+            text="Фильтры влияют на список, копирование и экспорт · клик по IOC копирует значение",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["muted"],
             anchor="w",
         )
-        self.ioc_breakdown.pack(anchor="w", fill="x", padx=16, pady=(0, 12))
-
-        self.verdict_card = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
-        self.verdict_card.pack(fill="x", padx=16, pady=(0, 8))
-        self.verdict_card.pack_forget()
-
-        self.verdict_title = ctk.CTkLabel(
-            self.verdict_card,
-            text="Вердикт",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLORS["accent"],
-        )
-        self.verdict_title.pack(anchor="w", padx=16, pady=(10, 4))
-
-        self.verdict_body = ctk.CTkLabel(
-            self.verdict_card,
-            text="",
-            font=ctk.CTkFont(family="Consolas", size=12),
-            text_color=COLORS["text"],
-            wraplength=520,
-            justify="left",
-            anchor="w",
-        )
-        self.verdict_body.pack(anchor="w", fill="x", padx=16, pady=(0, 10))
-
-        self.mail_card = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
-        self.mail_card.pack(fill="x", padx=16, pady=(0, 8))
-        self.mail_card.pack_forget()
-
-        self.mail_title = ctk.CTkLabel(
-            self.mail_card,
-            text="Почтовая идентичность",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=COLORS["accent"],
-        )
-        self.mail_title.pack(anchor="w", padx=16, pady=(10, 4))
-
-        self.mail_body = ctk.CTkLabel(
-            self.mail_card,
-            text="",
-            font=ctk.CTkFont(family="Consolas", size=12),
-            text_color=COLORS["text"],
-            wraplength=520,
-            justify="left",
-            anchor="w",
-        )
-        self.mail_body.pack(anchor="w", fill="x", padx=16, pady=(0, 8))
-
-        mail_btns = ctk.CTkFrame(self.mail_card, fg_color="transparent")
-        mail_btns.pack(anchor="w", padx=12, pady=(0, 10))
-        ctk.CTkButton(
-            mail_btns,
-            text="Copy From",
-            width=110,
-            height=28,
-            command=self._copy_from,
-            fg_color=COLORS["surface"],
-            hover_color=COLORS["border"],
-        ).pack(side="left", padx=4)
-        ctk.CTkButton(
-            mail_btns,
-            text="Copy Message-ID",
-            width=140,
-            height=28,
-            command=self._copy_message_id,
-            fg_color=COLORS["surface"],
-            hover_color=COLORS["border"],
-        ).pack(side="left", padx=4)
+        self.filter_hint.pack(fill="x", padx=14, pady=(0, 4))
 
         self.tabs = ctk.CTkTabview(
             right,
@@ -412,22 +357,44 @@ class IocExtractorApp(ctk.CTk):
             segmented_button_selected_hover_color=COLORS["accent_dim"],
             segmented_button_unselected_color=COLORS["surface_alt"],
             text_color=COLORS["text"],
+            height=400,
         )
-        self.tabs.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        self.tabs.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-        for name in ("IOC", "URL", "Вложения", "Заголовки", "Ошибки"):
+        for name in ("IOC", "URL", "Вложения", "Письмо", "Ошибки"):
             self.tabs.add(name)
 
         self.ioc_box = self._make_text(self.tabs.tab("IOC"))
         self.url_box = self._make_text(self.tabs.tab("URL"))
         self.att_box = self._make_text(self.tabs.tab("Вложения"))
-        self.hdr_box = self._make_text(self.tabs.tab("Заголовки"))
+        self.mail_box = self._make_text(self.tabs.tab("Письмо"))
         self.err_box = self._make_text(self.tabs.tab("Ошибки"))
         self._bind_ioc_click()
 
+        # —— Status bar ——
+        status_bar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=28)
+        status_bar.pack(fill="x", side="bottom")
+        status_bar.pack_propagate(False)
+        self.status = ctk.CTkLabel(
+            status_bar,
+            text="Готов",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["muted"],
+            anchor="w",
+        )
+        self.status.pack(side="left", padx=16, pady=4)
+        ctk.CTkLabel(
+            status_bar,
+            text="Ctrl+O  ·  Ctrl+Enter  ·  клик IOC",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["border"],
+            anchor="e",
+        ).pack(side="right", padx=16, pady=4)
+
         self.bind("<Control-o>", lambda _e: self.open_files())
-        self.bind("<Configure>", self._on_resize, add="+")
-        self.after(100, self._update_wraplengths)
+        self.bind("<Control-O>", lambda _e: self.open_files())
+        self.bind("<Control-Return>", lambda _e: self.analyze_text_area())
+        self.bind("<Control-KP_Enter>", lambda _e: self.analyze_text_area())
 
     def _try_hook_drop(self) -> None:
         try:
@@ -451,6 +418,7 @@ class IocExtractorApp(ctk.CTk):
         widget.bind("<Control-v>", self._on_input_paste, add="+")
         widget.bind("<Control-V>", self._on_input_paste, add="+")
         widget.bind("<Button-1>", self._on_input_click, add="+")
+        widget.bind("<Control-Return>", lambda _e: self.analyze_text_area(), add="+")
 
     def _show_placeholder(self) -> None:
         self._placeholder_active = True
@@ -484,6 +452,7 @@ class IocExtractorApp(ctk.CTk):
             "Alt_R",
             "Tab",
             "Escape",
+            "Return",
         ):
             self._clear_placeholder()
 
@@ -503,7 +472,7 @@ class IocExtractorApp(ctk.CTk):
             wrap="word",
             activate_scrollbars=True,
         )
-        box.pack(fill="both", expand=True, padx=4, pady=4)
+        box.pack(fill="both", expand=True, padx=2, pady=2)
         self._configure_result_tags(box)
         return box
 
@@ -516,9 +485,9 @@ class IocExtractorApp(ctk.CTk):
             return
         base = ("Consolas", 12)
         bold = ("Consolas", 12, "bold")
-        section = ("Segoe UI", 13, "bold")
+        section = ("Segoe UI", 12, "bold")
         widget.tag_configure(
-            "section", foreground=COLORS["accent"], font=section, spacing1=10, spacing3=4
+            "section", foreground=COLORS["accent"], font=section, spacing1=8, spacing3=2
         )
         widget.tag_configure("muted", foreground=COLORS["muted"], font=base)
         widget.tag_configure("value", foreground=COLORS["value"], font=bold)
@@ -571,20 +540,6 @@ class IocExtractorApp(ctk.CTk):
             return
         widget.insert("end", text, tags if tags else ())
 
-    def _on_resize(self, event: tk.Event) -> None:  # type: ignore[type-arg]
-        if event.widget is not self:
-            return
-        self.after_idle(self._update_wraplengths)
-
-    def _update_wraplengths(self) -> None:
-        width = max(200, self.winfo_width() - 420)
-        try:
-            self.ioc_breakdown.configure(wraplength=width)
-            self.mail_body.configure(wraplength=width)
-            self.verdict_body.configure(wraplength=width)
-        except tk.TclError:
-            pass
-
     def _set_status(self, text: str) -> None:
         self.status.configure(text=text)
 
@@ -630,40 +585,57 @@ class IocExtractorApp(ctk.CTk):
 
     def _refresh_views(self) -> None:
         if not self.result:
+            self.ioc_summary_label.configure(text="IOC —")
+            self.verdict_badge.configure(text="")
+            self.ioc_breakdown.configure(text="Откройте файл или вставьте текст")
             self.filter_hint.configure(
-                text="Фильтр → IOC / копирование / экспорт · клик по IOC копирует значение"
+                text="Фильтры влияют на список, копирование и экспорт · клик по IOC копирует"
             )
+            self.source_meta.configure(text="")
             return
+
         filtered = self._filtered_iocs()
         counts = Counter(i.ioc_type.value for i in filtered)
         total = len(filtered)
         full = len(self.result.iocs)
+
         if total == full:
-            self.ioc_summary_label.configure(text=f"IOC: {total}")
+            self.ioc_summary_label.configure(text=f"IOC {total}")
             self.filter_hint.configure(
-                text=f"Показаны все {full} · клик по IOC копирует · фильтр → экспорт"
+                text=f"Все {full} индикаторов · клик копирует значение · фильтр → экспорт"
             )
         else:
-            self.ioc_summary_label.configure(text=f"IOC: {total} из {full}")
-            hidden = full - total
+            self.ioc_summary_label.configure(text=f"IOC {total}/{full}")
             self.filter_hint.configure(
-                text=f"Показано {total} из {full} (скрыто {hidden}) · клик копирует значение"
+                text=f"Показано {total} из {full} · клик копирует · фильтр → копирование/экспорт"
             )
+
         if counts:
-            breakdown = "  ·  ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
+            breakdown = " · ".join(f"{k} {v}" for k, v in sorted(counts.items()))
             self.ioc_breakdown.configure(text=breakdown, text_color=COLORS["text"])
         else:
             self.ioc_breakdown.configure(
-                text="Ничего не попало под фильтр — включите типы или ослабьте «Убрать шум»",
+                text="Пусто — ослабьте фильтры",
                 text_color=COLORS["muted"],
             )
+
+        self._update_verdict_badge(self.result)
         self._fill_iocs(self.result, filtered)
         self._fill_urls(self.result)
         self._fill_attachments(self.result)
-        self._fill_headers(self.result)
+        self._fill_mail_tab(self.result)
         self._fill_errors(self.result)
-        self._update_mail_card(self.result)
-        self._update_verdict_card(self.result)
+
+    def _update_verdict_badge(self, result: AnalysisResult) -> None:
+        v = result.verdict
+        if not v or result.source_kind not in ("email", "batch"):
+            self.verdict_badge.configure(text="")
+            return
+        color = VERDICT_COLORS.get(v.level.value, COLORS["muted"])
+        self.verdict_badge.configure(
+            text=f"{v.level.value.upper()} · {v.score}",
+            text_color=color,
+        )
 
     # -------------------------------------------------------------- open
     def open_files(self) -> None:
@@ -695,7 +667,7 @@ class IocExtractorApp(ctk.CTk):
         if not paths:
             messagebox.showinfo(
                 __app_name__,
-                "В папке (включая подпапки) нет поддерживаемых файлов "
+                "В папке нет поддерживаемых файлов "
                 "(.eml .msg .pdf .html .txt .docx .xlsx .zip).",
             )
             return
@@ -796,6 +768,10 @@ class IocExtractorApp(ctk.CTk):
 
     def _apply_result(self, result: AnalysisResult, preload_text: bool) -> None:
         self.result = result
+        kind = result.source_kind
+        name = Path(result.source_path).name if result.source_path else ""
+        self.source_meta.configure(text=f"{kind} · {name}"[:48])
+
         if preload_text:
             preview = result.raw_text_preview or ""
             meta_lines = [
@@ -806,7 +782,7 @@ class IocExtractorApp(ctk.CTk):
                 meta_lines.append(f"From: {result.sender}")
             if result.subject:
                 meta_lines.append(f"Subject: {result.subject}")
-            meta_lines.extend(["=" * 48, "", preview])
+            meta_lines.extend(["=" * 40, "", preview])
             self._placeholder_active = False
             self.input_box.delete("1.0", "end")
             self.input_box.insert("1.0", "\n".join(meta_lines))
@@ -817,55 +793,6 @@ class IocExtractorApp(ctk.CTk):
         filtered_n = len(self._filtered_iocs())
         err = f" · ошибки: {len(result.errors)}" if result.errors else ""
         self._set_status(f"Готово: {filtered_n} IOC{err}")
-        if result.errors:
-            # Keep IOC tab primary; errors visible in dedicated tab
-            pass
-
-    # -------------------------------------------------------- mail / verdict
-    def _update_verdict_card(self, result: AnalysisResult) -> None:
-        # Email-only (batch may carry a verdict derived from included .eml/.msg)
-        v = result.verdict
-        if not v or result.source_kind not in ("email", "batch"):
-            self.verdict_card.pack_forget()
-            return
-        color = _VERDICT_COLORS.get(v.level.value, COLORS["text"])
-        self.verdict_title.configure(
-            text=f"Вердикт: {v.level.value.upper()}  ·  score {v.score}",
-            text_color=color,
-        )
-        lines = [v.summary, ""]
-        if v.reasons:
-            lines.append("Причины:")
-            for r in v.reasons[:6]:
-                lines.append(f"  • {r}")
-        if v.actions:
-            lines.append("")
-            lines.append("Действия:")
-            for a in v.actions[:5]:
-                lines.append(f"  {a.priority}. {a.action} — {a.rationale}")
-        self.verdict_body.configure(text="\n".join(lines))
-        if not self.verdict_card.winfo_ismapped():
-            self.verdict_card.pack(fill="x", padx=16, pady=(0, 8), before=self.tabs)
-
-    def _update_mail_card(self, result: AnalysisResult) -> None:
-        mid = result.mail_identity
-        if not mid:
-            self.mail_card.pack_forget()
-            return
-        lines = [
-            f"From: {mid.from_header or '—'}",
-            f"Return-Path: {mid.return_path or '—'}",
-            f"SPF: {mid.spf or '—'}   DKIM: {mid.dkim or '—'}   DMARC: {mid.dmarc or '—'}",
-            f"Hops: {mid.received_hops}"
-            + (f"   first: {mid.first_received}" if mid.first_received else ""),
-        ]
-        if mid.subject:
-            lines.insert(1, f"Subject: {mid.subject}")
-        if mid.message_id:
-            lines.append(f"Message-ID: {mid.message_id}")
-        self.mail_body.configure(text="\n".join(lines))
-        if not self.mail_card.winfo_ismapped():
-            self.mail_card.pack(fill="x", padx=16, pady=(0, 8), before=self.tabs)
 
     def _copy_from(self) -> None:
         if not self.result or not self.result.mail_identity:
@@ -914,13 +841,15 @@ class IocExtractorApp(ctk.CTk):
                     self._ioc_by_tag[tag] = ioc
                     idx += 1
                     value_tag = "danger" if "denylisted" in ioc.tags else "ioc_click"
-                    self._put(self.ioc_box, f"  {t}  ", f"type_{t}")
+                    self._put(self.ioc_box, f"  {t:<12} ", f"type_{t}")
                     self._put(self.ioc_box, f"{ioc.value}\n", value_tag, "ioc_click", tag)
+                    extras = []
                     if ioc.tags:
-                        self._put(self.ioc_box, f"      {', '.join(ioc.tags)}\n", "muted")
+                        extras.append(", ".join(ioc.tags))
                     if ioc.rewritten_from:
-                        self._put(self.ioc_box, "      развёрнут из: ", "label")
-                        self._put(self.ioc_box, f"{ioc.rewritten_from}\n", "meta")
+                        extras.append(f"← {ioc.rewritten_from}")
+                    if extras:
+                        self._put(self.ioc_box, f"               {' · '.join(extras)}\n", "muted")
 
             other = [i for i in filtered if i.ioc_type.value not in shown]
             if other:
@@ -930,11 +859,15 @@ class IocExtractorApp(ctk.CTk):
                     tag = f"iocid_{idx}"
                     self._ioc_by_tag[tag] = ioc
                     idx += 1
-                    self._put(self.ioc_box, f"  {t}  ", f"type_{t}")
+                    self._put(self.ioc_box, f"  {t:<12} ", f"type_{t}")
                     self._put(self.ioc_box, f"{ioc.value}\n", "ioc_click", tag)
 
         if result.errors:
-            self._put(self.ioc_box, f"\n▸ Ошибки ({len(result.errors)}) — см. вкладку\n", "warn")
+            self._put(
+                self.ioc_box,
+                f"\n! {len(result.errors)} замечаний — вкладка «Ошибки»\n",
+                "warn",
+            )
 
     def _fill_urls(self, result: AnalysisResult) -> None:
         self._clear_box(self.url_box)
@@ -945,18 +878,18 @@ class IocExtractorApp(ctk.CTk):
         changed = sum(1 for u in result.url_rewrites if u.changed)
         self._put(
             self.url_box,
-            f"▸ URL Rewrite  ({len(result.url_rewrites)}, развёрнуто: {changed})\n",
+            f"▸ Rewrite  ({len(result.url_rewrites)}, развёрнуто {changed})\n",
             "section",
         )
         for u in result.url_rewrites:
             status_tag = "ok" if u.changed else "muted"
-            status = "развёрнут" if u.changed else "без изменений"
+            status = "развёрнут" if u.changed else "как есть"
             self._put(self.url_box, f"  {u.rewriter}  ", "info")
             self._put(self.url_box, f"{status}\n", status_tag)
-            self._put(self.url_box, "      исходный: ", "label")
+            self._put(self.url_box, "      ", "label")
             self._put(self.url_box, f"{u.original}\n", "muted" if u.changed else "value")
             if u.changed:
-                self._put(self.url_box, "      реальный: ", "label")
+                self._put(self.url_box, "   →  ", "label")
                 self._put(self.url_box, f"{u.unwrapped}\n", "value")
             self._put(self.url_box, "\n")
 
@@ -971,80 +904,101 @@ class IocExtractorApp(ctk.CTk):
         self._put(
             self.att_box,
             f"▸ Вложения  ({len(result.attachments)}"
-            + (f", с флагами: {risky}" if risky else "")
-            + ")\n",
+            + (f", флаги: {risky}" if risky else "")
+            + f", сохранить можно: {with_data})\n\n",
             "section",
-        )
-        self._put(
-            self.att_box,
-            f"  «Сохранить вложения» — файлы с data в памяти (доступно: {with_data}).\n\n",
-            "muted",
         )
         for a in result.attachments:
             name_tag = "danger" if a.risk_flags else "value"
-            self._put(self.att_box, "  ", "muted")
-            self._put(self.att_box, f"{a.filename}\n", name_tag)
-            self._put(self.att_box, f"      {a.size} bytes · {a.mime_guess}", "muted")
-            if a.data:
-                self._put(self.att_box, " · data✓\n", "ok")
-            else:
-                self._put(self.att_box, " · data✗\n", "muted")
-            self._put(self.att_box, "      MD5     ", "label")
-            self._put(self.att_box, f"{a.md5}\n", "value")
-            self._put(self.att_box, "      SHA1    ", "label")
-            self._put(self.att_box, f"{a.sha1}\n", "value")
-            self._put(self.att_box, "      SHA256  ", "label")
-            self._put(self.att_box, f"{a.sha256}\n", "value")
+            self._put(self.att_box, f"  {a.filename}\n", name_tag)
+            self._put(
+                self.att_box,
+                f"      {a.size} B · {a.mime_guess}"
+                + (" · data✓" if a.data else " · только хеш")
+                + "\n",
+                "muted",
+            )
+            self._put(self.att_box, f"      SHA256  {a.sha256}\n", "value")
             if a.risk_flags:
-                self._put(self.att_box, "      флаги:  ", "label")
-                self._put(self.att_box, f"{', '.join(a.risk_flags)}\n", "warn")
+                self._put(self.att_box, f"      флаги   {', '.join(a.risk_flags)}\n", "warn")
             if a.archive_entries:
-                self._put(self.att_box, "      архив:\n", "label")
-                for entry in a.archive_entries[:40]:
-                    self._put(self.att_box, f"        · {entry}\n", "meta")
-                if len(a.archive_entries) > 40:
-                    self._put(
-                        self.att_box,
-                        f"        … ещё {len(a.archive_entries) - 40}\n",
-                        "muted",
-                    )
-            for note in a.notes:
+                preview = ", ".join(Path(e).name for e in a.archive_entries[:12])
+                more = len(a.archive_entries) - 12
+                self._put(
+                    self.att_box,
+                    f"      архив   {preview}"
+                    + (f" …+{more}" if more > 0 else "")
+                    + "\n",
+                    "meta",
+                )
+            for note in a.notes[:3]:
                 self._put(self.att_box, f"      — {note}\n", "muted")
             self._put(self.att_box, "\n")
 
-    def _fill_headers(self, result: AnalysisResult) -> None:
-        self._clear_box(self.hdr_box)
-
+    def _fill_mail_tab(self, result: AnalysisResult) -> None:
+        """Verdict + identity + headers — only meaningful for email."""
+        self._clear_box(self.mail_box)
+        v = result.verdict
         mid = result.mail_identity
+
+        if v and result.source_kind in ("email", "batch"):
+            color_tag = {
+                "malicious": "danger",
+                "suspicious": "warn",
+                "unknown": "info",
+                "benign": "ok",
+            }.get(v.level.value, "info")
+            self._put(self.mail_box, "▸ Вердикт  ", "section")
+            self._put(
+                self.mail_box,
+                f"{v.level.value.upper()} · score {v.score}\n",
+                color_tag,
+            )
+            self._put(self.mail_box, f"  {v.summary}\n\n", "muted")
+            if v.reasons:
+                self._put(self.mail_box, "  Причины\n", "label")
+                for r in v.reasons[:8]:
+                    self._put(self.mail_box, f"    • {r}\n", "muted")
+            if v.actions:
+                self._put(self.mail_box, "\n  Действия\n", "label")
+                for a in v.actions[:6]:
+                    self._put(self.mail_box, f"    {a.priority}. {a.action}\n", "value")
+                    self._put(self.mail_box, f"       {a.rationale}\n", "muted")
+            self._put(self.mail_box, "\n")
+
         if mid:
-            self._put(self.hdr_box, "▸ Почтовая идентичность\n", "section")
-            self._put(self.hdr_box, "  From: ", "label")
-            self._put(self.hdr_box, f"{mid.from_header or '—'}\n", "value")
-            self._put(self.hdr_box, "  Return-Path: ", "label")
-            self._put(self.hdr_box, f"{mid.return_path or '—'}\n", "value")
-            self._put(self.hdr_box, "  Reply-To: ", "label")
-            self._put(self.hdr_box, f"{mid.reply_to or '—'}\n", "muted")
-            self._put(self.hdr_box, "  Message-ID: ", "label")
-            self._put(self.hdr_box, f"{mid.message_id or '—'}\n", "meta")
-            self._put(self.hdr_box, "  SPF: ", "label")
-            self._put(self.hdr_box, f"{mid.spf or '—'}  ", "info")
-            self._put(self.hdr_box, "DKIM: ", "label")
-            self._put(self.hdr_box, f"{mid.dkim or '—'}  ", "info")
-            self._put(self.hdr_box, "DMARC: ", "label")
-            self._put(self.hdr_box, f"{mid.dmarc or '—'}\n", "info")
-            self._put(self.hdr_box, "  Hops: ", "label")
-            self._put(self.hdr_box, f"{mid.received_hops}\n", "value")
-            if mid.first_received:
-                self._put(self.hdr_box, "  First Received: ", "label")
-                self._put(self.hdr_box, f"{mid.first_received}\n", "muted")
-            self._put(self.hdr_box, "\n")
+            self._put(self.mail_box, "▸ Идентичность\n", "section")
+            self._put(self.mail_box, "  From         ", "label")
+            self._put(self.mail_box, f"{mid.from_header or '—'}\n", "value")
+            if mid.subject:
+                self._put(self.mail_box, "  Subject      ", "label")
+                self._put(self.mail_box, f"{mid.subject}\n", "value")
+            self._put(self.mail_box, "  Return-Path  ", "label")
+            self._put(self.mail_box, f"{mid.return_path or '—'}\n", "muted")
+            self._put(self.mail_box, "  Message-ID   ", "label")
+            self._put(self.mail_box, f"{mid.message_id or '—'}\n", "meta")
+            self._put(self.mail_box, "  Auth         ", "label")
+            self._put(
+                self.mail_box,
+                f"SPF={mid.spf or '—'}  DKIM={mid.dkim or '—'}  DMARC={mid.dmarc or '—'}\n",
+                "info",
+            )
+            self._put(self.mail_box, "  Hops         ", "label")
+            self._put(self.mail_box, f"{mid.received_hops}\n", "value")
+            self._put(self.mail_box, "\n")
+            # Quick copy hints
+            self._put(
+                self.mail_box,
+                "  Подсказка: From / Message-ID копируются кнопками ниже списка findings.\n\n",
+                "muted",
+            )
 
         if result.headers:
             alerts = [
                 h for h in result.headers if h.severity.value in ("high", "critical", "medium")
             ]
             self._put(
-                self.hdr_box,
+                self.mail_box,
                 f"▸ Findings  ({len(result.headers)}"
                 + (f", замечаний: {len(alerts)}" if alerts else "")
                 + ")\n",
@@ -1053,25 +1007,39 @@ class IocExtractorApp(ctk.CTk):
             for h in result.headers:
                 sev = h.severity.value
                 sev_ru = SEVERITY_LABELS_RU.get(sev, sev)
-                self._put(self.hdr_box, f"  [{sev_ru}] ", f"sev_{sev}")
-                self._put(self.hdr_box, f"{h.name}\n", "value")
-                self._put(self.hdr_box, f"      {h.note}\n", "muted")
-                self._put(self.hdr_box, f"      {h.value}\n\n", "meta")
-        elif result.source_kind != "email" and not result.raw_headers and not mid:
+                self._put(self.mail_box, f"  [{sev_ru}] ", f"sev_{sev}")
+                self._put(self.mail_box, f"{h.name}\n", "value")
+                self._put(self.mail_box, f"      {h.note}\n", "muted")
+                self._put(self.mail_box, f"      {h.value}\n\n", "meta")
+        elif result.source_kind not in ("email", "batch") and not mid and not v:
             self._put(
-                self.hdr_box,
-                "Заголовки доступны для писем .eml / .msg\n",
+                self.mail_box,
+                "Вкладка «Письмо» — для .eml / .msg:\n"
+                "вердикт triage, From/SPF/DKIM, findings и сырые заголовки.\n",
                 "empty",
             )
             return
 
+        if mid:
+            # Inline copy actions as text instructions — add real buttons in tab header
+            pass
+
         if result.raw_headers:
-            self._put(self.hdr_box, "▸ Сырые заголовки\n", "section")
+            self._put(self.mail_box, "▸ Сырые заголовки\n", "section")
             for name, value in result.raw_headers.items():
-                self._put(self.hdr_box, f"  {name}: ", "label")
-                self._put(self.hdr_box, f"{value}\n", "muted")
-        elif not result.headers and not mid:
-            self._put(self.hdr_box, "Заголовки не разобраны\n", "empty")
+                self._put(self.mail_box, f"  {name}: ", "label")
+                self._put(self.mail_box, f"{value}\n", "muted")
+
+        # Copy shortcuts at end of mail tab content via status — bind keys when mail present
+        if mid and (mid.from_header or mid.message_id):
+            self._put(self.mail_box, "\n", "muted")
+            self._put(self.mail_box, "  [F] Copy From   [M] Copy Message-ID\n", "info")
+            widget = self._tk(self.mail_box)
+            if widget is not None:
+                widget.bind("<Key-f>", lambda _e: self._copy_from(), add="+")
+                widget.bind("<Key-F>", lambda _e: self._copy_from(), add="+")
+                widget.bind("<Key-m>", lambda _e: self._copy_message_id(), add="+")
+                widget.bind("<Key-M>", lambda _e: self._copy_message_id(), add="+")
 
     def _fill_errors(self, result: AnalysisResult) -> None:
         self._clear_box(self.err_box)
@@ -1094,7 +1062,6 @@ class IocExtractorApp(ctk.CTk):
             for i in iocs:
                 writer.writerow([i.ioc_type.value, i.value, "|".join(i.tags)])
             return buf.getvalue()
-        # type|value
         return "\n".join(f"{i.ioc_type.value}|{i.value}" for i in iocs)
 
     def copy_iocs(self) -> None:
@@ -1125,7 +1092,10 @@ class IocExtractorApp(ctk.CTk):
             if not att.data:
                 skipped += 1
                 continue
-            name = _SAFE_NAME_RE.sub("_", att.filename or "attachment.bin").strip(" .") or "attachment.bin"
+            name = (
+                _SAFE_NAME_RE.sub("_", att.filename or "attachment.bin").strip(" .")
+                or "attachment.bin"
+            )
             candidate = name
             n = 1
             while candidate.lower() in used_names or (out_dir / candidate).exists():
@@ -1154,34 +1124,22 @@ class IocExtractorApp(ctk.CTk):
         iocs = filtered.iocs
         kind_l = kind.lower()
 
-        if kind_l == "csv":
+        dialogs = {
+            "csv": (".csv", [("CSV", "*.csv")], "iocs.csv", export_csv),
+            "stix": (".json", [("STIX JSON", "*.json")], "iocs_stix.json", export_stix),
+            "json": (".json", [("JSON", "*.json")], "iocs_report.json", export_report_json),
+        }
+        if kind_l in dialogs:
+            ext, ftypes, initial, fn = dialogs[kind_l]
             path = filedialog.asksaveasfilename(
-                defaultextension=".csv",
-                filetypes=[("CSV", "*.csv")],
-                initialfile="iocs.csv",
+                defaultextension=ext, filetypes=ftypes, initialfile=initial
             )
             if path:
-                export_csv(filtered, path)
-                self._set_status(f"CSV: {path}")
-        elif kind_l == "stix":
-            path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("STIX JSON", "*.json")],
-                initialfile="iocs_stix.json",
-            )
-            if path:
-                export_stix(filtered, path)
-                self._set_status(f"STIX: {path}")
-        elif kind_l == "json":
-            path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("JSON", "*.json")],
-                initialfile="iocs_report.json",
-            )
-            if path:
-                export_report_json(filtered, path)
-                self._set_status(f"JSON: {path}")
-        elif kind_l == "misp":
+                fn(filtered, path)
+                self._set_status(f"{kind_l.upper()}: {path}")
+            return
+
+        if kind_l == "misp":
             path = filedialog.asksaveasfilename(
                 defaultextension=".json",
                 filetypes=[("MISP JSON", "*.json")],
@@ -1235,12 +1193,14 @@ class IocExtractorApp(ctk.CTk):
             f"О программе — {__app_name__}",
             f"{__app_name__} v{__version__}\n"
             f"{__tagline__}\n\n"
-            "Офлайн IOC-экстрактор для SOC: письма, PDF, HTML, Office, ZIP, текст.\n"
-            "Вердикт triage — только для писем (.eml / .msg).\n"
-            "Без сетевых запросов (enforce_offline).\n\n"
-            "Экспорт: CSV (UTF-8 BOM), STIX, JSON, MISP, OpenCTI, YARA.\n\n"
-            f"Папка приложения:\n{app_dir()}\n\n"
-            f"allowlist:\n{allowlist}\n\n"
+            "Офлайн IOC-экстрактор для SOC.\n"
+            "Вердикт triage — только для писем (.eml / .msg).\n\n"
+            "Горячие клавиши:\n"
+            "  Ctrl+O — открыть файлы\n"
+            "  Ctrl+Enter — извлечь из текста\n"
+            "  клик по IOC — копировать значение\n\n"
+            f"Папка:\n{app_dir()}\n\n"
+            f"allowlist:\n{allowlist}\n"
             f"denylist:\n{denylist}",
         )
 
