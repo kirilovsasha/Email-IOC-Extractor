@@ -489,3 +489,30 @@ def test_report_json_has_meta(tmp_path: Path):
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["meta"]["filters_applied"]["hide_rewriter"] is True
     assert data["meta"]["source_sha256"]
+
+
+def test_desired_result_tabs_context():
+    from reliquary.gui.app import desired_result_tabs
+    from reliquary.core.pipeline import merge_results
+
+    assert desired_result_tabs(None) == [("ioc", "IOC")]
+
+    ticket = analyze_file(SAMPLES / "ticket_sample.txt")
+    keys = [k for k, _ in desired_result_tabs(ticket, filtered_count=len(ticket.iocs))]
+    assert keys[0] == "ioc"
+    assert "batch" not in keys
+    assert "mail" not in keys
+
+    mail = analyze_file(SAMPLES / "phishing_sample.eml")
+    mail_tabs = desired_result_tabs(mail, filtered_count=len(mail.iocs))
+    mail_keys = [k for k, _ in mail_tabs]
+    assert "mail" in mail_keys
+    assert "batch" not in mail_keys
+    assert any(k == "att" for k in mail_keys) or not mail.attachments
+    labels = dict(mail_tabs)
+    assert labels["ioc"].startswith("IOC ")
+
+    merged = merge_results([ticket, mail], label="batch:2")
+    batch_keys = [k for k, _ in desired_result_tabs(merged, filtered_count=len(merged.iocs))]
+    assert "batch" in batch_keys
+    assert any(lbl.startswith("Пакет ") for _, lbl in desired_result_tabs(merged, 1))

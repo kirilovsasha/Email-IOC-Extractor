@@ -92,6 +92,46 @@ _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
 _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
 
+def desired_result_tabs(
+    result: AnalysisResult | None, filtered_count: int = 0
+) -> list[tuple[str, str]]:
+    """Which result facets to show: (stable_key, badge_label)."""
+    if result is None:
+        return [("ioc", "IOC")]
+
+    tabs: list[tuple[str, str]] = [("ioc", f"IOC {filtered_count}")]
+    rows = result.file_rows or []
+    if len(rows) >= 2:
+        tabs.append(("batch", f"Пакет {len(rows)}"))
+    if result.url_rewrites:
+        changed = sum(1 for u in result.url_rewrites if u.changed)
+        if changed:
+            tabs.append(("url", f"URL {changed}/{len(result.url_rewrites)}"))
+        else:
+            tabs.append(("url", f"URL {len(result.url_rewrites)}"))
+    if result.attachments:
+        risky = sum(1 for a in result.attachments if a.risk_flags)
+        if risky:
+            tabs.append(("att", f"Вложения {len(result.attachments)}·{risky}!"))
+        else:
+            tabs.append(("att", f"Вложения {len(result.attachments)}"))
+    mail_relevant = result.source_kind in ("email", "batch") and bool(
+        result.verdict
+        or result.mail_identity
+        or result.headers
+        or result.raw_headers
+        or any(r.kind == "email" for r in rows)
+    )
+    if mail_relevant:
+        if result.verdict:
+            tabs.append(("mail", f"Письмо · {result.verdict.level.value}"))
+        else:
+            tabs.append(("mail", "Письмо"))
+    if result.errors:
+        tabs.append(("err", f"Ошибки {len(result.errors)}"))
+    return tabs
+
+
 def _collect_supported(root: Path, *, recursive: bool = True) -> list[str]:
     paths: list[str] = []
     iterator = root.rglob if recursive else root.glob
@@ -378,28 +418,48 @@ class IocExtractorApp(ctk.CTk):
         )
         self.filter_hint.pack(fill="x", padx=14, pady=(0, 4))
 
-        self.tabs = ctk.CTkTabview(
-            right,
-            fg_color=COLORS["surface"],
-            segmented_button_fg_color=COLORS["surface_alt"],
-            segmented_button_selected_color=COLORS["accent"],
-            segmented_button_selected_hover_color=COLORS["accent_dim"],
-            segmented_button_unselected_color=COLORS["surface_alt"],
+        # Context tabs: only relevant facets, labels carry counts
+        self._tab_host = ctk.CTkFrame(right, fg_color=COLORS["surface"])
+        self._tab_host.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        self._tab_key_by_label: dict[str, str] = {}
+        self._tab_label_by_key: dict[str, str] = {}
+        self._active_tab_key = "ioc"
+        self._tab_var = ctk.StringVar(value="IOC")
+
+        self._tab_seg = ctk.CTkSegmentedButton(
+            self._tab_host,
+            values=["IOC"],
+            variable=self._tab_var,
+            command=self._on_tab_selected,
+            fg_color=COLORS["surface_alt"],
+            selected_color=COLORS["accent"],
+            selected_hover_color=COLORS["accent_dim"],
+            unselected_color=COLORS["surface_alt"],
+            unselected_hover_color=COLORS["border"],
             text_color=COLORS["text"],
-            height=400,
+            height=32,
         )
-        self.tabs.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self._tab_seg.pack(fill="x", padx=2, pady=(2, 6))
 
-        for name in ("IOC", "Пакет", "URL", "Вложения", "Письмо", "Ошибки"):
-            self.tabs.add(name)
+        self._tab_body = ctk.CTkFrame(self._tab_host, fg_color=COLORS["surface"])
+        self._tab_body.pack(fill="both", expand=True)
 
-        self.ioc_box = self._make_text(self.tabs.tab("IOC"))
-        self.batch_box = self._make_text(self.tabs.tab("Пакет"))
-        self.url_box = self._make_text(self.tabs.tab("URL"))
-        self.att_box = self._make_text(self.tabs.tab("Вложения"))
-        self.mail_box = self._make_text(self.tabs.tab("Письмо"))
-        self.err_box = self._make_text(self.tabs.tab("Ошибки"))
+        self._tab_frames: dict[str, ctk.CTkFrame] = {}
+        for key in ("ioc", "batch", "url", "att", "mail", "err"):
+            frame = ctk.CTkFrame(self._tab_body, fg_color=COLORS["surface"])
+            self._tab_frames[key] = frame
+
+        self.ioc_box = self._make_text(self._tab_frames["ioc"])
+        self.batch_box = self._make_text(self._tab_frames["batch"])
+        self.url_box = self._make_text(self._tab_frames["url"])
+        self.att_box = self._make_text(self._tab_frames["att"])
+        self.mail_box = self._make_text(self._tab_frames["mail"])
+        self.err_box = self._make_text(self._tab_frames["err"])
         self._bind_ioc_click()
+        self._show_tab_frame("ioc")
+        self._tab_label_by_key = {"ioc": "IOC"}
+        self._tab_key_by_label = {"IOC": "ioc"}
 
         # —— Status bar ——
         status_bar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=0, height=28)
@@ -578,6 +638,55 @@ class IocExtractorApp(ctk.CTk):
         deny = list_mtime_label("denylist.txt")
         self.lists_mtime.configure(text=f"allow {allow} · deny {deny}")
 
+    def _on_tab_selected(self, label: str) -> None:
+        key = self._tab_key_by_label.get(label)
+        if key:
+            self._show_tab_frame(key)
+
+    def _show_tab_frame(self, key: str) -> None:
+        self._active_tab_key = key
+        for k, frame in self._tab_frames.items():
+            if k == key:
+                frame.pack(fill="both", expand=True)
+            else:
+                frame.pack_forget()
+
+    def _mail_tab_relevant(self, result: AnalysisResult) -> bool:
+        rows = result.file_rows or []
+        if result.source_kind not in ("email", "batch"):
+            return False
+        return bool(
+            result.verdict
+            or result.mail_identity
+            or result.headers
+            or result.raw_headers
+            or any(r.kind == "email" for r in rows)
+        )
+
+    def _desired_tabs(
+        self, result: AnalysisResult | None, filtered_count: int
+    ) -> list[tuple[str, str]]:
+        return desired_result_tabs(result, filtered_count)
+    def _sync_result_tabs(self, result: AnalysisResult | None, filtered_count: int = 0) -> None:
+        desired = self._desired_tabs(result, filtered_count)
+        labels = [label for _, label in desired]
+        key_by_label = {label: key for key, label in desired}
+        label_by_key = {key: label for key, label in desired}
+
+        prev_key = self._active_tab_key
+        self._tab_key_by_label = key_by_label
+        self._tab_label_by_key = label_by_key
+
+        self._tab_seg.configure(values=labels)
+        if prev_key in label_by_key:
+            select_key = prev_key
+        else:
+            select_key = "ioc"
+        select_label = label_by_key[select_key]
+        self._tab_var.set(select_label)
+        self._tab_seg.set(select_label)
+        self._show_tab_frame(select_key)
+
     # ----------------------------------------------------------- filtering
     def _reset_filters(self) -> None:
         for var in self.cat_vars.values():
@@ -627,6 +736,9 @@ class IocExtractorApp(ctk.CTk):
                 text="Фильтры влияют на список, копирование и экспорт · клик по IOC копирует"
             )
             self.source_meta.configure(text="")
+            self._sync_result_tabs(None)
+            self._clear_box(self.ioc_box)
+            self._put(self.ioc_box, "Откройте файл или вставьте текст тикета\n", "empty")
             return
 
         filtered = self._filtered_iocs()
@@ -655,6 +767,7 @@ class IocExtractorApp(ctk.CTk):
             )
 
         self._update_verdict_badge(self.result)
+        self._sync_result_tabs(self.result, filtered_count=total)
         self._fill_iocs(self.result, filtered)
         self._fill_batch(self.result)
         self._fill_urls(self.result)
@@ -825,7 +938,12 @@ class IocExtractorApp(ctk.CTk):
             self.input_box.configure(text_color=COLORS["text"])
 
         self._refresh_views()
-        self.tabs.set("IOC")
+        # Prefer IOC after new analysis; batch stays available via tab bar when relevant
+        if "ioc" in self._tab_label_by_key:
+            label = self._tab_label_by_key["ioc"]
+            self._tab_var.set(label)
+            self._tab_seg.set(label)
+            self._show_tab_frame("ioc")
         filtered_n = len(self._filtered_iocs())
         err = f" · ошибки: {len(result.errors)}" if result.errors else ""
         self._set_status(f"Готово: {filtered_n} IOC{err}")
@@ -875,12 +993,8 @@ class IocExtractorApp(ctk.CTk):
     def _fill_batch(self, result: AnalysisResult) -> None:
         self._clear_box(self.batch_box)
         rows = result.file_rows or []
-        if not rows:
-            self._put(
-                self.batch_box,
-                "Пакетная таблица появится при открытии нескольких файлов / папки.\n",
-                "empty",
-            )
+        if len(rows) < 2:
+            self._put(self.batch_box, "Нужно ≥2 файла для пакетной таблицы\n", "empty")
             return
         self._put(
             self.batch_box,
