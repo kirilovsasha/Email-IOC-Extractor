@@ -1,12 +1,12 @@
 """Hard offline guarantee — IOC Extractor must never phone home.
 
 Imported at app start. Blocks common outbound helpers if somehow called.
+Must run AFTER third-party imports (stix2/urllib3) so class patching is safe.
 """
 
 from __future__ import annotations
 
 import socket
-import ssl
 
 
 class OfflineViolation(RuntimeError):
@@ -26,7 +26,11 @@ def _blocked_getaddrinfo(*_args, **_kwargs):
 
 
 def enforce_offline() -> None:
-    """Fail-closed: block socket connect, DNS, and SSL wrap that implies I/O."""
+    """Fail-closed at the socket layer (connect + DNS).
+
+    Avoid replacing ``http.client.HTTPConnection`` with a function — urllib3
+    subclasses those classes at import time and breaks if they are callables.
+    """
     socket.create_connection = _blocked  # type: ignore[assignment]
     socket.socket.connect = _blocked  # type: ignore[method-assign, assignment]
     socket.socket.connect_ex = _blocked  # type: ignore[method-assign, assignment]
@@ -36,22 +40,11 @@ def enforce_offline() -> None:
         socket.gethostbyname_ex = _blocked_getaddrinfo  # type: ignore[assignment]
     except Exception:  # noqa: BLE001
         pass
+
+    # Soft-block high-level helpers if already imported (do not replace classes).
     try:
-        ssl.SSLContext.wrap_socket = _blocked  # type: ignore[method-assign, assignment]
+        import urllib.request as ureq
+
+        ureq.urlopen = _blocked  # type: ignore[assignment]
     except Exception:  # noqa: BLE001
         pass
-
-    for mod_name in ("urllib.request", "http.client"):
-        try:
-            __import__(mod_name)
-            import sys
-
-            mod = sys.modules[mod_name]
-            for attr in ("urlopen", "Request", "HTTPConnection", "HTTPSConnection"):
-                if hasattr(mod, attr):
-                    try:
-                        setattr(mod, attr, _blocked)
-                    except Exception:  # noqa: BLE001
-                        pass
-        except Exception:  # noqa: BLE001
-            continue
