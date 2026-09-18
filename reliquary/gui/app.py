@@ -569,10 +569,10 @@ class IocExtractorApp(ctk.CTk):
             status_bar,
             text="Стоп",
             width=56,
-            height=24,
             command=self.cancel_batch,
             fg_color=COLORS["danger"],
             hover_color="#a33c3c",
+            height=BTN_H,
             state="disabled",
         )
         self._stop_btn.pack(side="right", padx=(4, 8), pady=4)
@@ -580,7 +580,6 @@ class IocExtractorApp(ctk.CTk):
             status_bar,
             text="Повтор failed",
             width=110,
-            height=24,
             command=self.retry_failed,
             state="disabled",
             **BTN_SECONDARY,
