@@ -104,6 +104,93 @@ _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _TAB_HOTKEYS = ("ioc", "batch", "url", "att", "mail", "err")
 _SCALE_STEPS = (0.85, 1.0, 1.15, 1.25, 1.35, 1.5)
 
+# Filter strip: (label, var_attr, tooltip). Hide = drop noise; focus = narrow list.
+_HIDE_NOISE_FILTERS = (
+    (
+        "прокси URL",
+        "hide_rewriter",
+        "Скрыть URL из SafeLinks / Proofpoint и другой прокси-шум писем",
+    ),
+    (
+        "allowlist",
+        "hide_allowlisted",
+        "Скрыть IOC из allowlist.txt (известные безопасные)",
+    ),
+    (
+        "частные IP",
+        "hide_private",
+        "Скрыть частные/локальные адреса (10/8, 192.168/16, …)",
+    ),
+)
+_FOCUS_FILTERS = (
+    (
+        "только denylist",
+        "only_denylisted",
+        "Показать только IOC из denylist.txt",
+    ),
+    (
+        "к разбору",
+        "actionable_only",
+        "Только полезные IOC: без прокси/allowlist/private и без «голых» имён файлов",
+    ),
+)
+
+
+class _HoverTip:
+    """Lightweight tooltip for first-run clarity on dense controls."""
+
+    def __init__(self, widget: tk.Misc, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        self._tip: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _event: object = None) -> None:
+        if self._tip is not None or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+        tip.attributes("-topmost", True)
+        lbl = tk.Label(
+            tip,
+            text=self.text,
+            justify="left",
+            background=COLORS["surface_alt"],
+            foreground=COLORS["text"],
+            relief="solid",
+            borderwidth=1,
+            font=("Segoe UI", 9),
+            padx=8,
+            pady=5,
+            wraplength=320,
+        )
+        lbl.pack()
+        self._tip = tip
+
+    def _hide(self, _event: object = None) -> None:
+        if self._tip is not None:
+            self._tip.destroy()
+            self._tip = None
+
+
+def _muted_label(parent: object, text: str, *, size: int = 11) -> ctk.CTkLabel:
+    return ctk.CTkLabel(
+        parent,
+        text=text,
+        font=ctk.CTkFont(size=size, weight="bold"),
+        text_color=COLORS["muted"],
+    )
+
+
+def _vsep(parent: object, *, height: int = 22) -> None:
+    ctk.CTkFrame(parent, fg_color=COLORS["border"], width=1, height=height).pack(
+        side="left", padx=8
+    )
+
 
 def desired_result_tabs(
     result: AnalysisResult | None, filtered_count: int = 0
@@ -247,67 +334,50 @@ class IocExtractorApp(ctk.CTk):
             header, text="Конфиги", width=90, command=self.open_configs, **BTN_SECONDARY
         ).pack(side="right", padx=0, pady=8)
 
-        # —— Toolbar: input | output ——
-        toolbar = ctk.CTkFrame(self, fg_color=COLORS["bg"], height=48)
+        # —— Toolbar: источник → буфер → экспорт ——
+        toolbar = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=6)
         toolbar.pack(fill="x", padx=16, pady=(10, 4))
+        tb = ctk.CTkFrame(toolbar, fg_color="transparent")
+        tb.pack(fill="x", padx=10, pady=8)
 
-        left_actions = ctk.CTkFrame(toolbar, fg_color="transparent")
-        left_actions.pack(side="left")
+        _muted_label(tb, "Источник").pack(side="left", padx=(0, 8))
+        btn_open = ctk.CTkButton(
+            tb, text="Открыть файл", width=112, command=self.open_files, **BTN_PRIMARY
+        )
+        btn_open.pack(side="left", padx=(0, 6))
+        _HoverTip(btn_open, "Файл или несколько файлов (Ctrl+O)")
+        btn_folder = ctk.CTkButton(
+            tb, text="Папка", width=72, command=self.open_folder, **BTN_SECONDARY
+        )
+        btn_folder.pack(side="left", padx=(0, 4))
+        _HoverTip(btn_folder, "Рекурсивно обработать все поддерживаемые файлы в папке")
 
-        ctk.CTkButton(
-            left_actions, text="Открыть", width=96, command=self.open_files, **BTN_PRIMARY
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            left_actions, text="Папка", width=80, command=self.open_folder, **BTN_SECONDARY
-        ).pack(side="left", padx=(0, 6))
+        _vsep(tb, height=26)
 
-        sep = ctk.CTkFrame(toolbar, fg_color=COLORS["border"], width=1, height=28)
-        sep.pack(side="left", padx=10)
-
-        right_actions = ctk.CTkFrame(toolbar, fg_color="transparent")
-        right_actions.pack(side="left")
-
+        _muted_label(tb, "Буфер").pack(side="left", padx=(0, 8))
         ctk.CTkOptionMenu(
-            right_actions,
+            tb,
             variable=self._copy_format,
             values=list(_COPY_FORMATS),
-            width=108,
+            width=112,
             height=BTN_H,
             fg_color=COLORS["surface_alt"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
         ).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(
-            right_actions, text="Копировать", width=104, command=self.copy_iocs, **BTN_SECONDARY
-        ).pack(side="left", padx=(0, 8))
-
-        ctk.CTkOptionMenu(
-            right_actions,
-            variable=self._export_choice,
-            values=list(_EXPORT_CHOICES),
-            width=100,
-            height=BTN_H,
-            fg_color=COLORS["surface_alt"],
-            button_color=COLORS["border"],
-            button_hover_color=COLORS["accent_dim"],
-            dropdown_fg_color=COLORS["surface"],
-        ).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(
-            right_actions, text="Экспорт", width=88, command=self._export_clicked, **BTN_PRIMARY
-        ).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(
-            right_actions,
-            text="Вложения",
-            width=96,
-            command=self.save_attachments,
-            **BTN_SECONDARY,
-        ).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(
-            right_actions, text="Тикет", width=72, command=self.copy_ticket, **BTN_SECONDARY
-        ).pack(side="left", padx=(0, 4))
+        btn_copy = ctk.CTkButton(
+            tb, text="Копировать", width=100, command=self.copy_iocs, **BTN_SECONDARY
+        )
+        btn_copy.pack(side="left", padx=(0, 8))
+        _HoverTip(btn_copy, "Скопировать видимые IOC в выбранном формате")
+        btn_ticket = ctk.CTkButton(
+            tb, text="Тикет", width=68, command=self.copy_ticket, **BTN_SECONDARY
+        )
+        btn_ticket.pack(side="left", padx=(0, 4))
+        _HoverTip(btn_ticket, "Шаблон handoff в буфер (для тикета в SD/SOAR)")
         ctk.CTkCheckBox(
-            right_actions,
+            tb,
             text="короткий",
             variable=self.ticket_short,
             command=self._persist_prefs,
@@ -319,23 +389,48 @@ class IocExtractorApp(ctk.CTk):
             checkbox_width=16,
             checkbox_height=16,
         ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            right_actions, text="Msg-ID", width=72, command=self.copy_message_id_block, **BTN_SECONDARY
-        ).pack(side="left")
+        btn_msgid = ctk.CTkButton(
+            tb, text="Msg-ID", width=72, command=self.copy_message_id_block, **BTN_SECONDARY
+        )
+        btn_msgid.pack(side="left")
+        _HoverTip(btn_msgid, "Message-ID / campaign-блок для корреляции писем")
 
-        # —— Compact filters (one strip) ——
-        filters = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=6, height=40)
-        filters.pack(fill="x", padx=16, pady=(6, 6))
+        _vsep(tb, height=26)
 
-        inner = ctk.CTkFrame(filters, fg_color="transparent")
-        inner.pack(fill="x", padx=10, pady=6)
+        _muted_label(tb, "Экспорт").pack(side="left", padx=(0, 8))
+        ctk.CTkOptionMenu(
+            tb,
+            variable=self._export_choice,
+            values=list(_EXPORT_CHOICES),
+            width=128,
+            height=BTN_H,
+            fg_color=COLORS["surface_alt"],
+            button_color=COLORS["border"],
+            button_hover_color=COLORS["accent_dim"],
+            dropdown_fg_color=COLORS["surface"],
+        ).pack(side="left", padx=(0, 4))
+        btn_export = ctk.CTkButton(
+            tb, text="Сохранить", width=96, command=self._export_clicked, **BTN_PRIMARY
+        )
+        btn_export.pack(side="left", padx=(0, 6))
+        _HoverTip(btn_export, "Сохранить видимые IOC в выбранном формате")
+        btn_att = ctk.CTkButton(
+            tb, text="Вложения", width=88, command=self.save_attachments, **BTN_SECONDARY
+        )
+        btn_att.pack(side="left")
+        _HoverTip(btn_att, "Выгрузить вложения письма на диск")
 
-        ctk.CTkLabel(
-            inner, text="Типы", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["muted"]
-        ).pack(side="left", padx=(0, 8))
+        # —— Filters: типы | скрыть шум | фокус ——
+        filters = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=6)
+        filters.pack(fill="x", padx=16, pady=(6, 4))
+
+        row_types = ctk.CTkFrame(filters, fg_color="transparent")
+        row_types.pack(fill="x", padx=10, pady=(8, 2))
+
+        _muted_label(row_types, "Типы IOC", size=12).pack(side="left", padx=(0, 8))
         for name, var in self.cat_vars.items():
-            ctk.CTkCheckBox(
-                inner,
+            cb = ctk.CTkCheckBox(
+                row_types,
                 text=name,
                 variable=var,
                 command=self._on_filter_change,
@@ -346,49 +441,21 @@ class IocExtractorApp(ctk.CTk):
                 width=70,
                 checkbox_width=18,
                 checkbox_height=18,
-            ).pack(side="left", padx=(0, 6))
-
-        ctk.CTkFrame(inner, fg_color=COLORS["border"], width=1, height=18).pack(
-            side="left", padx=8
-        )
-
-        ctk.CTkLabel(
-            inner, text="Шум", font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["muted"]
-        ).pack(side="left", padx=(0, 8))
-        for text, var in (
-            ("SafeLinks", self.hide_rewriter),
-            ("allowlist", self.hide_allowlisted),
-            ("private IP", self.hide_private),
-            ("denylist", self.only_denylisted),
-            ("actionable", self.actionable_only),
-        ):
-            ctk.CTkCheckBox(
-                inner,
-                text=text,
-                variable=var,
-                command=self._on_filter_change,
-                text_color=COLORS["muted"],
-                fg_color=COLORS["accent"],
-                hover_color=COLORS["accent_dim"],
-                border_color=COLORS["border"],
-                width=88,
-                checkbox_width=18,
-                checkbox_height=18,
-            ).pack(side="left", padx=(0, 4))
+            )
+            cb.pack(side="left", padx=(0, 6))
 
         self.search_entry = ctk.CTkEntry(
-            inner,
+            row_types,
             textvariable=self._search_var,
-            placeholder_text="Ctrl+F поиск…",
-            width=150,
+            placeholder_text="Ctrl+F поиск по IOC…",
+            width=170,
             height=26,
             fg_color=COLORS["surface_alt"],
             border_color=COLORS["border"],
         )
         self.search_entry.pack(side="right", padx=(6, 0))
-
         ctk.CTkButton(
-            inner,
+            row_types,
             text="Сброс",
             width=64,
             height=26,
@@ -398,6 +465,71 @@ class IocExtractorApp(ctk.CTk):
             border_width=1,
             border_color=COLORS["border"],
         ).pack(side="right")
+
+        row_noise = ctk.CTkFrame(filters, fg_color="transparent")
+        row_noise.pack(fill="x", padx=10, pady=(2, 4))
+
+        _muted_label(row_noise, "Скрыть шум", size=12).pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(
+            row_noise,
+            text="(✓ = убрать из списка)",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["muted"],
+        ).pack(side="left", padx=(0, 8))
+        for text, attr, tip in _HIDE_NOISE_FILTERS:
+            cb = ctk.CTkCheckBox(
+                row_noise,
+                text=text,
+                variable=getattr(self, attr),
+                command=self._on_filter_change,
+                text_color=COLORS["text"],
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_dim"],
+                border_color=COLORS["border"],
+                width=100,
+                checkbox_width=18,
+                checkbox_height=18,
+            )
+            cb.pack(side="left", padx=(0, 6))
+            _HoverTip(cb, tip)
+
+        _vsep(row_noise, height=18)
+
+        _muted_label(row_noise, "Фокус", size=12).pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(
+            row_noise,
+            text="(✓ = только это)",
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["muted"],
+        ).pack(side="left", padx=(0, 8))
+        for text, attr, tip in _FOCUS_FILTERS:
+            cb = ctk.CTkCheckBox(
+                row_noise,
+                text=text,
+                variable=getattr(self, attr),
+                command=self._on_filter_change,
+                text_color=COLORS["text"],
+                fg_color=COLORS["accent"],
+                hover_color=COLORS["accent_dim"],
+                border_color=COLORS["border"],
+                width=118,
+                checkbox_width=18,
+                checkbox_height=18,
+            )
+            cb.pack(side="left", padx=(0, 6))
+            _HoverTip(cb, tip)
+
+        self.filter_legend = ctk.CTkLabel(
+            filters,
+            text=(
+                "Шум — типичный мусор писем (прокси URL, allowlist, частные IP). "
+                "Сначала откройте файл → смотрите IOC → при необходимости включите «к разбору»."
+            ),
+            font=ctk.CTkFont(size=11),
+            text_color=COLORS["muted"],
+            anchor="w",
+        )
+        self.filter_legend.pack(fill="x", padx=12, pady=(0, 8))
 
         self.focus_hint = ctk.CTkLabel(
             self,
@@ -1021,12 +1153,18 @@ class IocExtractorApp(ctk.CTk):
             self.verdict_badge.configure(text="")
             self.ioc_breakdown.configure(text="Откройте файл или вставьте текст")
             self.filter_hint.configure(
-                text="Фильтры влияют на список, копирование и экспорт · клик по IOC копирует"
+                text="Сначала откройте файл или вставьте текст · клик по IOC копирует значение"
             )
             self.source_meta.configure(text="")
             self._sync_result_tabs(None)
             self._clear_box(self.ioc_box)
-            self._put(self.ioc_box, "Откройте файл или вставьте текст тикета\n", "empty")
+            self._put(
+                self.ioc_box,
+                "1. Откройте файл / папку или вставьте текст слева\n"
+                "2. При шуме писем оставьте «прокси URL» и «allowlist» включёнными\n"
+                "3. Нужны только важные — включите «к разбору»\n",
+                "empty",
+            )
             self.focus_hint.configure(text="")
             return
 
@@ -1058,7 +1196,7 @@ class IocExtractorApp(ctk.CTk):
             self.ioc_breakdown.configure(text=breakdown, text_color=COLORS["text"])
         else:
             self.ioc_breakdown.configure(
-                text="Пусто — ослабьте фильтры",
+                text="Пусто — снимите «Фокус» или ослабьте «Скрыть шум»",
                 text_color=COLORS["muted"],
             )
 
@@ -1934,13 +2072,19 @@ class IocExtractorApp(ctk.CTk):
             f"{__app_name__} v{__version__}\n"
             f"{__tagline__}\n\n"
             "Офлайн IOC-экстрактор для SOC.\n"
-            "Сеть заблокирована (socket/DNS/SSL).\n"
+            "Сеть заблокирована (socket/DNS/SSL).\n\n"
+            "С чего начать:\n"
+            "  1. Открыть файл / папку или вставить текст слева\n"
+            "  2. Смотреть IOC справа (типы включают/выключают группы)\n"
+            "  3. «Скрыть шум» — убрать прокси URL, allowlist, частные IP\n"
+            "  4. «Фокус» — только denylist или только IOC к разбору\n"
+            "  5. Копировать / сохранить / Тикет\n\n"
             "Вердикт triage — только для писем (.eml / .msg);\n"
             "веса в verdict.ini рядом с exe.\n\n"
             "Горячие клавиши:\n"
             "  Ctrl+O — открыть файлы\n"
             "  Ctrl+Enter — извлечь из текста\n"
-            "  клик по IOC — копировать значение\n"
+            "  Ctrl+F — поиск · клик по IOC — копировать\n"
             "  Тикет / Msg-ID — шаблоны в буфер\n\n"
             f"Папка:\n{app_dir()}\n\n"
             f"allowlist ({list_mtime_label('allowlist.txt')}):\n{allowlist}\n"
