@@ -27,9 +27,10 @@ from reliquary.core.exporters import (
     export_yara,
     filter_iocs,
 )
+from reliquary.core.allowlist import list_file_path
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
-from reliquary.core.paths import app_dir, ensure_user_lists, list_file_path
+from reliquary.core.paths import app_dir, ensure_user_lists
 from reliquary.core.pipeline import analyze_file, analyze_text, merge_results
 from reliquary.gui.theme import (
     COLORS,
