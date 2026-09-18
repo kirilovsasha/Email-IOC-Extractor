@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from reliquary.core.paths import config_path, ensure_user_lists
+
 # CDN / mail infra / telemetry — tag as allowlisted (kept, but filterable).
 DEFAULT_ALLOW_DOMAINS = frozenset(
     {
@@ -52,22 +54,28 @@ DEFAULT_ALLOW_IPS = frozenset(
 )
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def load_list_file(name: str) -> set[str]:
-    """Load one entry per line from project root (allowlist.txt / denylist.txt)."""
-    path = _project_root() / name
+    """Load one entry per line from app dir (exe folder or project root)."""
+    ensure_user_lists()
+    path = config_path(name)
     if not path.is_file():
         return set()
     out: set[str] = set()
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return set()
+    for line in lines:
         line = line.strip().lower()
         if not line or line.startswith("#"):
             continue
         out.add(line)
     return out
+
+
+def list_file_path(name: str) -> Path:
+    ensure_user_lists()
+    return config_path(name)
 
 
 def build_allowlist() -> tuple[set[str], set[str]]:

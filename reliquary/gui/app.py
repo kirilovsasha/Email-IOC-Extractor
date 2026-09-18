@@ -1,8 +1,13 @@
-"""IOC Extractor desktop GUI — extract IOCs from files and text (CustomTkinter 6)."""
+"""IOC Extractor desktop GUI — extract IOCs from files and text (CustomTkinter)."""
 
 from __future__ import annotations
 
+import csv
+import io
+import os
 import re
+import subprocess
+import sys
 import threading
 import tkinter as tk
 from collections import Counter
@@ -22,8 +27,9 @@ from reliquary.core.exporters import (
     export_yara,
     filter_iocs,
 )
-from reliquary.core.models import AnalysisResult
+from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
+from reliquary.core.paths import app_dir, ensure_user_lists, list_file_path
 from reliquary.core.pipeline import analyze_file, analyze_text, merge_results
 from reliquary.gui.theme import (
     COLORS,
@@ -38,16 +44,28 @@ ctk.set_default_color_theme("dark-blue")
 
 _PLACEHOLDER = (
     "Вставьте текст тикета или откройте файл.\n\n"
-    "Форматы: .eml  .msg  .pdf  .html  .htm  .txt  .csv  .log\n"
-    "Письма: IOC, URL, вложения, заголовки (From/SPF/Received…).\n"
-    "Перетащите файлы в окно или откройте папку.\n\n"
-    "Офлайн — без сетевых запросов."
+    "Форматы: .eml .msg .pdf .html .txt .docx .xlsx .zip\n"
+    "Письма: IOC, URL, вложения, заголовки, вердикт.\n"
+    "Перетащите файлы/папки или откройте папку (рекурсивно).\n\n"
+    "Клик по IOC — копировать значение. Офлайн."
 )
 
-_SUPPORTED_GLOBS = ("*.eml", "*.msg", "*.pdf", "*.html", "*.htm", "*.txt", "*.csv", "*.log")
+_SUPPORTED_GLOBS = (
+    "*.eml",
+    "*.msg",
+    "*.pdf",
+    "*.html",
+    "*.htm",
+    "*.txt",
+    "*.csv",
+    "*.log",
+    "*.md",
+    "*.docx",
+    "*.xlsx",
+    "*.zip",
+)
 _SUPPORTED_SUFFIXES = {g[1:].lower() for g in _SUPPORTED_GLOBS}
 
-# Category → IOC type sets (multi-select filters)
 _CATEGORY_TYPES: dict[str, set[str]] = {
     "Сеть": set(IOC_GROUPS[0][1]),
     "Хеши": set(IOC_GROUPS[1][1]),
@@ -55,38 +73,47 @@ _CATEGORY_TYPES: dict[str, set[str]] = {
     "Крипто": set(IOC_GROUPS[3][1]),
 }
 
-_EXPORT_CHOICES = (
-    "CSV",
-    "STIX",
-    "JSON",
-    "MISP",
-    "OpenCTI",
-    "YARA",
-)
-
+_EXPORT_CHOICES = ("CSV", "STIX", "JSON", "MISP", "OpenCTI", "YARA")
+_COPY_FORMATS = ("value", "type|value", "csv")
 _SAFE_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+
+_VERDICT_COLORS = {
+    "malicious": COLORS["danger"],
+    "suspicious": COLORS["warn"],
+    "unknown": COLORS["info"],
+    "benign": COLORS["ok"],
+}
+
+
+def _collect_supported(root: Path, *, recursive: bool = True) -> list[str]:
+    paths: list[str] = []
+    iterator = root.rglob if recursive else root.glob
+    for pattern in _SUPPORTED_GLOBS:
+        paths.extend(str(p) for p in iterator(pattern) if p.is_file())
+    return sorted(set(paths))
 
 
 class IocExtractorApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
+        ensure_user_lists()
         self.title(f"{__app_name__} — {__tagline__}")
-        self.geometry("1280x820")
+        self.geometry("1280x860")
         self.minsize(1000, 700)
         self.configure(fg_color=COLORS["bg"])
 
         self.result: AnalysisResult | None = None
         self._placeholder_active = True
+        self._cancel_batch = False
+        self._ioc_by_tag: dict[str, Ioc] = {}
 
-        # Types: all on by default (multi-select)
-        self.cat_vars = {
-            name: ctk.BooleanVar(value=True) for name in _CATEGORY_TYPES
-        }
-        # Noise: hide mail gateways + allowlist by default (less clutter)
+        self.cat_vars = {name: ctk.BooleanVar(value=True) for name in _CATEGORY_TYPES}
         self.hide_rewriter = ctk.BooleanVar(value=True)
         self.hide_allowlisted = ctk.BooleanVar(value=True)
         self.hide_private = ctk.BooleanVar(value=False)
+        self.only_denylisted = ctk.BooleanVar(value=False)
         self._export_choice = ctk.StringVar(value="CSV")
+        self._copy_format = ctk.StringVar(value="type|value")
 
         self._build()
         self._try_hook_drop()
@@ -131,8 +158,19 @@ class IocExtractorApp(ctk.CTk):
         ctk.CTkButton(
             toolbar, text="Из текста", command=self.analyze_text_area, width=110, **btn_kw
         ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkOptionMenu(
+            toolbar,
+            variable=self._copy_format,
+            values=list(_COPY_FORMATS),
+            width=110,
+            fg_color=COLORS["surface_alt"],
+            button_color=COLORS["border"],
+            button_hover_color=COLORS["accent_dim"],
+            dropdown_fg_color=COLORS["surface"],
+        ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
-            toolbar, text="Копировать IOC", command=self.copy_iocs, width=130, **btn_kw
+            toolbar, text="Копировать", command=self.copy_iocs, width=110, **btn_kw
         ).pack(side="left", padx=(0, 6))
         ctk.CTkButton(
             toolbar,
@@ -146,14 +184,24 @@ class IocExtractorApp(ctk.CTk):
             toolbar,
             variable=self._export_choice,
             values=list(_EXPORT_CHOICES),
-            command=self._on_export_menu,
             width=120,
             fg_color=COLORS["surface_alt"],
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
+        ).pack(side="left", padx=(0, 4))
+        ctk.CTkButton(
+            toolbar,
+            text="Экспорт",
+            command=self._export_clicked,
+            width=90,
+            fg_color=COLORS["accent"],
+            hover_color=COLORS["accent_dim"],
         ).pack(side="left", padx=(0, 6))
 
+        ctk.CTkButton(
+            toolbar, text="Конфиги", command=self.open_configs, width=100, **btn_kw
+        ).pack(side="left", padx=(0, 6))
         ctk.CTkButton(
             toolbar, text="О программе", command=self.show_about, width=120, **btn_kw
         ).pack(side="left", padx=(0, 6))
@@ -165,7 +213,6 @@ class IocExtractorApp(ctk.CTk):
         )
         self.status.pack(side="right")
 
-        # ---- Filters (clear Russian labels, two rows) ----
         filter_panel = ctk.CTkFrame(self, fg_color=COLORS["surface"], corner_radius=8)
         filter_panel.pack(fill="x", padx=20, pady=(0, 10))
 
@@ -215,6 +262,7 @@ class IocExtractorApp(ctk.CTk):
             ("Шлюзы почты (SafeLinks…)", self.hide_rewriter),
             ("Из allowlist", self.hide_allowlisted),
             ("Частные IP", self.hide_private),
+            ("Только denylist", self.only_denylisted),
         ):
             ctk.CTkCheckBox(
                 row2,
@@ -229,7 +277,7 @@ class IocExtractorApp(ctk.CTk):
 
         self.filter_hint = ctk.CTkLabel(
             filter_panel,
-            text="Фильтр применяется к вкладке IOC, копированию и экспорту",
+            text="Фильтр → IOC / копирование / экспорт · клик по IOC копирует значение",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["muted"],
             anchor="w",
@@ -288,6 +336,29 @@ class IocExtractorApp(ctk.CTk):
         )
         self.ioc_breakdown.pack(anchor="w", fill="x", padx=16, pady=(0, 12))
 
+        self.verdict_card = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
+        self.verdict_card.pack(fill="x", padx=16, pady=(0, 8))
+        self.verdict_card.pack_forget()
+
+        self.verdict_title = ctk.CTkLabel(
+            self.verdict_card,
+            text="Вердикт",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLORS["accent"],
+        )
+        self.verdict_title.pack(anchor="w", padx=16, pady=(10, 4))
+
+        self.verdict_body = ctk.CTkLabel(
+            self.verdict_card,
+            text="",
+            font=ctk.CTkFont(family="Consolas", size=12),
+            text_color=COLORS["text"],
+            wraplength=520,
+            justify="left",
+            anchor="w",
+        )
+        self.verdict_body.pack(anchor="w", fill="x", padx=16, pady=(0, 10))
+
         self.mail_card = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
         self.mail_card.pack(fill="x", padx=16, pady=(0, 8))
         self.mail_card.pack_forget()
@@ -343,13 +414,15 @@ class IocExtractorApp(ctk.CTk):
         )
         self.tabs.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
-        for name in ("IOC", "URL", "Вложения", "Заголовки"):
+        for name in ("IOC", "URL", "Вложения", "Заголовки", "Ошибки"):
             self.tabs.add(name)
 
         self.ioc_box = self._make_text(self.tabs.tab("IOC"))
         self.url_box = self._make_text(self.tabs.tab("URL"))
         self.att_box = self._make_text(self.tabs.tab("Вложения"))
         self.hdr_box = self._make_text(self.tabs.tab("Заголовки"))
+        self.err_box = self._make_text(self.tabs.tab("Ошибки"))
+        self._bind_ioc_click()
 
         self.bind("<Control-o>", lambda _e: self.open_files())
         self.bind("<Configure>", self._on_resize, add="+")
@@ -455,10 +528,32 @@ class IocExtractorApp(ctk.CTk):
         widget.tag_configure("info", foreground=COLORS["info"], font=bold)
         widget.tag_configure("meta", foreground=COLORS["info"], font=base)
         widget.tag_configure("empty", foreground=COLORS["muted"], font=section)
+        widget.tag_configure("ioc_click", foreground=COLORS["value"], font=bold)
         for itype, color in IOC_TYPE_COLORS.items():
             widget.tag_configure(f"type_{itype}", foreground=color, font=bold)
         for sev, color in SEVERITY_COLORS.items():
             widget.tag_configure(f"sev_{sev}", foreground=color, font=bold)
+
+    def _bind_ioc_click(self) -> None:
+        widget = self._tk(self.ioc_box)
+        if widget is None:
+            return
+        widget.tag_bind("ioc_click", "<Button-1>", self._on_ioc_click)
+        widget.tag_bind("ioc_click", "<Double-Button-1>", self._on_ioc_click)
+
+    def _on_ioc_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]
+        widget = self._tk(self.ioc_box)
+        if widget is None:
+            return
+        index = widget.index(f"@{event.x},{event.y}")
+        tags = widget.tag_names(index)
+        for tag in tags:
+            if tag.startswith("iocid_") and tag in self._ioc_by_tag:
+                ioc = self._ioc_by_tag[tag]
+                self.clipboard_clear()
+                self.clipboard_append(ioc.value)
+                self._set_status(f"Скопировано: {ioc.ioc_type.value} → {ioc.value[:80]}")
+                return
 
     def _clear_box(self, box: ctk.CTkTextbox) -> None:
         widget = self._tk(box)
@@ -485,6 +580,7 @@ class IocExtractorApp(ctk.CTk):
         try:
             self.ioc_breakdown.configure(wraplength=width)
             self.mail_body.configure(wraplength=width)
+            self.verdict_body.configure(wraplength=width)
         except tk.TclError:
             pass
 
@@ -498,13 +594,13 @@ class IocExtractorApp(ctk.CTk):
         self.hide_rewriter.set(True)
         self.hide_allowlisted.set(True)
         self.hide_private.set(False)
+        self.only_denylisted.set(False)
         self._refresh_views()
 
     def _selected_types(self) -> set[str] | None:
-        """Union of enabled categories. None = all types (no type filter)."""
         enabled = [name for name, var in self.cat_vars.items() if var.get()]
         if not enabled:
-            return set()  # nothing selected → empty list
+            return set()
         if len(enabled) == len(self.cat_vars):
             return None
         types: set[str] = set()
@@ -518,6 +614,7 @@ class IocExtractorApp(ctk.CTk):
             "hide_private": bool(self.hide_private.get()),
             "hide_rewriter": bool(self.hide_rewriter.get()),
             "hide_allowlisted": bool(self.hide_allowlisted.get()),
+            "only_denylisted": bool(self.only_denylisted.get()),
         }
 
     def _filtered_iocs(self):
@@ -533,7 +630,7 @@ class IocExtractorApp(ctk.CTk):
     def _refresh_views(self) -> None:
         if not self.result:
             self.filter_hint.configure(
-                text="Фильтр применяется к вкладке IOC, копированию и экспорту"
+                text="Фильтр → IOC / копирование / экспорт · клик по IOC копирует значение"
             )
             return
         filtered = self._filtered_iocs()
@@ -543,14 +640,13 @@ class IocExtractorApp(ctk.CTk):
         if total == full:
             self.ioc_summary_label.configure(text=f"IOC: {total}")
             self.filter_hint.configure(
-                text=f"Показаны все {full} индикаторов · фильтр → IOC / копирование / экспорт"
+                text=f"Показаны все {full} · клик по IOC копирует · фильтр → экспорт"
             )
         else:
             self.ioc_summary_label.configure(text=f"IOC: {total} из {full}")
             hidden = full - total
             self.filter_hint.configure(
-                text=f"Показано {total} из {full} (скрыто {hidden}) · "
-                "фильтр → IOC / копирование / экспорт"
+                text=f"Показано {total} из {full} (скрыто {hidden}) · клик копирует значение"
             )
         if counts:
             breakdown = "  ·  ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
@@ -564,15 +660,22 @@ class IocExtractorApp(ctk.CTk):
         self._fill_urls(self.result)
         self._fill_attachments(self.result)
         self._fill_headers(self.result)
+        self._fill_errors(self.result)
         self._update_mail_card(self.result)
+        self._update_verdict_card(self.result)
 
     # -------------------------------------------------------------- open
     def open_files(self) -> None:
         paths = filedialog.askopenfilenames(
             title=f"{__app_name__} — открыть файлы",
             filetypes=[
-                ("Все поддерживаемые", "*.eml *.msg *.pdf *.html *.htm *.txt *.csv *.log"),
+                (
+                    "Все поддерживаемые",
+                    "*.eml *.msg *.pdf *.html *.htm *.txt *.csv *.log *.docx *.xlsx *.zip",
+                ),
                 ("Email", "*.eml *.msg"),
+                ("Office", "*.docx *.xlsx"),
+                ("Архив", "*.zip"),
                 ("PDF", "*.pdf"),
                 ("HTML", "*.html *.htm"),
                 ("Текст / тикет", "*.txt *.csv *.log *.md"),
@@ -584,24 +687,20 @@ class IocExtractorApp(ctk.CTk):
         self._analyze_paths(list(paths))
 
     def open_folder(self) -> None:
-        folder = filedialog.askdirectory(title=f"{__app_name__} — папка")
+        folder = filedialog.askdirectory(title=f"{__app_name__} — папка (рекурсивно)")
         if not folder:
             return
-        root = Path(folder)
-        paths: list[str] = []
-        for pattern in _SUPPORTED_GLOBS:
-            paths.extend(str(p) for p in root.glob(pattern) if p.is_file())
-        paths = sorted(set(paths))
+        paths = _collect_supported(Path(folder), recursive=True)
         if not paths:
             messagebox.showinfo(
                 __app_name__,
-                "В папке нет поддерживаемых файлов "
-                "(.eml .msg .pdf .html .htm .txt .csv .log).",
+                "В папке (включая подпапки) нет поддерживаемых файлов "
+                "(.eml .msg .pdf .html .txt .docx .xlsx .zip).",
             )
             return
         self._analyze_paths(paths)
 
-    def _on_drop(self, files) -> None:  # windnd callback
+    def _on_drop(self, files) -> None:
         paths: list[str] = []
         for item in files:
             if isinstance(item, bytes):
@@ -617,8 +716,7 @@ class IocExtractorApp(ctk.CTk):
             if path.is_file() and path.suffix.lower() in _SUPPORTED_SUFFIXES:
                 paths.append(str(path))
             elif path.is_dir():
-                for pattern in _SUPPORTED_GLOBS:
-                    paths.extend(str(p) for p in path.glob(pattern) if p.is_file())
+                paths.extend(_collect_supported(path, recursive=True))
         paths = sorted(set(paths))
         if not paths:
             self.after(
@@ -631,23 +729,50 @@ class IocExtractorApp(ctk.CTk):
         self.after(0, lambda: self._analyze_paths(paths))
 
     def _analyze_paths(self, paths: list[str]) -> None:
+        self._cancel_batch = False
         names = ", ".join(Path(p).name for p in paths[:3])
         extra = f" (+{len(paths) - 3})" if len(paths) > 3 else ""
-        self._set_status(f"Извлечение: {names}{extra}…")
+        self._set_status(f"Извлечение 0/{len(paths)}: {names}{extra}…")
         self.update_idletasks()
         threading.Thread(target=self._run_paths, args=(paths,), daemon=True).start()
 
     def _run_paths(self, paths: list[str]) -> None:
-        try:
-            results = [analyze_file(p) for p in paths]
-            if len(results) == 1:
-                result = results[0]
-            else:
-                result = merge_results(results, label=f"batch:{len(results)}")
-            self.after(0, lambda: self._apply_result(result, preload_text=True))
-        except Exception as exc:  # noqa: BLE001
-            self.after(0, lambda: messagebox.showerror("Ошибка", str(exc)))
+        results: list[AnalysisResult] = []
+        hard_errors: list[str] = []
+        total = len(paths)
+        for idx, path in enumerate(paths, start=1):
+            if self._cancel_batch:
+                hard_errors.append("Пакетная обработка отменена")
+                break
+            self.after(
+                0,
+                lambda i=idx, t=total, p=path: self._set_status(
+                    f"Извлечение {i}/{t}: {Path(p).name}"
+                ),
+            )
+            try:
+                results.append(analyze_file(path))
+            except Exception as exc:  # noqa: BLE001
+                hard_errors.append(f"{path}: {exc}")
+
+        if not results:
+            msg = "Не удалось разобрать ни одного файла.\n" + "\n".join(hard_errors[:8])
+            self.after(0, lambda: messagebox.showerror("Ошибка", msg))
             self.after(0, lambda: self._set_status("Ошибка извлечения"))
+            return
+
+        if len(results) == 1:
+            result = results[0]
+        else:
+            result = merge_results(results, label=f"batch:{len(results)}")
+        for err in hard_errors:
+            result.errors.append(err)
+        if hard_errors:
+            result.errors.insert(
+                0,
+                f"Успешно: {len(results)}/{total}, ошибок: {len(hard_errors)}",
+            )
+        self.after(0, lambda: self._apply_result(result, preload_text=True))
 
     def analyze_text_area(self) -> None:
         if self._placeholder_active:
@@ -691,8 +816,35 @@ class IocExtractorApp(ctk.CTk):
         filtered_n = len(self._filtered_iocs())
         err = f" · ошибки: {len(result.errors)}" if result.errors else ""
         self._set_status(f"Готово: {filtered_n} IOC{err}")
+        if result.errors:
+            # Keep IOC tab primary; errors visible in dedicated tab
+            pass
 
-    # -------------------------------------------------------- mail card
+    # -------------------------------------------------------- mail / verdict
+    def _update_verdict_card(self, result: AnalysisResult) -> None:
+        v = result.verdict
+        if not v:
+            self.verdict_card.pack_forget()
+            return
+        color = _VERDICT_COLORS.get(v.level.value, COLORS["text"])
+        self.verdict_title.configure(
+            text=f"Вердикт: {v.level.value.upper()}  ·  score {v.score}",
+            text_color=color,
+        )
+        lines = [v.summary, ""]
+        if v.reasons:
+            lines.append("Причины:")
+            for r in v.reasons[:6]:
+                lines.append(f"  • {r}")
+        if v.actions:
+            lines.append("")
+            lines.append("Действия:")
+            for a in v.actions[:5]:
+                lines.append(f"  {a.priority}. {a.action} — {a.rationale}")
+        self.verdict_body.configure(text="\n".join(lines))
+        if not self.verdict_card.winfo_ismapped():
+            self.verdict_card.pack(fill="x", padx=16, pady=(0, 8), before=self.tabs)
+
     def _update_mail_card(self, result: AnalysisResult) -> None:
         mid = result.mail_identity
         if not mid:
@@ -736,6 +888,7 @@ class IocExtractorApp(ctk.CTk):
     # ----------------------------------------------------------- fillers
     def _fill_iocs(self, result: AnalysisResult, filtered) -> None:
         self._clear_box(self.ioc_box)
+        self._ioc_by_tag.clear()
         if not filtered:
             self._put(self.ioc_box, "IOC не найдены\n", "empty")
         else:
@@ -744,6 +897,7 @@ class IocExtractorApp(ctk.CTk):
                 by_type.setdefault(ioc.ioc_type.value, []).append(ioc)
 
             shown: set[str] = set()
+            idx = 0
             for group_name, types in IOC_GROUPS:
                 group_items = []
                 for t in types:
@@ -754,8 +908,12 @@ class IocExtractorApp(ctk.CTk):
                 self._put(self.ioc_box, f"▸ {group_name}  ({len(group_items)})\n", "section")
                 for ioc in group_items:
                     t = ioc.ioc_type.value
+                    tag = f"iocid_{idx}"
+                    self._ioc_by_tag[tag] = ioc
+                    idx += 1
+                    value_tag = "danger" if "denylisted" in ioc.tags else "ioc_click"
                     self._put(self.ioc_box, f"  {t}  ", f"type_{t}")
-                    self._put(self.ioc_box, f"{ioc.value}\n", "value")
+                    self._put(self.ioc_box, f"{ioc.value}\n", value_tag, "ioc_click", tag)
                     if ioc.tags:
                         self._put(self.ioc_box, f"      {', '.join(ioc.tags)}\n", "muted")
                     if ioc.rewritten_from:
@@ -767,13 +925,14 @@ class IocExtractorApp(ctk.CTk):
                 self._put(self.ioc_box, f"▸ Прочее  ({len(other)})\n", "section")
                 for ioc in other:
                     t = ioc.ioc_type.value
+                    tag = f"iocid_{idx}"
+                    self._ioc_by_tag[tag] = ioc
+                    idx += 1
                     self._put(self.ioc_box, f"  {t}  ", f"type_{t}")
-                    self._put(self.ioc_box, f"{ioc.value}\n", "value")
+                    self._put(self.ioc_box, f"{ioc.value}\n", "ioc_click", tag)
 
         if result.errors:
-            self._put(self.ioc_box, "\n▸ Ошибки\n", "section")
-            for err in result.errors:
-                self._put(self.ioc_box, f"  ! {err}\n", "danger")
+            self._put(self.ioc_box, f"\n▸ Ошибки ({len(result.errors)}) — см. вкладку\n", "warn")
 
     def _fill_urls(self, result: AnalysisResult) -> None:
         self._clear_box(self.url_box)
@@ -816,8 +975,7 @@ class IocExtractorApp(ctk.CTk):
         )
         self._put(
             self.att_box,
-            "  «Сохранить вложения» записывает файлы, у которых есть AttachmentInfo.data"
-            f" (доступно: {with_data}).\n\n",
+            f"  «Сохранить вложения» — файлы с data в памяти (доступно: {with_data}).\n\n",
             "muted",
         )
         for a in result.attachments:
@@ -838,6 +996,16 @@ class IocExtractorApp(ctk.CTk):
             if a.risk_flags:
                 self._put(self.att_box, "      флаги:  ", "label")
                 self._put(self.att_box, f"{', '.join(a.risk_flags)}\n", "warn")
+            if a.archive_entries:
+                self._put(self.att_box, "      архив:\n", "label")
+                for entry in a.archive_entries[:40]:
+                    self._put(self.att_box, f"        · {entry}\n", "meta")
+                if len(a.archive_entries) > 40:
+                    self._put(
+                        self.att_box,
+                        f"        … ещё {len(a.archive_entries) - 40}\n",
+                        "muted",
+                    )
             for note in a.notes:
                 self._put(self.att_box, f"      — {note}\n", "muted")
             self._put(self.att_box, "\n")
@@ -903,19 +1071,42 @@ class IocExtractorApp(ctk.CTk):
         elif not result.headers and not mid:
             self._put(self.hdr_box, "Заголовки не разобраны\n", "empty")
 
+    def _fill_errors(self, result: AnalysisResult) -> None:
+        self._clear_box(self.err_box)
+        if not result.errors:
+            self._put(self.err_box, "Ошибок нет\n", "ok")
+            return
+        self._put(self.err_box, f"▸ Ошибки / замечания  ({len(result.errors)})\n", "section")
+        for err in result.errors:
+            self._put(self.err_box, f"  ! {err}\n", "danger")
+
     # ---------------------------------------------------- copy / export
+    def _format_iocs_for_clipboard(self, iocs: list[Ioc]) -> str:
+        fmt = self._copy_format.get()
+        if fmt == "value":
+            return "\n".join(i.value for i in iocs)
+        if fmt == "csv":
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow(["ioc_type", "value", "tags"])
+            for i in iocs:
+                writer.writerow([i.ioc_type.value, i.value, "|".join(i.tags)])
+            return buf.getvalue()
+        # type|value
+        return "\n".join(f"{i.ioc_type.value}|{i.value}" for i in iocs)
+
     def copy_iocs(self) -> None:
         if not self.result:
             messagebox.showinfo(__app_name__, "Сначала извлеките IOC")
             return
-        values = [ioc.value for ioc in self._filtered_iocs()]
-        if not values:
+        iocs = self._filtered_iocs()
+        if not iocs:
             messagebox.showinfo(__app_name__, "Нет IOC для копирования (проверьте фильтры)")
             return
-        text = "\n".join(values)
+        text = self._format_iocs_for_clipboard(iocs)
         self.clipboard_clear()
         self.clipboard_append(text)
-        self._set_status(f"Скопировано IOC: {len(values)}")
+        self._set_status(f"Скопировано IOC: {len(iocs)} ({self._copy_format.get()})")
 
     def save_attachments(self) -> None:
         if not self.result or not self.result.attachments:
@@ -947,11 +1138,11 @@ class IocExtractorApp(ctk.CTk):
         if saved == 0:
             messagebox.showinfo(
                 __app_name__,
-                "Нет вложений с данными (AttachmentInfo.data). Сохранены только хеши.",
+                "Нет вложений с данными в памяти (слишком большие или недоступны).",
             )
 
-    def _on_export_menu(self, choice: str) -> None:
-        self.export(choice)
+    def _export_clicked(self) -> None:
+        self.export(self._export_choice.get())
 
     def export(self, kind: str) -> None:
         filtered = self._filtered_result()
@@ -1016,21 +1207,44 @@ class IocExtractorApp(ctk.CTk):
                 export_yara(filtered, path, iocs=iocs)
                 self._set_status(f"YARA: {path}")
 
+    def open_configs(self) -> None:
+        root = ensure_user_lists()
+        allow = list_file_path("allowlist.txt")
+        deny = list_file_path("denylist.txt")
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(str(root))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(root)])
+            else:
+                subprocess.Popen(["xdg-open", str(root)])
+        except Exception:
+            messagebox.showinfo(
+                __app_name__,
+                f"Папка конфигов:\n{root}\n\nallowlist:\n{allow}\ndenylist:\n{deny}",
+            )
+            return
+        self._set_status(f"Конфиги: {root}")
+
     def show_about(self) -> None:
-        allowlist = Path.cwd() / "allowlist.txt"
+        allowlist = list_file_path("allowlist.txt")
+        denylist = list_file_path("denylist.txt")
         messagebox.showinfo(
             f"О программе — {__app_name__}",
             f"{__app_name__} v{__version__}\n"
             f"{__tagline__}\n\n"
-            "Офлайн IOC-экстрактор для SOC: письма, PDF, HTML, текст.\n"
+            "Офлайн IOC-экстрактор для SOC: письма, PDF, HTML, Office, ZIP, текст.\n"
             "Без сетевых запросов (enforce_offline).\n\n"
-            "Экспорт: CSV, STIX, JSON, MISP, OpenCTI, YARA.\n\n"
-            f"Пользовательский allowlist:\n{allowlist}",
+            "Экспорт: CSV (UTF-8 BOM), STIX, JSON, MISP, OpenCTI, YARA.\n\n"
+            f"Папка приложения:\n{app_dir()}\n\n"
+            f"allowlist:\n{allowlist}\n\n"
+            f"denylist:\n{denylist}",
         )
 
 
 def run() -> None:
     enforce_offline()
+    ensure_user_lists()
     try:
         app = IocExtractorApp()
     except tk.TclError as exc:

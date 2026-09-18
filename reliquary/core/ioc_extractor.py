@@ -29,14 +29,97 @@ URL_RE = re.compile(
 EMAIL_RE = re.compile(
     r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b"
 )
+# Broad TLD: 2–24 letter labels or punycode. File-like suffixes filtered in _valid_domain.
 DOMAIN_RE = re.compile(
     r"(?i)(?<!@)(?<![A-Fa-f0-9])\b(?:xn--[a-z0-9\-]+|[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+"
-    r"(?:xn--[a-z0-9\-]+|com|net|org|ru|su|info|biz|io|dev|xyz|top|club|online|site|"
-    r"store|app|cloud|tech|pro|cc|tv|me|co|uk|de|fr|nl|pl|ua|kz|"
-    r"by|cn|jp|kr|au|ca|us|edu|gov|mil|int|shop|work|bank|money|win|zip|"
-    r"mov|click|link|live|news|today|email|support|security|account|"
-    r"pw|tk|ml|ga|cf|gq|icu|cyou|rest|cfd|sbs|hair|mom|bond)\b"
+    r"(?:xn--[a-z0-9\-]{1,59}|[a-z]{2,24})\b"
 )
+
+# Final labels that are almost always local filenames / noise, not DNS TLDs.
+_FILE_LIKE_TLDS = frozenset(
+    {
+        "txt",
+        "log",
+        "csv",
+        "json",
+        "xml",
+        "html",
+        "htm",
+        "pdf",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "bmp",
+        "svg",
+        "mp3",
+        "mp4",
+        "avi",
+        "mkv",
+        "exe",
+        "dll",
+        "sys",
+        "bat",
+        "cmd",
+        "ps1",
+        "vbs",
+        "js",
+        "jar",
+        "msi",
+        "dmg",
+        "iso",
+        "img",
+        "rar",
+        "7z",
+        "gz",
+        "tar",
+        "cab",
+        "apk",
+        "ipa",
+        "py",
+        "rb",
+        "go",
+        "rs",
+        "c",
+        "cpp",
+        "h",
+        "java",
+        "class",
+        "obj",
+        "o",
+        "tmp",
+        "bak",
+        "old",
+        "ini",
+        "cfg",
+        "conf",
+        "yaml",
+        "yml",
+        "toml",
+        "md",
+        "rtf",
+        "odt",
+        "ods",
+        "db",
+        "sql",
+        "dat",
+        "bin",
+        "raw",
+        "pcap",
+        "evtx",
+        "lnk",
+        "reg",
+        "plist",
+    }
+)
+
+# Note: gTLDs like zip/mov/win are allowed — used in phishing campaigns.
 MD5_RE = re.compile(r"\b[a-fA-F0-9]{32}\b")
 SHA1_RE = re.compile(r"\b[a-fA-F0-9]{40}\b")
 SHA256_RE = re.compile(r"\b[a-fA-F0-9]{64}\b")
@@ -133,12 +216,19 @@ def _is_rewriter_host(host: str) -> bool:
 
 
 def _valid_domain(domain: str) -> bool:
-    """Drop garbage domains produced by percent-encoding leftovers."""
+    """Drop garbage domains produced by percent-encoding leftovers / filenames."""
     d = domain.lower().rstrip(".")
     if not d or d.startswith("-") or ".." in d:
         return False
     labels = d.split(".")
+    if len(labels) < 2:
+        return False
     if any(not label or label.startswith("-") or label.endswith("-") for label in labels):
+        return False
+    tld = labels[-1]
+    if tld in _FILE_LIKE_TLDS:
+        return False
+    if tld.isdigit():
         return False
     if re.match(r"^[0-9a-f]{2}[a-z]", labels[0]) and not re.match(r"^\d", labels[0]):
         return False
