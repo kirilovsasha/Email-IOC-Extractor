@@ -1,4 +1,4 @@
-# Reliquary
+# IOC Extractor
 
 **Extract. Normalize. Export.**
 
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 run_gui.bat
 ```
 
-При ошибке запуска смотрите `reliquary_error.log` рядом с bat.
+При ошибке запуска смотрите `ioc_extractor_error.log` рядом с bat.
 
 CLI:
 
@@ -54,7 +54,7 @@ pip install -r requirements.txt
 pyinstaller build/reliquary.spec
 ```
 
-`dist/Reliquary.exe` — без консоли; лог ошибок — `reliquary_error.log` рядом с exe.
+`dist/IOC_Extractor.exe` — без консоли; лог ошибок — `ioc_extractor_error.log` рядом с exe.
 
 ## Структура
 

@@ -1,4 +1,4 @@
-# Reliquary denylist — known-bad domains/IPs (optional).
+# IOC Extractor denylist — known-bad domains/IPs (optional).
 # Matched IOCs get tag "denylisted".
 
 # evil.example

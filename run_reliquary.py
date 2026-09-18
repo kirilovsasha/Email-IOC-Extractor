@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point for Reliquary GUI and PyInstaller."""
+"""Entry point for IOC Extractor GUI and PyInstaller."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 
 def _log_path() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "reliquary_error.log"
-    return Path(__file__).resolve().parent / "reliquary_error.log"
+        return Path(sys.executable).resolve().parent / "ioc_extractor_error.log"
+    return Path(__file__).resolve().parent / "ioc_extractor_error.log"
 
 
 def main() -> None:

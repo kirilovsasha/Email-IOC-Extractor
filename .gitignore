@@ -6,7 +6,7 @@ __pycache__/
 .mypy_cache/
 dist/
 build/dist/
-build/Reliquary/
+build/IOC_Extractor/
 *.egg-info/
 .eggs/
 out/
@@ -14,6 +14,7 @@ out/
 !samples/**
 .DS_Store
 *.spec.bak
+ioc_extractor_error.log
 reliquary_error.log
 _t_*.txt
 _t_*.csv

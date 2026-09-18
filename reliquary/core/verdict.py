@@ -1,6 +1,6 @@
 """Optional phishing / mail-triage heuristics (fully offline).
 
-Not the primary Reliquary output — IOC extraction and STIX/CSV export are.
+Not the primary IOC Extractor output — IOC extraction and STIX/CSV export are.
 This module adds a secondary score + actions when analyzing email artifacts.
 """
 

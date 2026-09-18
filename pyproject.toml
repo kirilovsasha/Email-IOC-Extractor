@@ -1,7 +1,7 @@
 [project]
 name = "reliquary"
 version = "1.3.0"
-description = "Offline SOC IOC extractor for email, tickets, PDF/HTML"
+description = "IOC Extractor — offline SOC IOC extractor for email, tickets, PDF/HTML"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
