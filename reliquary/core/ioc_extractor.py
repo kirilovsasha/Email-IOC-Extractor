@@ -180,20 +180,74 @@ REWRITER_DOMAIN_SUFFIXES = (
 
 def defang(text: str) -> str:
     """Normalize common SOC defanging so extractors still match."""
+    out = text
+    # Ordered: longer / more specific first
     replacements = (
+        ("hxxps[://]", "https://"),
+        ("hxxp[://]", "http://"),
         ("hxxps://", "https://"),
         ("hxxp://", "http://"),
+        ("https[://]", "https://"),
+        ("http[://]", "http://"),
+        ("[://]", "://"),
+        ("[:]", ":"),
         ("[.]", "."),
         ("(.)", "."),
         ("{.}", "."),
-        ("[:]", ":"),
+        ("[dot]", "."),
+        ("(dot)", "."),
+        ("{dot}", "."),
         ("[@]", "@"),
+        ("[at]", "@"),
+        ("(at)", "@"),
     )
-    out = text
     for old, new in replacements:
         out = out.replace(old, new)
         out = out.replace(old.upper(), new)
+        # Mixed-case variants for common tokens
+        if old.lower() != old:
+            continue
+        out = re.sub(re.escape(old), new, out, flags=re.IGNORECASE)
+    # "evil dot com" / "evil DOT com" spaced form (limited)
+    out = re.sub(
+        r"(?i)\b([a-z0-9\-]+)\s+dot\s+([a-z0-9\-]+)\s+dot\s+([a-z]{2,24})\b",
+        r"\1.\2.\3",
+        out,
+    )
+    out = re.sub(
+        r"(?i)\b([a-z0-9\-]+)\s+dot\s+([a-z]{2,24})\b",
+        r"\1.\2",
+        out,
+    )
     return out
+
+
+def normalize_url_key(url: str) -> str:
+    """Canonical key for URL dedup: host lower, no www, no fragment, trim slash."""
+    raw = url.strip()
+    try:
+        p = urlparse(raw)
+    except Exception:  # noqa: BLE001
+        return raw.lower()
+    scheme = (p.scheme or "http").lower()
+    host = (p.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    netloc = host
+    if p.port:
+        netloc = f"{host}:{p.port}"
+    path = p.path or ""
+    if path != "/" and path.endswith("/"):
+        path = path.rstrip("/")
+    query = f"?{p.query}" if p.query else ""
+    return f"{scheme}://{netloc}{path}{query}"
+
+
+def normalize_domain_key(domain: str) -> str:
+    d = domain.lower().rstrip(".")
+    if d.startswith("www."):
+        d = d[4:]
+    return d
 
 
 def _is_private_ipv4(ip: str) -> bool:
@@ -204,10 +258,11 @@ def _is_private_ipv4(ip: str) -> bool:
     return False
 
 
-def _context_snippet(text: str, match: re.Match[str], radius: int = 40) -> str:
+def _context_snippet(text: str, match: re.Match[str], radius: int = 60) -> str:
     start = max(0, match.start() - radius)
     end = min(len(text), match.end() + radius)
-    return text[start:end].replace("\n", " ").strip()
+    snippet = text[start:end].replace("\n", " ").strip()
+    return snippet
 
 
 def _is_rewriter_host(host: str) -> bool:
@@ -263,15 +318,30 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         match: re.Match[str],
         tags: list[str] | None = None,
     ) -> None:
-        key = (ioc_type.value, value.lower() if ioc_type != IocType.URL else value)
+        if ioc_type == IocType.URL:
+            key = (ioc_type.value, normalize_url_key(value))
+        elif ioc_type == IocType.DOMAIN:
+            key = (ioc_type.value, normalize_domain_key(value))
+        else:
+            key = (ioc_type.value, value.lower())
+        ctx = _context_snippet(cleaned, match)
         if key in found:
+            prev = found[key]
+            if value != prev.value and value.lower() not in (prev.context or "").lower():
+                prev.context = f"{prev.context} ‖ variant:{value}"[:400]
+            for t in tags or []:
+                if t not in prev.tags:
+                    prev.tags.append(t)
             return
+        store_value = value
+        if ioc_type == IocType.DOMAIN:
+            store_value = normalize_domain_key(value)
         found[key] = Ioc(
-            value=value,
+            value=store_value,
             ioc_type=ioc_type,
             source=source,
-            context=_context_snippet(cleaned, match),
-            tags=tags or [],
+            context=ctx,
+            tags=list(tags or []),
         )
 
     for m in MESSENGER_RE.finditer(cleaned):

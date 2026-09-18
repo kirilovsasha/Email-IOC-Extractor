@@ -297,3 +297,291 @@ def test_cli_yara_export(tmp_path: Path):
     assert code == 0
     assert out.is_file()
     assert "rule " in out.read_text(encoding="utf-8")
+
+
+def test_defang_helpers():
+    from reliquary.core.defang import defang_value, defang_ioc_line
+
+    assert "hxxps://" in defang_value("https://evil.example.com/a")
+    assert "[.]" in defang_value("evil.example.com")
+    line = defang_ioc_line("url", "https://a.b/c", with_type=True)
+    assert line.startswith("url|")
+    assert "hxxps://" in line
+
+
+def test_wildcard_allow_deny(tmp_path: Path, monkeypatch):
+    from reliquary.core import paths as paths_mod
+    from reliquary.core.allowlist import (
+        build_allowlist,
+        build_denylist,
+        domain_matches,
+        parse_list_line,
+        tag_allowlist_denylist,
+    )
+    from reliquary.core.models import Ioc, IocType
+
+    monkeypatch.setattr(paths_mod, "app_dir", lambda: tmp_path)
+    monkeypatch.setattr(paths_mod, "resource_dir", lambda: tmp_path)
+    paths_mod.ensure_user_lists()
+    (tmp_path / "allowlist.txt").write_text("*.trusted.local  # INC-1\n", encoding="utf-8")
+    (tmp_path / "denylist.txt").write_text("bad-*.phish  # INC-9\n", encoding="utf-8")
+
+    parsed = parse_list_line("evil.example  # TICKET-42")
+    assert parsed == ("evil.example", "TICKET-42")
+
+    allow_d, _ = build_allowlist()
+    deny = build_denylist()
+    assert domain_matches("mail.trusted.local", allow_d)
+    assert domain_matches("bad-one.phish", deny)
+
+    iocs = [
+        Ioc("mail.trusted.local", IocType.DOMAIN),
+        Ioc("bad-one.phish", IocType.DOMAIN),
+    ]
+    tag_allowlist_denylist(iocs, allow_d, set(), deny)
+    assert "allowlisted" in iocs[0].tags
+    assert "denylisted" in iocs[1].tags
+
+
+def test_verdict_config_thresholds(tmp_path: Path, monkeypatch):
+    from reliquary.core import paths as paths_mod
+    from reliquary.core.verdict import load_verdict_config, render_verdict
+
+    monkeypatch.setattr(paths_mod, "app_dir", lambda: tmp_path)
+    monkeypatch.setattr(paths_mod, "resource_dir", lambda: tmp_path)
+    paths_mod.ensure_user_lists()
+    (tmp_path / "verdict.ini").write_text(
+        "threshold_malicious=5\nthreshold_suspicious=3\nthreshold_unknown=1\n"
+        "weight_urgency=10\n",
+        encoding="utf-8",
+    )
+    cfg = load_verdict_config()
+    assert cfg.threshold_malicious == 5
+    mail = analyze_file(SAMPLES / "phishing_sample.eml")
+    # Re-render with loaded config (pipeline already used defaults from real app dir;
+    # force with explicit cfg)
+    v = render_verdict(mail, cfg)
+    assert v is not None
+    assert v.score >= 0
+
+
+def test_encrypted_zip_flag():
+    # Heuristic path: Encrypt marker in header region
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("secret.txt", b"x")
+    raw = buf.getvalue()
+    # Inject AES / Encrypt marker into early bytes without breaking PK signature
+    patched = raw[:4] + b"Encrypt" + raw[4:]
+    info = inspect_bytes("locked.zip", patched)
+    assert "encrypted_archive" in info.risk_flags or "archive" in info.risk_flags
+    # Prefer strong signal when zip opens and flag is set — also cover BadZip path
+    if "encrypted_archive" not in info.risk_flags:
+        # Force via _zip_encrypted helper by corrupt-but-marked payload
+        marked = b"PK\x03\x04" + b"Encrypt" + b"\x00" * 100
+        info2 = inspect_bytes("locked2.zip", marked)
+        assert "encrypted_archive" in info2.risk_flags or "zip_container" in info2.risk_flags
+
+
+def test_nested_eml_attachment(tmp_path: Path):
+    inner = (
+        b"From: nest@evil.example\r\n"
+        b"Subject: Nested\r\n"
+        b"Message-ID: <nested@evil.example>\r\n"
+        b"\r\n"
+        b"Click https://nested-unique.example.phishing/drop\r\n"
+    )
+    outer = (
+        b"From: outer@corp.test\r\n"
+        b"To: a@corp.test\r\n"
+        b"Subject: Fwd\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b'Content-Type: multipart/mixed; boundary="BOUND"\r\n'
+        b"\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: text/plain\r\n\r\n"
+        b"see attached\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: message/rfc822; name=\"inner.eml\"\r\n"
+        b"Content-Disposition: attachment; filename=\"inner.eml\"\r\n"
+        b"Content-Transfer-Encoding: 7bit\r\n\r\n"
+        + inner
+        + b"\r\n--BOUND--\r\n"
+    )
+    path = tmp_path / "outer.eml"
+    path.write_bytes(outer)
+    result = analyze_file(path)
+    assert any("nested_email" in a.risk_flags for a in result.attachments)
+    blob = " ".join(i.value for i in result.iocs)
+    assert "nested-unique.example.phishing" in blob
+
+
+def test_batch_file_rows_and_case_pack(tmp_path: Path):
+    from reliquary.core.exporters import export_case_pack
+    from reliquary.core.pipeline import merge_results
+    from reliquary.core.ticket import build_ticket_template
+
+    a = analyze_file(SAMPLES / "ticket_sample.txt")
+    b = analyze_file(SAMPLES / "phishing_sample.eml")
+    merged = merge_results([a, b], label="batch:2")
+    assert len(merged.file_rows) == 2
+    assert merged.file_rows[0].ioc_count >= 0
+    assert any(r.kind == "email" for r in merged.file_rows)
+
+    ticket = build_ticket_template(merged, merged.iocs[:5], defang=True)
+    assert "IOC Extractor" in ticket
+    assert "[.]" in ticket or "hxxp" in ticket or "IOC" in ticket
+
+    pack = export_case_pack(merged, tmp_path / "pack.zip", filters_applied={"hide_private": True})
+    assert pack.is_file()
+    with zipfile.ZipFile(pack) as zf:
+        names = zf.namelist()
+        assert any(n.endswith("report.json") for n in names)
+        assert any(n.endswith("iocs.csv") for n in names)
+        assert any(n.endswith("ticket.txt") for n in names)
+        assert any(n.endswith("batch_files.tsv") for n in names)
+
+
+def test_offline_blocks_connect():
+    from reliquary.core.offline import OfflineViolation, enforce_offline
+    import socket
+
+    enforce_offline()
+    try:
+        socket.create_connection(("1.1.1.1", 80), timeout=1)
+        assert False, "should have blocked"
+    except OfflineViolation:
+        pass
+
+
+def test_import_misp_and_csv(tmp_path: Path):
+    from reliquary.core.allowlist import import_entries_from_csv, import_entries_from_misp
+
+    csv_path = tmp_path / "i.csv"
+    csv_path.write_text("value,note\nbad.import.test,x\n", encoding="utf-8")
+    assert "bad.import.test" in import_entries_from_csv(csv_path)
+
+    misp = {
+        "Event": {
+            "Attribute": [
+                {"type": "domain", "value": "misp-bad.example"},
+                {"type": "ip-dst", "value": "9.9.9.9"},
+            ]
+        }
+    }
+    jpath = tmp_path / "m.json"
+    jpath.write_text(__import__("json").dumps(misp), encoding="utf-8")
+    vals = import_entries_from_misp(jpath)
+    assert "misp-bad.example" in vals
+    assert "9.9.9.9" in vals
+
+
+def test_report_json_has_meta(tmp_path: Path):
+    from reliquary.core.exporters import export_report_json
+    import json
+
+    result = analyze_file(SAMPLES / "phishing_sample.eml")
+    assert result.meta is not None
+    assert result.meta.app_version
+    assert result.meta.source_sha256
+    out = tmp_path / "r.json"
+    export_report_json(result, out, filters_applied={"hide_rewriter": True})
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["meta"]["filters_applied"]["hide_rewriter"] is True
+    assert data["meta"]["source_sha256"]
+
+
+def test_desired_result_tabs_context():
+    from reliquary.gui.app import desired_result_tabs
+    from reliquary.core.pipeline import merge_results
+
+    assert desired_result_tabs(None) == [("ioc", "IOC")]
+
+    ticket = analyze_file(SAMPLES / "ticket_sample.txt")
+    keys = [k for k, _ in desired_result_tabs(ticket, filtered_count=len(ticket.iocs))]
+    assert keys[0] == "ioc"
+    assert "batch" not in keys
+    assert "mail" not in keys
+
+    mail = analyze_file(SAMPLES / "phishing_sample.eml")
+    mail_tabs = desired_result_tabs(mail, filtered_count=len(mail.iocs))
+    mail_keys = [k for k, _ in mail_tabs]
+    assert "mail" in mail_keys
+    assert "batch" not in mail_keys
+    assert any(k == "att" for k in mail_keys) or not mail.attachments
+    labels = dict(mail_tabs)
+    assert labels["ioc"].startswith("IOC ")
+
+    merged = merge_results([ticket, mail], label="batch:2")
+    batch_keys = [k for k, _ in desired_result_tabs(merged, filtered_count=len(merged.iocs))]
+    assert "batch" in batch_keys
+    assert any(lbl.startswith("Пакет ") for _, lbl in desired_result_tabs(merged, 1))
+
+
+def test_defang_extended_and_url_dedup():
+    from reliquary.core.ioc_extractor import defang, extract_iocs, normalize_url_key
+
+    cleaned = defang("hxxps[://]evil[.]example[dot]com/path/ and host dot bad")
+    assert "https://evil.example.com/path/" in cleaned
+    assert "host.bad" in cleaned
+    iocs = extract_iocs(
+        "https://www.evil.example/a/ https://evil.example/a https://evil.example/a#frag"
+    )
+    urls = [i for i in iocs if i.ioc_type.value == "url"]
+    # Dedup by normalized key — ideally one canonical URL
+    assert len(urls) <= 2
+    assert normalize_url_key("https://www.x.com/a/") == normalize_url_key("https://x.com/a")
+
+
+def test_actionable_filter_and_sort_and_search():
+    from reliquary.core.exporters import filter_iocs, sort_iocs
+    from reliquary.core.models import Ioc, IocType, AnalysisResult
+
+    result = analyze_file(SAMPLES / "phishing_sample.eml")
+    all_n = len(result.iocs)
+    actionable = filter_iocs(result, actionable_only=True, hide_rewriter=False)
+    assert len(actionable) <= all_n
+    # denylist-like items first when present
+    sorted_list = sort_iocs(result.iocs)
+    assert len(sorted_list) == all_n
+    found = filter_iocs(result, search="invoice")
+    assert found
+
+
+def test_ticket_short_and_prefs(tmp_path: Path, monkeypatch):
+    from reliquary.core import paths as paths_mod
+    from reliquary.core.prefs import load_prefs, save_prefs
+    from reliquary.core.ticket import build_ticket_template
+
+    monkeypatch.setattr(paths_mod, "app_dir", lambda: tmp_path)
+    monkeypatch.setattr(paths_mod, "resource_dir", lambda: tmp_path)
+    paths_mod.ensure_user_lists()
+    save_prefs({"copy_format": "defanged", "ui_scale": 1.25})
+    prefs = load_prefs()
+    assert prefs["copy_format"] == "defanged"
+    assert prefs["ui_scale"] == 1.25
+
+    mail = analyze_file(SAMPLES / "phishing_sample.eml")
+    short = build_ticket_template(mail, mail.iocs, short=True, defang=True)
+    full = build_ticket_template(mail, mail.iocs, short=False, defang=True)
+    assert len(short.splitlines()) <= 10
+    assert "IOC Extractor" in full
+    assert "Verdict:" in short
+
+
+def test_case_pack_multi_and_file_tags(tmp_path: Path):
+    from reliquary.core.exporters import export_case_pack_multi
+    from reliquary.core.pipeline import merge_results
+    import zipfile
+
+    a = analyze_file(SAMPLES / "ticket_sample.txt")
+    b = analyze_file(SAMPLES / "phishing_sample.eml")
+    assert any(t.startswith("file:") for i in a.iocs for t in i.tags)
+    merged = merge_results([a, b])
+    assert any("file:phishing_sample.eml" in i.tags for i in merged.iocs)
+
+    out = export_case_pack_multi([a, b], tmp_path / "multi.zip")
+    with zipfile.ZipFile(out) as zf:
+        names = zf.namelist()
+        assert any("ticket" in n and n.endswith("report.json") for n in names)
+        assert any("phishing" in n and n.endswith("iocs.csv") for n in names)

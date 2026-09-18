@@ -1,9 +1,19 @@
 # IOC Extractor
 
-**Extract. Normalize. Export.** · v1.4.0
+**Extract. Normalize. Export.** · v1.6.0
 
-Офлайн-приложение для извлечения IOC из писем, тикетов, PDF, HTML, Office и ZIP.
-Экспорт: CSV (UTF-8 BOM для Excel), STIX 2.1, JSON, MISP, OpenCTI, **YARA**.
+Офлайн-приложение для извлечения IOC из писем, тикетов, PDF, HTML, Office и ZIP/7z/RAR.
+Экспорт: CSV (UTF-8 BOM для Excel), STIX 2.1, JSON, MISP, OpenCTI, **YARA**, **Case pack**.
+
+## GUI (удобство)
+
+- Контекстные вкладки со счётчиками; **Пакет** только при ≥2 файлах
+- Поиск IOC (`Ctrl+F`), фильтр **actionable**, сортировка denylist→unwrapped→hashes
+- `Ctrl+C` / `Ctrl+Shift+C` — value / defanged; `1–6` — вкладки; `Ctrl+/−` — масштаб
+- ПКМ по IOC: copy / defang / allowlist / denylist (+ комментарий тикета)
+- **Тикет** полный/короткий; клик по строке в **Пакет** → фокус IOC файла
+- Case pack и **Case pack (по файлам)**; Стоп / Повтор failed в статус-баре
+- Prefs рядом с exe: `ui_prefs.json` (папка, форматы, масштаб, фильтры)
 
 ## Что извлекает
 
@@ -13,15 +23,17 @@
 | Хеши | MD5, SHA1, SHA256 (в т.ч. вложений) |
 | Host | Windows-пути, UNC, registry, mutex, `command_line` |
 | Crypto / IM | Bitcoin, Monero, Telegram, Discord |
-| Прочее | CVE, имена вложений / членов ZIP |
+| Прочее | CVE, имена вложений / членов ZIP, QR из картинок (если доступен декодер) |
 
-Письма (`.eml` / `.msg`): тело, URL rewrite, вложения, карточка identity,
-**вердикт triage (только для писем)**, сырые заголовки.
+Письма (`.eml` / `.msg`): тело, URL rewrite, вложения (в т.ч. вложенные `.eml`/`.msg`, OLE-потоки),
+карточка identity, **вердикт triage** (`verdict.ini`), сырые заголовки.
+Пакет файлов — вкладка **Пакет** (файл → вердикт → топ IOC → ошибки).
 
 Шум: теги `private`, `url_rewriter`, `allowlisted` — скрываются фильтрами в GUI.
 `denylist.txt` → тег `denylisted` + фильтр «Только denylist».
-Списки рядом с exe: [`allowlist.txt`](allowlist.txt), [`denylist.txt`](denylist.txt)
-(кнопка **Конфиги** в GUI).
+Списки рядом с exe: [`allowlist.txt`](allowlist.txt), [`denylist.txt`](denylist.txt),
+[`verdict.ini`](verdict.ini) (кнопка **Конфиги**). Wildcards (`*.corp.local`) и комментарии `# INC-…`.
+Импорт CSV / MISP JSON в списки — кнопка **Импорт списков**.
 
 ## Быстрый старт (Windows)
 
@@ -45,12 +57,17 @@ python -m reliquary.cli samples/ticket_sample.txt --misp misp.json --yara rules.
 
 ## GUI
 
-- Компактный chrome: действия слева (открыть), справа (копировать / экспорт)
+- Компактный chrome: действия слева (открыть), справа (копировать / экспорт / тикет)
+- Копирование: `type|value`, `value`, `csv`, **defanged**, **defanged|type**
+- **Тикет** — шаблон handoff в буфер; **Msg-ID** — Message-ID / campaign
 - Фильтры одной полосой; список IOC — главная область
-- Вердикт писем — бейдж в шапке результатов + детали во вкладке **Письмо**
+- Вердикт писем — бейдж в шапке + вкладка **Письмо**; пакет — вкладка **Пакет**
+- Вкладки контекстные: только релевантные срезы, в подписи — счётчики (`IOC 29`, `Пакет 2`…)
+- **Пакет** появляется при ≥2 файлах; пустые URL/Вложения/Письмо/Ошибки скрыты
 - Горячие клавиши: `Ctrl+O`, `Ctrl+Enter`; клик по IOC копирует значение
 - Папка рекурсивно, прогресс `N/M`, вкладка **Ошибки**
-- Фильтр denylist; конфиги рядом с exe
+- Экспорт **Case pack** (ZIP: JSON + CSV + ticket + вложения)
+- Дата обновления allow/deny в шапке
 
 ## Сборка EXE
 
@@ -60,8 +77,15 @@ pyinstaller build/reliquary.spec
 ```
 
 `dist/IOC_Extractor.exe` — без консоли, **без UPX**, с FileDescription в свойствах.
-Рядом с exe появятся/ожидаются `allowlist.txt` и `denylist.txt`.
+Рядом с exe: `allowlist.txt`, `denylist.txt`, `verdict.ini`.
 Лог ошибок — `ioc_extractor_error.log`.
+
+Подпись Authenticode (рекомендуется для корпоративного AV):
+
+```powershell
+.\build\sign_exe.ps1 -ExePath .\dist\IOC_Extractor.exe
+# или -PfxPath .\certs\code.pfx
+```
 
 ## Структура
 
@@ -72,8 +96,10 @@ reliquary/
 samples/
 allowlist.txt
 denylist.txt
+verdict.ini
 run_gui.bat
 run_reliquary.py
+build/sign_exe.ps1
 ```
 
 ## Лицензия

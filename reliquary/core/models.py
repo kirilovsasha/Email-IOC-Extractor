@@ -83,6 +83,8 @@ class AttachmentInfo:
     risk_flags: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     archive_entries: list[str] = field(default_factory=list)
+    ole_streams: list[str] = field(default_factory=list)
+    nested_kind: str = ""
     data: bytes | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -96,6 +98,8 @@ class AttachmentInfo:
             "risk_flags": self.risk_flags,
             "notes": self.notes,
             "archive_entries": list(self.archive_entries),
+            "ole_streams": list(self.ole_streams),
+            "nested_kind": self.nested_kind,
         }
 
 
@@ -159,6 +163,42 @@ class Verdict:
 
 
 @dataclass
+class FileTriageRow:
+    """One row in batch triage table (per source file)."""
+
+    path: str
+    kind: str
+    verdict_level: str = ""
+    verdict_score: int | None = None
+    ioc_count: int = 0
+    top_iocs: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    message_id: str = ""
+    subject: str = ""
+    sender: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AnalysisMeta:
+    """Audit trail for handoff between shifts."""
+
+    app_version: str = ""
+    analyzed_at: str = ""
+    source_sha256: str = ""
+    source_size: int | None = None
+    filters_applied: dict[str, Any] = field(default_factory=dict)
+    allowlist_mtime: str = ""
+    denylist_mtime: str = ""
+    verdict_config_mtime: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class AnalysisResult:
     source_path: str
     source_kind: str
@@ -174,6 +214,8 @@ class AnalysisResult:
     verdict: Verdict | None = None
     raw_text_preview: str = ""
     errors: list[str] = field(default_factory=list)
+    file_rows: list[FileTriageRow] = field(default_factory=list)
+    meta: AnalysisMeta | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -191,4 +233,6 @@ class AnalysisResult:
             "verdict": self.verdict.to_dict() if self.verdict else None,
             "raw_text_preview": self.raw_text_preview,
             "errors": self.errors,
+            "file_rows": [r.to_dict() for r in self.file_rows],
+            "meta": self.meta.to_dict() if self.meta else None,
         }

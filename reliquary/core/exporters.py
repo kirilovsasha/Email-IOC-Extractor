@@ -39,7 +39,19 @@ def filter_iocs(
     hide_rewriter: bool = False,
     hide_allowlisted: bool = False,
     only_denylisted: bool = False,
+    actionable_only: bool = False,
+    search: str = "",
+    source_file: str = "",
 ) -> list[Ioc]:
+    """Filter IOCs for GUI / export.
+
+    ``actionable_only`` hides private, rewriter/noise, allowlisted, and bare
+    filename IOCs (attachment names without risk flags).
+    ``search`` matches value / type / tags / context (substring, case-insensitive).
+    ``source_file`` keeps IOCs tagged ``file:<name>`` for that basename.
+    """
+    q = (search or "").strip().lower()
+    base = Path(source_file).name.lower() if source_file else ""
     out: list[Ioc] = []
     for ioc in result.iocs:
         if types is not None and ioc.ioc_type.value not in types:
@@ -52,8 +64,62 @@ def filter_iocs(
             continue
         if only_denylisted and "denylisted" not in ioc.tags:
             continue
+        if actionable_only:
+            if "private" in ioc.tags:
+                continue
+            if "url_rewriter" in ioc.tags or "noise_candidate" in ioc.tags:
+                continue
+            if "allowlisted" in ioc.tags:
+                continue
+            if ioc.ioc_type == IocType.FILENAME and not any(
+                t in ioc.tags
+                for t in (
+                    "denylisted",
+                    "double_extension",
+                    "dangerous_extension",
+                    "archive_dangerous_member",
+                    "nested_email",
+                    "qr",
+                )
+            ):
+                continue
+        if base:
+            file_tags = [t for t in ioc.tags if t.startswith("file:")]
+            if file_tags and not any(t[5:].lower() == base for t in file_tags):
+                continue
+        if q:
+            hay = " ".join(
+                [
+                    ioc.value.lower(),
+                    ioc.ioc_type.value,
+                    " ".join(ioc.tags).lower(),
+                    (ioc.context or "").lower(),
+                ]
+            )
+            if q not in hay:
+                continue
         out.append(ioc)
-    return out
+    return sort_iocs(out)
+
+
+_HASH_TYPES = frozenset({"md5", "sha1", "sha256"})
+
+
+def sort_iocs(iocs: list[Ioc]) -> list[Ioc]:
+    """denylist → unwrapped → hashes → rest (stable within group)."""
+
+    def rank(ioc: Ioc) -> tuple[int, str, str]:
+        if "denylisted" in ioc.tags:
+            tier = 0
+        elif "unwrapped" in ioc.tags:
+            tier = 1
+        elif ioc.ioc_type.value in _HASH_TYPES or "attachment_hash" in ioc.tags:
+            tier = 2
+        else:
+            tier = 3
+        return (tier, ioc.ioc_type.value, ioc.value.lower())
+
+    return sorted(iocs, key=rank)
 
 
 def _with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
@@ -73,6 +139,8 @@ def _with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
         verdict=result.verdict,
         raw_text_preview=result.raw_text_preview,
         errors=list(result.errors),
+        file_rows=list(result.file_rows),
+        meta=result.meta,
     )
 
 
@@ -262,12 +330,127 @@ def export_csv(result: AnalysisResult, path: str | Path) -> Path:
     return out
 
 
-def export_report_json(result: AnalysisResult, path: str | Path) -> Path:
+def export_report_json(
+    result: AnalysisResult,
+    path: str | Path,
+    *,
+    filters_applied: dict | None = None,
+) -> Path:
     out = Path(path)
-    out.write_text(
-        json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    payload = result.to_dict()
+    if result.meta is not None and filters_applied is not None:
+        meta = dict(payload.get("meta") or {})
+        meta["filters_applied"] = filters_applied
+        payload["meta"] = meta
+    elif filters_applied is not None:
+        payload["meta"] = {
+            "filters_applied": filters_applied,
+        }
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
+def export_case_pack(
+    result: AnalysisResult,
+    path: str | Path,
+    *,
+    filters_applied: dict | None = None,
+    include_attachments: bool = True,
+) -> Path:
+    """Write a ZIP case pack: report JSON + CSV + optional attachment files."""
+    import zipfile
+    from reliquary.core.ticket import build_ticket_template
+
+    out = Path(path)
+    if out.suffix.lower() != ".zip":
+        out = out.with_suffix(".zip")
+
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", Path(result.source_path).stem)[:80] or "case"
+    buf_csv = Path(str(out) + ".tmp.csv")
+    buf_json = Path(str(out) + ".tmp.json")
+    try:
+        export_csv(result, buf_csv)
+        export_report_json(result, buf_json, filters_applied=filters_applied)
+        ticket = build_ticket_template(result, result.iocs, defang=True)
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{safe}/report.json", buf_json.read_text(encoding="utf-8"))
+            zf.writestr(f"{safe}/iocs.csv", buf_csv.read_bytes())
+            zf.writestr(f"{safe}/ticket.txt", ticket)
+            if result.file_rows:
+                rows = ["path\tkind\tverdict\tscore\tiocs\ttop\terrors\tmessage_id\n"]
+                for r in result.file_rows:
+                    rows.append(
+                        f"{r.path}\t{r.kind}\t{r.verdict_level}\t{r.verdict_score}\t"
+                        f"{r.ioc_count}\t{' | '.join(r.top_iocs)}\t"
+                        f"{' | '.join(r.errors)}\t{r.message_id}\n"
+                    )
+                zf.writestr(f"{safe}/batch_files.tsv", "".join(rows))
+            if include_attachments:
+                used: set[str] = set()
+                for att in result.attachments:
+                    if not att.data:
+                        continue
+                    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", att.filename or "att.bin")
+                    name = name.strip(" .") or "att.bin"
+                    candidate = name
+                    n = 1
+                    while candidate.lower() in used:
+                        stem = Path(name).stem
+                        suffix = Path(name).suffix
+                        candidate = f"{stem}_{n}{suffix}"
+                        n += 1
+                    used.add(candidate.lower())
+                    zf.writestr(f"{safe}/attachments/{candidate}", att.data)
+                    zf.writestr(
+                        f"{safe}/attachments/{candidate}.sha256.txt",
+                        f"{att.sha256}  {candidate}\n",
+                    )
+    finally:
+        for tmp in (buf_csv, buf_json):
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return out
+
+
+def export_case_pack_multi(
+    results: list[AnalysisResult],
+    path: str | Path,
+    *,
+    filters_applied: dict | None = None,
+    include_attachments: bool = True,
+) -> Path:
+    """ZIP with one subfolder case pack per analysis result."""
+    import tempfile
+    import zipfile
+
+    out = Path(path)
+    if out.suffix.lower() != ".zip":
+        out = out.with_suffix(".zip")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for idx, result in enumerate(results, start=1):
+                stem = re.sub(
+                    r'[<>:"/\\|?*\x00-\x1f]+', "_", Path(result.source_path).stem
+                )[:60] or f"case_{idx}"
+                prefix = f"{idx:02d}_{stem}"
+                single = tmp_path / f"flat_{idx}.zip"
+                export_case_pack(
+                    result,
+                    single,
+                    filters_applied=filters_applied,
+                    include_attachments=include_attachments,
+                )
+                with zipfile.ZipFile(single, "r") as src:
+                    for info in src.infolist():
+                        inner = (
+                            info.filename.split("/", 1)[-1]
+                            if "/" in info.filename
+                            else info.filename
+                        )
+                        zf.writestr(f"{prefix}/{inner}", src.read(info.filename))
     return out
 
 

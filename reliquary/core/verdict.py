@@ -1,11 +1,13 @@
 """Optional phishing / mail-triage heuristics (fully offline).
 
 Only applied to email artifacts (.eml / .msg). IOC extraction remains primary.
+Thresholds and weights load from verdict.ini next to the exe.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from reliquary.core.models import (
     ActionRecommendation,
@@ -14,6 +16,7 @@ from reliquary.core.models import (
     Verdict,
     VerdictLevel,
 )
+from reliquary.core.paths import config_path, ensure_user_lists
 
 URGENCY_RE = re.compile(
     r"(?i)\b("
@@ -25,25 +28,72 @@ URGENCY_RE = re.compile(
 )
 
 
-def _score_headers(result: AnalysisResult) -> tuple[int, list[str]]:
+@dataclass
+class VerdictConfig:
+    threshold_malicious: int = 60
+    threshold_suspicious: int = 30
+    threshold_unknown: int = 10
+    weight_header_critical: int = 35
+    weight_header_high: int = 25
+    weight_header_medium: int = 12
+    weight_header_low: int = 4
+    weight_attachment_flag: int = 20
+    weight_attachment_soft: int = 8
+    weight_url_rewrite: int = 5
+    weight_url_raw_ip: int = 18
+    weight_suspicious_tld: int = 10
+    weight_urgency: int = 15
+    weight_links_and_attachments: int = 10
+
+
+_KEYS = {f.name for f in VerdictConfig.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+
+
+def load_verdict_config() -> VerdictConfig:
+    ensure_user_lists()
+    cfg = VerdictConfig()
+    path = config_path("verdict.ini")
+    if not path.is_file():
+        return cfg
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return cfg
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, raw = line.partition("=")
+        key = key.strip().lower()
+        raw = raw.strip()
+        if key not in _KEYS:
+            continue
+        try:
+            setattr(cfg, key, int(raw))
+        except ValueError:
+            continue
+    return cfg
+
+
+def _score_headers(result: AnalysisResult, cfg: VerdictConfig) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
     for h in result.headers:
         if h.severity == Severity.CRITICAL:
-            score += 35
+            score += cfg.weight_header_critical
             reasons.append(h.note or h.name)
         elif h.severity == Severity.HIGH:
-            score += 25
+            score += cfg.weight_header_high
             reasons.append(h.note or h.name)
         elif h.severity == Severity.MEDIUM:
-            score += 12
+            score += cfg.weight_header_medium
             reasons.append(h.note or h.name)
         elif h.severity == Severity.LOW:
-            score += 4
+            score += cfg.weight_header_low
     return score, reasons
 
 
-def _score_attachments(result: AnalysisResult) -> tuple[int, list[str]]:
+def _score_attachments(result: AnalysisResult, cfg: VerdictConfig) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
     high_flags = {
@@ -53,30 +103,36 @@ def _score_attachments(result: AnalysisResult) -> tuple[int, list[str]]:
         "ooxml_vba",
         "mime_mismatch",
         "macro_enabled_office",
+        "nested_email",
+        "qr_url",
+        "archive_dangerous_member",
+        "encrypted_archive",
     }
     for att in result.attachments:
         hit = high_flags.intersection(att.risk_flags)
         if hit:
-            score += 20 * len(hit)
+            score += cfg.weight_attachment_flag * len(hit)
             reasons.append(f"Вложение «{att.filename}»: {', '.join(sorted(hit))}")
         elif "archive" in att.risk_flags or "office_macro_capable" in att.risk_flags:
-            score += 8
+            score += cfg.weight_attachment_soft
             reasons.append(f"Вложение «{att.filename}» требует ручной проверки")
     return score, reasons
 
 
-def _score_urls(result: AnalysisResult) -> tuple[int, list[str]]:
+def _score_urls(result: AnalysisResult, cfg: VerdictConfig) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
     if any(u.changed for u in result.url_rewrites):
-        score += 5
+        score += cfg.weight_url_rewrite
         reasons.append("Обнаружены URL rewrite (SafeLinks/Proofpoint/…) — развёрнуты локально")
 
     ip_urls = [
-        i for i in result.iocs if i.ioc_type.value == "url" and re.search(r"https?://\d+\.\d+\.\d+\.\d+", i.value)
+        i
+        for i in result.iocs
+        if i.ioc_type.value == "url" and re.search(r"https?://\d+\.\d+\.\d+\.\d+", i.value)
     ]
     if ip_urls:
-        score += 18
+        score += cfg.weight_url_raw_ip
         reasons.append("URL ведёт на сырой IP-адрес")
 
     suspicious_tlds = (".xyz", ".top", ".club", ".gq", ".tk", ".ml", ".cf", ".ga", ".zip", ".mov")
@@ -84,25 +140,24 @@ def _score_urls(result: AnalysisResult) -> tuple[int, list[str]]:
         if ioc.ioc_type.value in ("domain", "url"):
             val = ioc.value.lower()
             if any(val.endswith(tld) or f"{tld}/" in val for tld in suspicious_tlds):
-                score += 10
+                score += cfg.weight_suspicious_tld
                 reasons.append(f"Подозрительная зона в индикаторе: {ioc.value}")
                 break
     return score, reasons
 
 
-def _score_content(result: AnalysisResult) -> tuple[int, list[str]]:
+def _score_content(result: AnalysisResult, cfg: VerdictConfig) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
     blob = f"{result.subject}\n{result.raw_text_preview}"
     if URGENCY_RE.search(blob):
-        score += 15
+        score += cfg.weight_urgency
         reasons.append("В теме/тексте маркеры срочности / social engineering")
 
-    # External sender + links + attachment combo
     has_urls = any(i.ioc_type.value == "url" for i in result.iocs)
     has_att = bool(result.attachments)
     if has_urls and has_att and result.source_kind == "email":
-        score += 10
+        score += cfg.weight_links_and_attachments
         reasons.append("Письмо содержит и ссылки, и вложения")
     return score, reasons
 
@@ -163,8 +218,8 @@ def build_actions(level: VerdictLevel, result: AnalysisResult) -> list[ActionRec
     actions.append(
         ActionRecommendation(
             7,
-            "Экспортировать STIX/CSV",
-            "Выгрузить индикаторы в STIX 2.1 или CSV для передачи в TIP / соседние смены",
+            "Экспортировать STIX/CSV / case pack",
+            "Выгрузить индикаторы и case pack для передачи в TIP / соседние смены",
         )
     )
 
@@ -178,7 +233,7 @@ def build_actions(level: VerdictLevel, result: AnalysisResult) -> list[ActionRec
             ActionRecommendation(
                 2,
                 "Сохранить отчёт",
-                "Экспортируйте CSV для аудита triage",
+                "Экспортируйте CSV или case pack для аудита triage",
             ),
         ]
 
@@ -186,20 +241,20 @@ def build_actions(level: VerdictLevel, result: AnalysisResult) -> list[ActionRec
     return actions
 
 
-def render_verdict(result: AnalysisResult) -> Verdict | None:
+def render_verdict(result: AnalysisResult, cfg: VerdictConfig | None = None) -> Verdict | None:
     """Phishing / mail triage score — only for email artifacts."""
     if result.source_kind != "email":
         return None
 
+    cfg = cfg or load_verdict_config()
     score = 0
     reasons: list[str] = []
 
     for scorer in (_score_headers, _score_attachments, _score_urls, _score_content):
-        part, part_reasons = scorer(result)
+        part, part_reasons = scorer(result, cfg)
         score += part
         reasons.extend(part_reasons)
 
-    # Deduplicate reasons preserving order
     seen: set[str] = set()
     uniq_reasons: list[str] = []
     for r in reasons:
@@ -208,13 +263,13 @@ def render_verdict(result: AnalysisResult) -> Verdict | None:
             uniq_reasons.append(r)
 
     score = min(100, score)
-    if score >= 60:
+    if score >= cfg.threshold_malicious:
         level = VerdictLevel.MALICIOUS
         summary = "Высокая вероятность вредоносной активности / фишинга"
-    elif score >= 30:
+    elif score >= cfg.threshold_suspicious:
         level = VerdictLevel.SUSPICIOUS
         summary = "Подозрительные признаки — требуется углублённый разбор"
-    elif score >= 10:
+    elif score >= cfg.threshold_unknown:
         level = VerdictLevel.UNKNOWN
         summary = "Слабые сигналы — вердикт неоднозначен"
     else:
