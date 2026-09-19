@@ -44,6 +44,7 @@ a = Analysis(
         "reliquary.gui.export_actions",
         "reliquary.gui.analysis_actions",
         "reliquary.gui.clipboard_actions",
+        "reliquary.gui.layout",
         "reliquary.cli",
         "reliquary.core.office_extract",
         "reliquary.core.paths",
@@ -54,6 +55,10 @@ a = Analysis(
         "reliquary.core.filter_state",
         "reliquary.core.error_log",
         "reliquary.core.verdict",
+        "reliquary.core.lookalike",
+        "reliquary.core.content_signals",
+        "reliquary.core.analysis_options",
+        "reliquary.core.org_profile",
     ],
     # Optional extras (rarfile / pyzbar) are NOT bundled in the lite EXE.
     # For a full build: pip install '.[rar,qr]' then add them to hiddenimports.

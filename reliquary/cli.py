@@ -86,7 +86,17 @@ def _resolve_inputs(args: argparse.Namespace) -> list[str]:
     return [p for p in out if is_supported(p)]
 
 
+def _configure_stdio() -> None:
+    """Avoid UnicodeEncodeError on Windows consoles (cp1251/cp1252) in CI/cmd."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdio()
     enforce_offline()
     prefs = load_prefs()
     default_workers = int(prefs.get("max_workers") or 0) or default_max_workers()

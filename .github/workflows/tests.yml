@@ -75,15 +75,26 @@ jobs:
         run: |
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
-      - name: Smoke EXE (CLI via packaged entry)
+      - name: Smoke CLI + EXE
+        shell: cmd
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8
         run: |
-          python -m reliquary.cli --help
-          python -m reliquary.cli samples/corpus/benign_hr_notice.eml --quiet-verdict
-          if (!(Test-Path dist/EmailIOCExtractor.exe)) { throw "EXE missing" }
-          # Headless smoke: size check (GUI exe cannot --help without display)
-          $len = (Get-Item dist/EmailIOCExtractor.exe).Length
-          if ($len -lt 1MB) { throw "EXE too small: $len" }
-          Write-Host "EXE OK size=$len"
+          python -m reliquary.cli --help >nul
+          if errorlevel 1 exit /b 1
+          python -m reliquary.cli samples\corpus\benign_hr_notice.eml --quiet-verdict --iocs-only >nul
+          if errorlevel 1 exit /b 1
+          if not exist dist\EmailIOCExtractor.exe (
+            echo EXE missing
+            dir /s /b dist 2>nul
+            exit /b 1
+          )
+          for %%A in (dist\EmailIOCExtractor.exe) do echo EXE OK size=%%~zA
+          for %%A in (dist\EmailIOCExtractor.exe) do if %%~zA LSS 1048576 (
+            echo EXE too small
+            exit /b 1
+          )
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
