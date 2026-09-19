@@ -4,8 +4,6 @@ Verdict: {verdict} (score {score}/100)
 Summary: {summary}
 Reasons:
 {reasons}
-Actions:
-{actions}
 
 File: {file}
 From: {from}

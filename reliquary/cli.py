@@ -37,10 +37,6 @@ def _print_verdict(result, stream=None) -> None:
     print(f"  {v.summary}", file=stream)
     for reason in v.reasons[:10]:
         print(f"  • {reason}", file=stream)
-    if v.actions:
-        print("  Действия:", file=stream)
-        for act in v.actions[:5]:
-            print(f"    {act.priority}. {act.action}", file=stream)
 
 
 def _print_ioc_summary(result, stream=None) -> None:

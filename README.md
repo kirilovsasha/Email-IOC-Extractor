@@ -160,7 +160,7 @@ Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`,
 
 ### ✏️ Плейсхолдеры handoff
 
-`{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{actions}` `{breakdown}`  
+`{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{breakdown}`  
 `{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`
 
 Порядок выбора шаблона: явный путь → `handoff_{level}.txt` (profile / рядом с app) → `handoff_extra.txt` → встроенный блок.

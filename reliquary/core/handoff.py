@@ -80,13 +80,9 @@ def _handoff_values(
     evidence = list(iocs if iocs is not None else result.iocs)
 
     reasons = ""
-    actions = ""
     breakdown = ""
     if v:
         reasons = "\n".join(f"  - {r}" for r in v.reasons[:8]) or "  - —"
-        actions = (
-            "\n".join(f"  {a.priority}. {a.action}" for a in v.actions[:5]) or "  —"
-        )
         if v.breakdown:
             breakdown = "\n".join(
                 f"  +{b.points} {b.category}: {b.reason}" for b in v.breakdown
@@ -133,7 +129,7 @@ def _handoff_values(
         "score": str(v.score) if v else "—",
         "summary": (v.summary if v else "") or "—",
         "reasons": reasons or "  - —",
-        "actions": actions or "  —",
+        "actions": "",
         "breakdown": breakdown or "  —",
         "file": src,
         "from": from_hdr,
@@ -169,8 +165,6 @@ def render_default_handoff(
             lines.append(f"Summary: {values['summary']}")
         lines.append("Reasons:")
         lines.append(values["reasons"])
-        lines.append("Actions:")
-        lines.append(values["actions"])
         lines.append("")
     lines.append(f"File: {values['file']}")
     lines.append(f"From: {values['from']}")
@@ -205,7 +199,7 @@ def render_handoff(
     """Build a compact triage block for paste into a ticket.
 
     Optional ``template`` / ``template_path`` uses placeholders:
-    ``{product} {version} {verdict} {score} {summary} {reasons} {actions}
+    ``{product} {version} {verdict} {score} {summary} {reasons}
     {breakdown} {file} {from} {subject} {msg_id} {auth} {iocs} {batch}``.
 
     When ``handoff_by_level`` or ``handoff_{level}.txt`` next to the app is set,

@@ -227,11 +227,6 @@ class ResultPanelsMixin:
                 self._put(self.mail_box, "  Причины\n", "label")
                 for r in v.reasons[:8]:
                     self._put(self.mail_box, f"    • {r}\n", "muted")
-            if v.actions:
-                self._put(self.mail_box, "\n  Действия\n", "label")
-                for a in v.actions[:6]:
-                    self._put(self.mail_box, f"    {a.priority}. {a.action}\n", "value")
-                    self._put(self.mail_box, f"       {a.rationale}\n", "muted")
             self._put(self.mail_box, "\n")
 
         if mid:

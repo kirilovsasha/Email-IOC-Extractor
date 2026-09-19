@@ -257,10 +257,10 @@ def test_export_csv_bom_and_json(tmp_path: Path):
     assert "verdict" in json_path.read_text(encoding="utf-8")
 
 
-def test_verdict_actions_present():
+def test_verdict_no_analyst_actions():
     result = analyze_file(SAMPLES / "phishing_sample.eml")
     assert result.verdict is not None
-    assert len(result.verdict.actions) >= 1
+    assert result.verdict.actions == []
     assert len(result.iocs) >= 1
 
 

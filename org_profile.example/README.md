@@ -8,7 +8,7 @@ Drop this folder next to the Reliquary exe as `org_profile/`, or point prefs `pr
 |------|---------|
 | `allowlist_extra.txt` | Extra allowlisted hosts/domains (one per line). Merged with built-in allowlist. |
 | `verdict_extra.json` | Override `VerdictConfig` thresholds, weights, and per-category caps. See `verdict_extra.example.json` at repo root. |
-| `handoff_extra.txt` | Default ITSM handoff template (used when no level-specific file matches). Placeholders: `{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{actions}` `{breakdown}` `{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`. |
+| `handoff_extra.txt` | Default ITSM handoff template (used when no level-specific file matches). Placeholders: `{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{breakdown}` `{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`. |
 | `handoff_malicious.txt` | Handoff template when verdict is **malicious**. |
 | `handoff_suspicious.txt` | Handoff template when verdict is **suspicious**. |
 | `handoff_unknown.txt` | Handoff template when verdict is **unknown**. |

@@ -8,8 +8,6 @@ Score breakdown:
 
 Reasons:
 {reasons}
-Actions:
-{actions}
 
 File: {file}
 From: {from}

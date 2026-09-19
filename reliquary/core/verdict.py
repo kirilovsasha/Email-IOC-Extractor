@@ -17,7 +17,6 @@ from pathlib import Path
 from reliquary.core.content_signals import analyze_content_signals
 from reliquary.core.lookalike import load_brands, scan_lookalikes
 from reliquary.core.models import (
-    ActionRecommendation,
     AnalysisResult,
     ScoreContribution,
     Severity,
@@ -383,85 +382,6 @@ def _score_lookalike(
     return _apply_cap(parts, cfg.cap_lookalike, "lookalike")
 
 
-def build_actions(level: VerdictLevel, result: AnalysisResult) -> list[ActionRecommendation]:
-    actions: list[ActionRecommendation] = []
-
-    if level in (VerdictLevel.MALICIOUS, VerdictLevel.SUSPICIOUS):
-        actions.append(
-            ActionRecommendation(
-                1,
-                "Изолировать артефакты",
-                "Не открывать вложения и ссылки на рабочей станции; работать в песочнице/VM",
-            )
-        )
-        actions.append(
-            ActionRecommendation(
-                2,
-                "Заблокировать IOC",
-                "Добавить домены/URL/хеши/IP в EDR, почтовый шлюз и DNS sinkhole по процедуре SOC",
-            )
-        )
-        actions.append(
-            ActionRecommendation(
-                3,
-                "Проверить получателей",
-                "Найти других адресатов того же письма/кампании в SIEM и почтовом журнале",
-            )
-        )
-
-    if any(a.risk_flags for a in result.attachments):
-        actions.append(
-            ActionRecommendation(
-                4,
-                "Разобрать вложения",
-                "Посчитать хеши уже извлечены — сверить с локальным TIP/MISP офлайн-выгрузкой; при macro/EXE — детонация в sandbox",
-            )
-        )
-
-    if any(h.severity.value in ("high", "critical") for h in result.headers):
-        actions.append(
-            ActionRecommendation(
-                5,
-                "Зафиксировать spoofing",
-                "Сохранить Authentication-Results и цепочку Received; эскалация на email security",
-            )
-        )
-
-    if result.url_rewrites:
-        actions.append(
-            ActionRecommendation(
-                6,
-                "Использовать развёрнутые URL",
-                "В детектах применять unwrapped URL, а не обёртку SafeLinks/Proofpoint",
-            )
-        )
-
-    actions.append(
-        ActionRecommendation(
-            7,
-            "Сохранить отчёт",
-            "Экспортировать JSON или CSV с вердиктом и IOC",
-        )
-    )
-
-    if level == VerdictLevel.BENIGN:
-        actions = [
-            ActionRecommendation(
-                1,
-                "Закрыть как FP / инфо",
-                "Явных признаков компрометации не найдено — при сомнении оставьте на peer-review",
-            ),
-            ActionRecommendation(
-                2,
-                "Сохранить отчёт",
-                "Экспортируйте JSON или CSV для аудита triage",
-            ),
-        ]
-
-    actions.sort(key=lambda a: a.priority)
-    return actions
-
-
 def render_verdict(
     result: AnalysisResult,
     cfg: VerdictConfig | None = None,
@@ -514,13 +434,10 @@ def render_verdict(
     if not uniq_reasons:
         uniq_reasons.append("Эвристики не сработали на явные red flags")
 
-    verdict = Verdict(
+    return Verdict(
         level=level,
         score=score,
         summary=summary,
         reasons=uniq_reasons[:12],
-        actions=[],
         breakdown=breakdown,
     )
-    verdict.actions = build_actions(level, result)
-    return verdict
