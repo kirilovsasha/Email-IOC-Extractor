@@ -354,7 +354,7 @@ class ResultPanelsMixin:
             self._put(
                 self.mail_box,
                 "Нет данных вердикта.\n"
-                "Откройте .eml / .msg — здесь появятся score, причины и действия.\n",
+                "Откройте .eml / .msg — здесь появятся score, причины и разбор.\n",
                 "empty",
             )
             return

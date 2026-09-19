@@ -4,8 +4,8 @@
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
-(`benign` / `unknown` / `suspicious` / `malicious`) со score, разбором весов
-(включая mitigations) и рекомендуемыми действиями.
+(`benign` / `unknown` / `suspicious` / `malicious`) со score и разбором весов
+(включая mitigations).
 
 📡 Сеть не используется. Пакет Python — `reliquary`; продукт — **Email IOC Extractor**.
 
@@ -61,7 +61,7 @@ pip install -e ".[rar,qr]"
 ## 📋 Analyst runbook
 
 1. 📧 Откройте письмо (`.eml` / `.msg`), папку или вставьте RFC822 слева (Ctrl+Enter).
-2. ⚖️ Вкладка **Вердикт**: уровень, score, **разбор** (`+N` risk / `−N` mitigation), действия.
+2. ⚖️ Вкладка **Вердикт**: уровень, score, **разбор** (`+N` risk / `−N` mitigation), причины.
 3. 🔎 При шуме ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы** IOC.
 4. 🎫 **Handoff** (Ctrl+H) → тикет; либо JSON / CSV / Batch CSV (Ctrl+E).
 5. 📁 Пакет писем → вкладка **Пакет**: файл · вердикт · score · top reason · кампании;
@@ -74,7 +74,7 @@ pip install -e ".[rar,qr]"
 | | Область | Содержание |
 |---|---------|------------|
 | 📧 | Письмо | `.eml` / `.msg` / папка / RFC822 / drag-drop |
-| ⚖️ | Вердикт | score · breakdown (+/−) · причины · действия |
+| ⚖️ | Вердикт | score · breakdown (+/−) · причины |
 | 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
 | 📁 | Пакет | сводка + кампании + diff peer |
 | 📋 | Буфер | Msg-ID · Handoff · копирование IOC |
