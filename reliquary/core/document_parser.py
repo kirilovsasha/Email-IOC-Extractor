@@ -1,10 +1,13 @@
-"""Parse emails, tickets, PDF and HTML into analyzable content."""
+"""Parse emails (.eml / .msg) into analyzable content.
+
+Attachment formats (Office, archives, nested mail) are inspected in
+``attachment_inspector``, not as root inputs.
+"""
 
 from __future__ import annotations
 
 import email
 import email.policy
-import io
 from dataclasses import dataclass, field
 from email.message import Message
 from pathlib import Path
@@ -12,20 +15,12 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from reliquary.core.attachment_inspector import inspect_bytes
-from reliquary.core.formats import (
-    ARCHIVE_SUFFIXES,
-    EMAIL_SUFFIXES,
-    HTML_SUFFIXES,
-    OFFICE_OOXML_SUFFIXES,
-    TEXT_SUFFIXES,
-)
+from reliquary.core.formats import EMAIL_SUFFIXES
 from reliquary.core.models import AttachmentInfo
-from reliquary.core.office_extract import clean_extracted, extract_office_text
 
 # Guardrails for large documents (IOC extract still useful on the head of the file).
 MAX_TEXT_CHARS = 2_000_000
 MAX_HTML_CHARS = 2_000_000
-MAX_PDF_PAGES = 80
 
 
 @dataclass
@@ -276,144 +271,9 @@ def parse_msg(path: Path, data: bytes | None = None) -> ParsedDocument:
     )
 
 
-def parse_pdf(path: Path, data: bytes | None = None) -> ParsedDocument:
-    raw = _read_bytes(path, data)
-    errors: list[str] = []
-    text_parts: list[str] = []
-    try:
-        from pypdf import PdfReader
-
-        reader = PdfReader(io.BytesIO(raw))
-        pages = list(reader.pages)
-        if len(pages) > MAX_PDF_PAGES:
-            errors.append(f"PDF: разобраны первые {MAX_PDF_PAGES} из {len(pages)} страниц")
-            pages = pages[:MAX_PDF_PAGES]
-        for page in pages:
-            try:
-                text_parts.append(page.extract_text() or "")
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"Страница PDF: {exc}")
-        for page in pages:
-            annots = page.get("/Annots") or []
-            for annot in annots:
-                try:
-                    obj = annot.get_object()
-                    action = obj.get("/A")
-                    if action and action.get("/URI"):
-                        text_parts.append(str(action["/URI"]))
-                except Exception:
-                    continue
-    except Exception as exc:  # noqa: BLE001
-        errors.append(str(exc))
-
-    text, clip_notes = _clip_text("\n".join(text_parts))
-    errors.extend(clip_notes)
-    attachments = [inspect_bytes(path.name, raw)]
-    return ParsedDocument(
-        kind="pdf",
-        path=str(path),
-        text=text,
-        attachments=attachments,
-        errors=errors,
-    )
-
-
-def parse_html(path: Path, data: bytes | None = None) -> ParsedDocument:
-    raw = _read_bytes(path, data)
-    html = _decode_bytes(raw)
-    notes: list[str] = []
-    html, html_notes = _clip_text(html, MAX_HTML_CHARS)
-    notes.extend(html_notes)
-    text = _html_to_text(html)
-    text, clip_notes = _clip_text(text)
-    notes.extend(clip_notes)
-    return ParsedDocument(
-        kind="html",
-        path=str(path),
-        text=text,
-        html=html,
-        attachments=[inspect_bytes(path.name, raw)],
-        errors=notes,
-    )
-
-
-def parse_text(path: Path, data: bytes | None = None) -> ParsedDocument:
-    raw = _read_bytes(path, data)
-    text = _decode_bytes(raw)
-    text, notes = _clip_text(text)
-    return ParsedDocument(
-        kind="ticket",
-        path=str(path),
-        text=text,
-        attachments=[inspect_bytes(path.name, raw)],
-        errors=notes,
-    )
-
-
-def parse_office(path: Path, data: bytes | None = None) -> ParsedDocument:
-    raw = _read_bytes(path, data)
-    text, errors = extract_office_text(raw, path.suffix.lower())
-    text, clip_notes = _clip_text(clean_extracted(text))
-    errors.extend(clip_notes)
-    return ParsedDocument(
-        kind="office",
-        path=str(path),
-        text=text,
-        attachments=[inspect_bytes(path.name, raw)],
-        errors=errors,
-    )
-
-
-# Back-compat aliases
-def parse_docx(path: Path, data: bytes | None = None) -> ParsedDocument:
-    return parse_office(path, data)
-
-
-def parse_xlsx(path: Path, data: bytes | None = None) -> ParsedDocument:
-    return parse_office(path, data)
-
-
-def parse_zip(path: Path, data: bytes | None = None) -> ParsedDocument:
-    """Inventory zip as a document — names become analyzable text, no unpack."""
-    raw = _read_bytes(path, data)
-    att = inspect_bytes(path.name, raw)
-    lines = ["ZIP archive inventory:", path.name, ""]
-    lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
-    errors: list[str] = []
-    if "encrypted_archive" in att.risk_flags:
-        errors.append("⚠ Архив защищён паролем — содержимое не извлечено, только имена/флаги")
-    errors.extend(n for n in att.notes if "парол" in n.lower() or "encrypted" in n.lower())
-    return ParsedDocument(
-        kind="archive",
-        path=str(path),
-        text="\n".join(lines),
-        attachments=[att],
-        errors=errors,
-    )
-
-
-def parse_archive_generic(path: Path, data: bytes | None = None) -> ParsedDocument:
-    """RAR/7z as archive document via attachment inspector inventory."""
-    raw = _read_bytes(path, data)
-    att = inspect_bytes(path.name, raw)
-    lines = [f"{path.suffix.upper().lstrip('.')} archive inventory:", path.name, ""]
-    lines.extend(e for e in (att.archive_entries or []) if not e.startswith("QR:"))
-    errors: list[str] = list(att.notes) if not att.archive_entries else []
-    if "encrypted_archive" in att.risk_flags:
-        errors.insert(
-            0,
-            "⚠ Архив защищён паролем — inventory ограничен, данные не извлечены",
-        )
-    return ParsedDocument(
-        kind="archive",
-        path=str(path),
-        text="\n".join(lines),
-        attachments=[att],
-        errors=errors,
-    )
-
 
 def parse_document(path: str | Path, data: bytes | None = None) -> ParsedDocument:
+    """Parse a top-level email artifact (.eml / .msg). Other types are rejected."""
     p = Path(path)
     if data is None and not p.exists():
         return ParsedDocument(kind="unknown", path=str(p), text="", errors=["Файл не найден"])
@@ -422,16 +282,11 @@ def parse_document(path: str | Path, data: bytes | None = None) -> ParsedDocumen
     suffix = p.suffix.lower()
     if suffix in EMAIL_SUFFIXES:
         return parse_eml(p, data) if suffix == ".eml" else parse_msg(p, data)
-    if suffix == ".pdf":
-        return parse_pdf(p, data)
-    if suffix in HTML_SUFFIXES:
-        return parse_html(p, data)
-    if suffix in OFFICE_OOXML_SUFFIXES:
-        return parse_office(p, data)
-    if suffix == ".zip":
-        return parse_zip(p, data)
-    if suffix in ARCHIVE_SUFFIXES:
-        return parse_archive_generic(p, data)
-    if suffix in TEXT_SUFFIXES:
-        return parse_text(p, data)
-    return parse_text(p, data)
+    return ParsedDocument(
+        kind="unknown",
+        path=str(p),
+        text="",
+        errors=[
+            f"Поддерживаются только письма (.eml / .msg), получено: {suffix or '(без расширения)'}"
+        ],
+    )

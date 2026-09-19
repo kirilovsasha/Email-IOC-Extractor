@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point for IOC Extractor GUI and PyInstaller."""
+"""Entry point for Email IOC Extractor GUI and PyInstaller."""
 
 from __future__ import annotations
 
@@ -9,9 +9,16 @@ from pathlib import Path
 
 
 def _log_path() -> Path:
+    name = "email_ioc_extractor_error.log"
+    try:
+        from reliquary import __log_name__
+
+        name = __log_name__
+    except Exception:
+        pass
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent / "ioc_extractor_error.log"
-    return Path(__file__).resolve().parent / "ioc_extractor_error.log"
+        return Path(sys.executable).resolve().parent / name
+    return Path(__file__).resolve().parent / name
 
 
 def _show_fatal(message: str) -> None:
@@ -20,9 +27,17 @@ def _show_fatal(message: str) -> None:
         import tkinter as tk
         from tkinter import messagebox
 
+        name = "Email IOC Extractor"
+        try:
+            from reliquary import __app_name__
+
+            name = __app_name__
+        except Exception:
+            pass
+
         root = tk.Tk()
         root.withdraw()
-        messagebox.showerror("IOC Extractor", message)
+        messagebox.showerror(name, message)
         root.destroy()
     except Exception:
         try:
@@ -33,10 +48,8 @@ def _show_fatal(message: str) -> None:
 
 def main() -> None:
     try:
-        from reliquary.core.paths import ensure_user_lists
         from reliquary.gui.app import run
 
-        ensure_user_lists()
         run()
     except Exception:
         tb = traceback.format_exc()
@@ -45,8 +58,15 @@ def main() -> None:
             log.write_text(tb, encoding="utf-8")
         except OSError:
             pass
+        name = "Email IOC Extractor"
+        try:
+            from reliquary import __app_name__
+
+            name = __app_name__
+        except Exception:
+            pass
         _show_fatal(
-            "Не удалось запустить IOC Extractor.\n\n"
+            f"Не удалось запустить {name}.\n\n"
             f"Подробности: {log}\n\n"
             f"{tb[-1500:]}"
         )

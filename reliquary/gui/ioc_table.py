@@ -11,8 +11,16 @@ import customtkinter as ctk
 
 from reliquary.core.defang import defang_value
 from reliquary.core.models import Ioc
-from reliquary.gui.theme import COLORS, IOC_TYPE_COLORS
+from reliquary.gui.theme import (
+    COLORS,
+    FONT_MONO,
+    IOC_TYPE_COLORS,
+    ctk_font,
+    ioc_density_metrics,
+    tk_ui,
+)
 from reliquary.gui.tooltips import HoverTip
+from reliquary.gui.windowing import filter_treeview_style_map
 
 _TYPE_LABEL: dict[str, str] = {
     "ipv4": "IPv4",
@@ -37,7 +45,6 @@ _TYPE_LABEL: dict[str, str] = {
 }
 
 _SIGNAL_ORDER: tuple[tuple[str, str], ...] = (
-    ("denylisted", "DENY"),
     ("unwrapped", "UNWRAP"),
     ("from_url", "URL"),
     ("attachment_hash", "ATT"),
@@ -50,8 +57,12 @@ _SIGNAL_ORDER: tuple[tuple[str, str], ...] = (
     ("noise_candidate", "NOISE"),
 )
 
-# Fixed inspector height — prevents layout jump when selecting rows
-_INSPECTOR_H = 118
+# Inspector must fit type + value + meta; a short locked box clips the IOC.
+_INSPECTOR_H = 200
+_INSPECTOR_H_NARROW = 236
+_TABLE_FONT = 11
+_TABLE_ROW = 24
+_VALUE_BOX_H = 72
 
 
 def type_label(ioc_type: str) -> str:
@@ -73,12 +84,6 @@ def truncate_middle(text: str, max_len: int = 96) -> str:
     return text[:left] + "…" + text[-right:]
 
 
-def truncate_end(text: str, max_len: int) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 1] + "…"
-
-
 class IocTable(ctk.CTkFrame):
     """Master list + detail inspector. Layout adapts on resize."""
 
@@ -93,6 +98,7 @@ class IocTable(ctk.CTkFrame):
         on_goto: Callable[[Ioc], None] | None = None,
         on_copy: Callable[[Ioc], None] | None = None,
         on_status: Callable[[str], None] | None = None,
+        ui_scale: float = 1.0,
         **kwargs: object,
     ) -> None:
         super().__init__(master, fg_color=COLORS["surface"], **kwargs)  # type: ignore[arg-type]
@@ -101,6 +107,8 @@ class IocTable(ctk.CTkFrame):
         self._on_goto = on_goto
         self._on_copy = on_copy
         self._on_status = on_status
+        self._ui_scale = float(ui_scale) or 1.0
+        self._density = "normal"
         self._by_iid: dict[str, Ioc] = {}
         self._sort_col = "type"
         self._sort_asc = True
@@ -109,6 +117,7 @@ class IocTable(ctk.CTkFrame):
         self._resize_after: str | None = None
         self._last_width = 0
         self._meta_full = ""
+        self._narrow_inspector = False
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -118,40 +127,70 @@ class IocTable(ctk.CTkFrame):
         self._build_inspector()
         self.bind("<Configure>", self._on_resize, add="+")
 
-    def _build_tree(self) -> None:
+    def set_ui_scale(self, scale: float) -> None:
+        self._ui_scale = float(scale) or 1.0
+        self._apply_tree_style()
+
+    def set_density(self, density: str) -> None:
+        self._density = density or "normal"
+        self._apply_tree_style()
+
+    def _mono_family(self) -> str:
+        return "Cascadia Mono" if self._font_exists("Cascadia Mono") else FONT_MONO
+
+    def _apply_tree_style(self) -> None:
         style = ttk.Style(self)
         try:
             style.theme_use("clam")
         except tk.TclError:
             pass
-
-        mono = (
-            ("Cascadia Mono", 10)
-            if self._font_exists("Cascadia Mono")
-            else ("Consolas", 10)
-        )
+        # Windows/clam maps "!disabled !selected" and hides per-item tag colors.
+        for name in ("Treeview", "Ioc.Treeview"):
+            try:
+                style.map(
+                    name,
+                    foreground=filter_treeview_style_map(
+                        style.map(name, query_opt="foreground")
+                    ),
+                    background=filter_treeview_style_map(
+                        style.map(name, query_opt="background")
+                    ),
+                )
+            except tk.TclError:
+                pass
+        scale = self._ui_scale
+        family = self._mono_family()
+        font_pt, row_px = ioc_density_metrics(self._density)
+        size = max(10, int(round(font_pt * scale)))
         style.configure(
             "Ioc.Treeview",
             background=COLORS["surface_alt"],
-            foreground=COLORS["text"],
             fieldbackground=COLORS["surface_alt"],
             borderwidth=0,
-            rowheight=28,
-            font=mono,
+            rowheight=max(18, int(round(row_px * scale))),
+            font=(family, size),
         )
         style.configure(
             "Ioc.Treeview.Heading",
             background=COLORS["surface"],
             foreground=COLORS["muted"],
             relief="flat",
-            font=("Segoe UI", 10, "bold"),
-            padding=(8, 6),
+            font=tk_ui("dense", bold=True, scale=scale),
+            padding=(6, 4),
         )
         style.map(
             "Ioc.Treeview",
             background=[("selected", COLORS["accent_dim"])],
             foreground=[("selected", COLORS["text"])],
         )
+        if getattr(self, "tree", None) is not None:
+            self.tree.tag_configure("odd", background=COLORS.get("row_alt", "#151c24"))
+            self.tree.tag_configure("even", background=COLORS["surface_alt"])
+            for ioc_type, color in IOC_TYPE_COLORS.items():
+                self.tree.tag_configure(f"t_{ioc_type}", foreground=color)
+
+    def _build_tree(self) -> None:
+        self._apply_tree_style()
 
         wrap = ctk.CTkFrame(
             self,
@@ -181,9 +220,9 @@ class IocTable(ctk.CTkFrame):
         )
         self.tree.heading("file", text="Файл", command=lambda: self._sort_by("file"), anchor="w")
 
-        self.tree.column("type", width=78, minwidth=56, stretch=False, anchor="w")
-        self.tree.column("value", width=420, minwidth=120, stretch=True, anchor="w")
-        self.tree.column("flags", width=140, minwidth=0, stretch=False, anchor="w")
+        self.tree.column("type", width=88, minwidth=72, stretch=False, anchor="w")
+        self.tree.column("value", width=420, minwidth=160, stretch=True, anchor="w")
+        self.tree.column("flags", width=130, minwidth=0, stretch=False, anchor="w")
         self.tree.column("file", width=100, minwidth=0, stretch=False, anchor="w")
 
         vsb = ttk.Scrollbar(wrap, orient="vertical", command=self.tree.yview)
@@ -203,7 +242,6 @@ class IocTable(ctk.CTkFrame):
             self.tree.tag_configure(f"t_{ioc_type}", foreground=color)
 
     def _build_inspector(self) -> None:
-        # Fixed height + propagate off → selecting rows never resizes the table
         panel = ctk.CTkFrame(
             self,
             fg_color=COLORS["surface_alt"],
@@ -215,50 +253,46 @@ class IocTable(ctk.CTkFrame):
         panel.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         panel.grid_propagate(False)
         panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(1, weight=1)
+        panel.grid_rowconfigure(2, weight=1)
         self._inspector = panel
 
-        top = ctk.CTkFrame(panel, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 0))
-        top.grid_columnconfigure(1, weight=1)
+        self._insp_top = ctk.CTkFrame(panel, fg_color="transparent")
+        self._insp_top.grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 0))
+        self._insp_top.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            top,
+            self._insp_top,
             text="ДЕТАЛИ",
-            font=ctk.CTkFont(size=10, weight="bold"),
+            font=ctk_font("dense", weight="bold"),
             text_color=COLORS["muted"],
-        ).grid(row=0, column=0, sticky="w", padx=(2, 10))
-
-        self._detail_type = ctk.CTkLabel(
-            top,
-            text="—",
-            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-            text_color=COLORS["accent"],
             anchor="w",
-        )
-        self._detail_type.grid(row=0, column=1, sticky="ew")
+        ).grid(row=0, column=0, sticky="w")
 
-        actions = ctk.CTkFrame(top, fg_color="transparent")
-        actions.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self._insp_actions = ctk.CTkFrame(self._insp_top, fg_color="transparent")
+        self._insp_actions.grid(row=0, column=1, sticky="e", padx=(8, 0))
 
+        chip_font = ctk_font("dense")
+        btn_h = 24
         self._btn_copy = ctk.CTkButton(
-            actions,
+            self._insp_actions,
             text="Копировать",
-            width=96,
-            height=26,
+            width=88,
+            height=btn_h,
+            font=chip_font,
             command=self._copy_selected,
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_dim"],
             state="disabled",
         )
-        self._btn_copy.pack(side="left", padx=(0, 4))
+        self._btn_copy.pack(side="left", padx=(0, 3))
         HoverTip(self._btn_copy, "Скопировать значение (Ctrl+C / Enter)")
 
         self._btn_goto = ctk.CTkButton(
-            actions,
+            self._insp_actions,
             text="К фрагменту",
-            width=100,
-            height=26,
+            width=96,
+            height=btn_h,
+            font=chip_font,
             command=self._goto_selected,
             fg_color=COLORS["surface"],
             hover_color=COLORS["border"],
@@ -266,14 +300,15 @@ class IocTable(ctk.CTkFrame):
             border_color=COLORS["border"],
             state="disabled",
         )
-        self._btn_goto.pack(side="left", padx=(0, 4))
+        self._btn_goto.pack(side="left", padx=(0, 3))
         HoverTip(self._btn_goto, "Показать фрагмент в источнике (двойной клик)")
 
         self._btn_defang = ctk.CTkButton(
-            actions,
+            self._insp_actions,
             text="Defang",
-            width=68,
-            height=26,
+            width=64,
+            height=btn_h,
+            font=chip_font,
             command=self._copy_defanged,
             fg_color=COLORS["surface"],
             hover_color=COLORS["border"],
@@ -284,11 +319,19 @@ class IocTable(ctk.CTkFrame):
         self._btn_defang.pack(side="left")
         HoverTip(self._btn_defang, "Скопировать defanged значение")
 
-        mono = "Cascadia Mono" if self._font_exists("Cascadia Mono") else "Consolas"
+        self._detail_type = ctk.CTkLabel(
+            panel,
+            text="—",
+            font=ctk_font("body", weight="bold"),
+            text_color=COLORS["muted"],
+            anchor="w",
+        )
+        self._detail_type.grid(row=1, column=0, sticky="ew", padx=10, pady=(4, 0))
+
         self._detail_value = ctk.CTkTextbox(
             panel,
-            height=44,
-            font=ctk.CTkFont(family=mono, size=12),
+            height=_VALUE_BOX_H,
+            font=ctk.CTkFont(family=self._mono_family(), size=13),
             text_color=COLORS["value"],
             fg_color=COLORS["surface"],
             border_width=0,
@@ -296,27 +339,43 @@ class IocTable(ctk.CTkFrame):
             activate_scrollbars=True,
             wrap="char",
         )
-        self._detail_value.grid(row=1, column=0, sticky="nsew", padx=10, pady=(6, 0))
-        self._detail_value.configure(state="disabled")
+        self._detail_value.grid(row=2, column=0, sticky="nsew", padx=8, pady=(4, 0))
+        self._lock_value_box()
 
         self._detail_meta = ctk.CTkLabel(
             panel,
             text="",
-            font=ctk.CTkFont(size=11),
+            font=ctk_font("caption"),
             text_color=COLORS["muted"],
             anchor="w",
             justify="left",
+            wraplength=420,
         )
-        self._detail_meta.grid(row=2, column=0, sticky="ew", padx=12, pady=(4, 8))
+        self._detail_meta.grid(row=3, column=0, sticky="ew", padx=10, pady=(2, 8))
 
         self._inspector_empty()
 
-    def _set_value_text(self, text: str, *, muted: bool = False) -> None:
-        color = COLORS["muted"] if muted else COLORS["value"]
-        self._detail_value.configure(state="normal", text_color=color)
+    def _lock_value_box(self) -> None:
+        """Keep the value selectable/copyable; block edits. Disabled Text greys out on Windows."""
+        inner = getattr(self._detail_value, "textbox", None) or getattr(
+            self._detail_value, "_textbox", None
+        )
+        if inner is None:
+            return
+
+        def _on_key(event: tk.Event) -> str | None:  # type: ignore[type-arg]
+            ctrl = bool(event.state & 0x4)
+            if ctrl and event.keysym.lower() in ("c", "a"):
+                return None
+            return "break"
+
+        inner.bind("<Key>", _on_key)
+
+    def _set_value_text(self, text: str, *, muted: bool = False, color: str | None = None) -> None:
+        fg = COLORS["muted"] if muted else (color or COLORS["value"])
+        self._detail_value.configure(text_color=fg)
         self._detail_value.delete("1.0", "end")
         self._detail_value.insert("1.0", text)
-        self._detail_value.configure(state="disabled")
 
     def _on_resize(self, event: tk.Event) -> None:  # type: ignore[type-arg]
         if event.widget is not self:
@@ -336,7 +395,6 @@ class IocTable(ctk.CTkFrame):
         self._resize_after = None
         w = max(self.winfo_width(), 200)
 
-        # Collapse secondary columns on narrow panes
         show_flags = w >= 520
         show_file = self._want_file and w >= 640
         self._show_file = show_file
@@ -353,11 +411,25 @@ class IocTable(ctk.CTkFrame):
         except Exception:  # noqa: BLE001
             pass
 
-        # Keep meta to one visual line regardless of pane width
-        meta_budget = max(40, (w - 40) // 7)
+        narrow = w < 560
+        if narrow != self._narrow_inspector:
+            self._narrow_inspector = narrow
+            try:
+                self._insp_actions.grid_forget()
+                if narrow:
+                    self._insp_actions.grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+                    self._inspector.configure(height=_INSPECTOR_H_NARROW)
+                else:
+                    self._insp_actions.grid(row=0, column=1, sticky="e", padx=(8, 0))
+                    self._inspector.configure(height=_INSPECTOR_H)
+            except Exception:  # noqa: BLE001
+                pass
+
         tip = getattr(self, "_meta_full", "") or ""
-        if tip:
-            self._detail_meta.configure(text=truncate_end(tip, meta_budget))
+        try:
+            self._detail_meta.configure(wraplength=max(160, w - 36), text=tip)
+        except Exception:  # noqa: BLE001
+            pass
 
     @staticmethod
     def _font_exists(name: str) -> bool:
@@ -369,7 +441,7 @@ class IocTable(ctk.CTkFrame):
     def _inspector_empty(self) -> None:
         self._meta_full = ""
         self._detail_type.configure(text="—", text_color=COLORS["muted"])
-        self._set_value_text("Выберите IOC в списке", muted=True)
+        self._set_value_text("Выберите доказательство в списке", muted=True)
         self._detail_meta.configure(
             text="Клик — выбрать · Enter/Ctrl+C — копировать · 2×клик — к фрагменту · ПКМ — меню"
         )
@@ -383,7 +455,7 @@ class IocTable(ctk.CTkFrame):
         t = ioc.ioc_type.value
         color = IOC_TYPE_COLORS.get(t, COLORS["text"])
         self._detail_type.configure(text=f"{type_label(t)}  ·  {t}", text_color=color)
-        self._set_value_text(ioc.value)
+        self._set_value_text(ioc.value, color=color)
 
         tags = [x for x in ioc.tags if not x.startswith("file:")]
         file_tag = next((x[5:] for x in ioc.tags if x.startswith("file:")), "")
@@ -397,11 +469,13 @@ class IocTable(ctk.CTkFrame):
         if tags:
             parts.append("теги: " + ", ".join(tags[:12]))
         if ctx:
-            parts.append(f"контекст: {ctx[:200]}")
+            parts.append(f"контекст: {ctx[:160]}")
         full = "  ·  ".join(parts) if parts else ""
+        if len(full) > 320:
+            full = full[:317] + "…"
         self._meta_full = full
-        budget = max(40, (max(self.winfo_width(), 200) - 40) // 7)
-        self._detail_meta.configure(text=truncate_end(full, budget) if full else "")
+        wrap = max(160, self.winfo_width() - 36)
+        self._detail_meta.configure(text=full, wraplength=wrap)
 
         for btn in (self._btn_copy, self._btn_goto, self._btn_defang):
             btn.configure(state="normal")
@@ -409,12 +483,24 @@ class IocTable(ctk.CTkFrame):
     def clear(self) -> None:
         self.tree.delete(*self.tree.get_children())
         self._by_iid.clear()
+        self._last_sig = None
         self._update_inspector(None)
 
     def set_iocs(self, iocs: list[Ioc], *, show_file: bool | None = None) -> None:
         if show_file is not None:
             self._want_file = show_file
+        # Skip full rebuild when the visible list is unchanged (search/filter spam).
+        sig = (
+            self._want_file,
+            tuple(
+                (i.ioc_type.value, i.value, tuple(i.tags), i.source) for i in iocs
+            ),
+        )
+        prev = getattr(self, "_last_sig", None)
+        if prev == sig and self._by_iid:
+            return
         self.clear()
+        self._last_sig = sig
         self._apply_responsive_layout()
         for idx, ioc in enumerate(iocs):
             file_tag = next((t[5:] for t in ioc.tags if t.startswith("file:")), "")

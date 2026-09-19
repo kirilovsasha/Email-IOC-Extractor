@@ -1,0 +1,35 @@
+Return-Path: <bounce@evil-mailer.xyz>
+Received: from mail.evil-mailer.xyz (unknown [203.0.113.50])
+	by mx.company.local with ESMTPS id abc123;
+	Wed, 17 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.company.local;
+	spf=fail smtp.mailfrom=evil-mailer.xyz;
+	dkim=fail;
+	dmarc=fail action=none header.from=microsoft.com
+From: "Microsoft Security" <alerts@evil-mailer.xyz>
+Reply-To: attacker@totally-different.top
+To: analyst@company.local
+Subject: СРОЧНО: подтвердите пароль — аккаунт будет заблокирован
+Message-ID: <phish123@evil-mailer.xyz>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Ваш пароль истекает. Перейдите по ссылке:</p>
+<p><a href="https://nam.safelinks.protection.outlook.com/?url=https%3A%2F%2Fevil-mailer.xyz%2Flogin&amp;data=01">Verify account</a></p>
+<p>Или напрямую: https://urldefense.proofpoint.com/v2/url?u=https-3A__phish.example.xyz_pay&amp;d=DwMFaQ</p>
+<p>C2: 198.51.100.77 / hash 44d88612fea8a8f36de82e1278abb02f</p>
+</body>
+</html>
+
+--BOUNDARY
+Content-Type: application/octet-stream; name="invoice.pdf.exe"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice.pdf.exe"
+
+TVqQAAMAAAAEAAAA
+--BOUNDARY--

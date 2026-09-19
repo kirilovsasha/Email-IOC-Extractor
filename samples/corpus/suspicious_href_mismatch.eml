@@ -1,0 +1,12 @@
+From: notices@partner.example
+To: user@company.local
+Subject: Security notice
+Message-ID: <sus4@partner.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+<html><body>
+<p>Please open the portal:</p>
+<p><a href="https://evil.top/login">https://www.microsoft.com/security</a></p>
+</body></html>

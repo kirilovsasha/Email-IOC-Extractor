@@ -1,0 +1,21 @@
+=== {product} {version} — MALICIOUS handoff ===
+
+Verdict: {verdict} (score {score}/100)
+Summary: {summary}
+
+Score breakdown:
+{breakdown}
+
+Reasons:
+{reasons}
+Actions:
+{actions}
+
+File: {file}
+From: {from}
+Subject: {subject}
+Message-ID: {msg_id}
+Auth: {auth}
+
+IOC evidence:
+{iocs}

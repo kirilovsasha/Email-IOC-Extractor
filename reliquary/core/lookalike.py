@@ -1,0 +1,273 @@
+"""Brand lookalike / IDN / homoglyph heuristics (fully offline)."""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+
+# Well-known brand registrable domains (ASCII). Org profiles may extend via brands.txt.
+DEFAULT_BRANDS: tuple[str, ...] = (
+    "microsoft.com",
+    "office.com",
+    "outlook.com",
+    "live.com",
+    "google.com",
+    "gmail.com",
+    "apple.com",
+    "icloud.com",
+    "amazon.com",
+    "aws.amazon.com",
+    "paypal.com",
+    "ebay.com",
+    "facebook.com",
+    "meta.com",
+    "linkedin.com",
+    "dropbox.com",
+    "github.com",
+    "sberbank.ru",
+    "sber.ru",
+    "tinkoff.ru",
+    "vtb.ru",
+    "gazprombank.ru",
+    "alfabank.ru",
+    "yandex.ru",
+    "mail.ru",
+)
+
+# Common visual confusables → ASCII (subset; offline, no full Unicode confusables table).
+_CONFUSABLES = str.maketrans(
+    {
+        "а": "a",  # Cyrillic
+        "е": "e",
+        "о": "o",
+        "р": "p",
+        "с": "c",
+        "у": "y",
+        "х": "x",
+        "і": "i",
+        "ї": "i",
+        "ё": "e",
+        "ѕ": "s",
+        "ɡ": "g",
+        "ｌ": "l",
+        "０": "0",
+        "１": "1",
+        "３": "3",
+        "５": "5",
+        "８": "8",
+    }
+)
+
+_DOMAIN_RE = re.compile(
+    r"(?i)\b(?:https?://)?([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)\b"
+)
+
+
+@dataclass(frozen=True)
+class LookalikeHit:
+    value: str
+    brand: str
+    kind: str  # idn | homoglyph | levenshtein | brand_spoof
+    detail: str
+
+
+def load_brands(extra_path: str | Path | None = None) -> tuple[str, ...]:
+    brands = list(DEFAULT_BRANDS)
+    if extra_path is None:
+        return tuple(brands)
+    path = Path(extra_path)
+    if not path.is_file():
+        return tuple(brands)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return tuple(brands)
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        brands.append(line.lower().lstrip("@").lstrip("."))
+    # preserve order, unique
+    seen: set[str] = set()
+    out: list[str] = []
+    for b in brands:
+        if b not in seen:
+            seen.add(b)
+            out.append(b)
+    return tuple(out)
+
+
+def _registrable(host: str) -> str:
+    host = host.lower().strip(".").strip()
+    parts = host.split(".")
+    if len(parts) >= 2:
+        return ".".join(parts[-2:])
+    return host
+
+
+def to_ascii_domain(host: str) -> tuple[str, bool]:
+    """Return (ascii_or_best_effort, is_idn)."""
+    host = host.lower().strip(".")
+    if not host:
+        return "", False
+    try:
+        ascii_host = host.encode("idna").decode("ascii")
+        is_idn = ascii_host != host and ("xn--" in ascii_host or any(ord(c) > 127 for c in host))
+        return ascii_host, is_idn or any(ord(c) > 127 for c in host)
+    except (UnicodeError, UnicodeDecodeError):
+        return host, any(ord(c) > 127 for c in host)
+
+
+def normalize_homoglyph(text: str) -> str:
+    folded = unicodedata.normalize("NFKC", text).lower()
+    return folded.translate(_CONFUSABLES)
+
+
+def levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            ins = cur[j - 1] + 1
+            delete = prev[j] + 1
+            sub = prev[j - 1] + (ca != cb)
+            cur.append(min(ins, delete, sub))
+        prev = cur
+    return prev[-1]
+
+
+def extract_hosts_from_text(text: str) -> list[str]:
+    hosts: list[str] = []
+    for m in _DOMAIN_RE.finditer(text or ""):
+        raw = m.group(1).lower()
+        if raw.startswith("www."):
+            raw = raw[4:]
+        hosts.append(raw)
+    return hosts
+
+
+def host_from_email_or_url(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if "@" in value and "://" not in value:
+        return value.rsplit("@", 1)[-1].lower().strip(">")
+    try:
+        parsed = urlparse(value if "://" in value else f"//{value}")
+        host = (parsed.hostname or "").lower()
+        return host
+    except Exception:  # noqa: BLE001
+        return value.lower()
+
+
+def check_domain(
+    domain: str,
+    brands: tuple[str, ...] | None = None,
+    *,
+    max_distance: int = 2,
+) -> list[LookalikeHit]:
+    """Compare a domain against brand list for IDN / homoglyph / near-miss."""
+    brands = brands or DEFAULT_BRANDS
+    domain = domain.lower().strip(".")
+    if not domain or "." not in domain:
+        return []
+    ascii_dom, is_idn = to_ascii_domain(domain)
+    reg = _registrable(ascii_dom or domain)
+    norm = normalize_homoglyph(reg)
+    hits: list[LookalikeHit] = []
+
+    if is_idn:
+        hits.append(
+            LookalikeHit(
+                value=domain,
+                brand="",
+                kind="idn",
+                detail=f"IDN/punycode домен: {domain} → {ascii_dom or domain}",
+            )
+        )
+
+    for brand in brands:
+        brand_reg = _registrable(brand)
+        if reg == brand_reg or norm == brand_reg:
+            continue
+        brand_norm = normalize_homoglyph(brand_reg)
+        # Homoglyph: normalized form matches brand but original differs
+        if norm == brand_norm and reg != brand_reg:
+            hits.append(
+                LookalikeHit(
+                    value=domain,
+                    brand=brand,
+                    kind="homoglyph",
+                    detail=f"Homoglyph к {brand}: {domain}",
+                )
+            )
+            continue
+        # Brand label in a different TLD / extra labels (microsoft-secure.com)
+        brand_label = brand_reg.split(".")[0]
+        if len(brand_label) >= 5 and brand_label in norm.replace("-", "") and brand_reg not in reg:
+            if brand_label not in reg.split(".")[0]:
+                # e.g. secure-microsoft.top
+                pass
+            if brand_label in norm and not reg.endswith(brand_reg):
+                hits.append(
+                    LookalikeHit(
+                        value=domain,
+                        brand=brand,
+                        kind="brand_spoof",
+                        detail=f"Похоже на бренд {brand}: {domain}",
+                    )
+                )
+                continue
+        dist = levenshtein(norm, brand_norm)
+        if 1 <= dist <= max_distance and abs(len(norm) - len(brand_norm)) <= max_distance:
+            hits.append(
+                LookalikeHit(
+                    value=domain,
+                    brand=brand,
+                    kind="levenshtein",
+                    detail=f"Lookalike ({dist}) к {brand}: {domain}",
+                )
+            )
+    return hits
+
+
+def scan_lookalikes(
+    *,
+    from_addr: str = "",
+    text: str = "",
+    domains: list[str] | None = None,
+    brands: tuple[str, ...] | None = None,
+) -> list[LookalikeHit]:
+    brands = brands or DEFAULT_BRANDS
+    candidates: list[str] = []
+    if from_addr:
+        h = host_from_email_or_url(from_addr)
+        if h:
+            candidates.append(h)
+    for d in domains or []:
+        candidates.append(d.lower())
+    for h in extract_hosts_from_text(text):
+        candidates.append(h)
+
+    seen: set[str] = set()
+    out: list[LookalikeHit] = []
+    for host in candidates:
+        key = host.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        for hit in check_domain(host, brands):
+            sig = (hit.kind, hit.value, hit.brand)
+            if sig not in {(h.kind, h.value, h.brand) for h in out}:
+                out.append(hit)
+    return out[:12]

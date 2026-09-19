@@ -6,7 +6,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from reliquary.gui.theme import COLORS
+from reliquary.gui.theme import CHIP_H, CHIP_H_COMPACT, COLORS, FONT_UI, ctk_font, tk_ui
 
 
 class HoverTip:
@@ -105,10 +105,10 @@ class HoverTip:
             justify="left",
             background=COLORS["surface_alt"],
             foreground=COLORS["text"],
-            font=("Segoe UI", 9),
-            padx=8,
-            pady=5,
-            wraplength=320,
+            font=tk_ui("tip"),
+            padx=10,
+            pady=6,
+            wraplength=360,
             takefocus=0,
         )
         lbl.pack(padx=1, pady=1)
@@ -175,16 +175,16 @@ class HoverTip:
                 pass
 
 
-def muted_label(parent: object, text: str, *, size: int = 11) -> ctk.CTkLabel:
-    return ctk.CTkLabel(
-        parent,
-        text=text,
-        font=ctk.CTkFont(size=size, weight="bold"),
-        text_color=COLORS["muted"],
+def muted_label(parent: object, text: str, *, size: int | None = None) -> ctk.CTkLabel:
+    font = (
+        ctk_font("label", weight="bold")
+        if size is None
+        else ctk.CTkFont(family=FONT_UI, size=size, weight="bold")
     )
+    return ctk.CTkLabel(parent, text=text, font=font, text_color=COLORS["muted"])
 
 
-def vsep(parent: object, *, height: int = 22) -> None:
+def vsep(parent: object, *, height: int = 26) -> None:
     ctk.CTkFrame(parent, fg_color=COLORS["border"], width=1, height=height).pack(
         side="left", padx=8
     )
@@ -207,7 +207,7 @@ def toolbar_group(
         ctk.CTkLabel(
             row,
             text=title.upper(),
-            font=ctk.CTkFont(size=10, weight="bold"),
+            font=ctk_font("caption", weight="bold"),
             text_color=COLORS["muted"],
         ).pack(side="left", padx=(0, 8))
         body = ctk.CTkFrame(row, fg_color="transparent")
@@ -219,7 +219,7 @@ def toolbar_group(
     ctk.CTkLabel(
         head,
         text=title.upper(),
-        font=ctk.CTkFont(size=10, weight="bold"),
+        font=ctk_font("caption", weight="bold"),
         text_color=COLORS["muted"],
         anchor="w",
     ).pack(side="left")
@@ -237,7 +237,7 @@ def filter_section(
         ctk.CTkLabel(
             shell,
             text=title,
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk_font("label", weight="bold"),
             text_color=COLORS["muted"],
         ).pack(side="left", padx=(0, 6))
         chips = ctk.CTkFrame(shell, fg_color="transparent")
@@ -256,7 +256,7 @@ def filter_section(
     ctk.CTkLabel(
         head,
         text=title,
-        font=ctk.CTkFont(size=12, weight="bold"),
+        font=ctk_font("body", weight="bold"),
         text_color=COLORS["text"],
         anchor="w",
     ).pack(side="left")
@@ -264,7 +264,7 @@ def filter_section(
         ctk.CTkLabel(
             shell,
             text=subtitle,
-            font=ctk.CTkFont(size=11),
+            font=ctk_font("label"),
             text_color=COLORS["muted"],
             anchor="w",
         ).pack(fill="x", padx=12, pady=(0, 2))
@@ -286,17 +286,19 @@ class FilterChip:
         tip: str = "",
         width: int = 0,
         compact: bool = False,
+        primary: bool = False,
     ) -> None:
         self.var = variable
         self._command = command
         self._text = text
-        h = 26 if compact else 28
+        self._primary = primary
+        h = CHIP_H_COMPACT if compact else CHIP_H
         kwargs: dict = {
             "text": text,
             "height": h,
-            "corner_radius": 13,
+            "corner_radius": 10 if compact else 12,
             "border_width": 1,
-            "font": ctk.CTkFont(size=11 if compact else 12),
+            "font": ctk_font("dense" if compact else "caption", weight="bold" if primary else "normal"),
             "command": self._toggle,
         }
         if width:
@@ -313,6 +315,9 @@ class FilterChip:
     def pack(self, **kwargs: object) -> None:
         self.btn.pack(**kwargs)  # type: ignore[arg-type]
 
+    def grid(self, **kwargs: object) -> None:
+        self.btn.grid(**kwargs)  # type: ignore[arg-type]
+
     def _toggle(self) -> None:
         self.var.set(not bool(self.var.get()))
         if callable(self._command):
@@ -322,8 +327,8 @@ class FilterChip:
         on = bool(self.var.get())
         if on:
             self.btn.configure(
-                fg_color=COLORS["accent"],
-                hover_color=COLORS["accent_dim"],
+                fg_color=COLORS["accent"] if self._primary else COLORS["accent_dim"],
+                hover_color=COLORS["accent"],
                 border_color=COLORS["accent"],
                 text_color=COLORS["text"],
             )

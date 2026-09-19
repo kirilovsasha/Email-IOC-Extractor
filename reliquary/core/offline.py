@@ -1,7 +1,7 @@
-"""Hard offline guarantee — IOC Extractor must never phone home.
+"""Hard offline guarantee — Email IOC Extractor must never phone home.
 
 Imported at app start. Blocks common outbound helpers if somehow called.
-Must run AFTER third-party imports (stix2/urllib3) so class patching is safe.
+Must run AFTER third-party imports so class patching is safe.
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ class OfflineViolation(RuntimeError):
 
 def _blocked(*_args, **_kwargs):
     raise OfflineViolation(
-        "IOC Extractor работает строго офлайн: сетевые соединения запрещены."
+        "Email IOC Extractor работает строго офлайн: сетевые соединения запрещены."
     )
 
 
 def _blocked_getaddrinfo(*_args, **_kwargs):
     raise OfflineViolation(
-        "IOC Extractor работает строго офлайн: DNS/getaddrinfo запрещены."
+        "Email IOC Extractor работает строго офлайн: DNS/getaddrinfo запрещены."
     )
 
 

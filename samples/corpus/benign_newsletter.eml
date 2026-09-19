@@ -1,0 +1,11 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: newsletter@contoso.com
+To: user@company.local
+Subject: Weekly digest
+Message-ID: <benign1@contoso.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+Hello, here is your weekly update from Contoso.
+Visit https://www.contoso.com/docs for details.

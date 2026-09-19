@@ -96,14 +96,31 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             if not m:
                 continue
             result = m.group(1)
-            if result in ("fail", "permerror", "temperror", "softfail"):
-                sev = Severity.HIGH if result == "fail" else Severity.MEDIUM
+            if result == "fail":
                 findings.append(
                     HeaderFinding(
                         f"{label} result",
                         result,
-                        sev,
-                        f"{label} не прошёл проверку ({result})",
+                        Severity.CRITICAL if proto == "dmarc" else Severity.HIGH,
+                        f"{label} fail — сильный сигнал подделки/несанкционированной отправки",
+                    )
+                )
+            elif result == "softfail":
+                findings.append(
+                    HeaderFinding(
+                        f"{label} result",
+                        result,
+                        Severity.MEDIUM,
+                        f"{label} softfail — домен не подтверждён жёстко (часто фишинг)",
+                    )
+                )
+            elif result in ("permerror", "temperror"):
+                findings.append(
+                    HeaderFinding(
+                        f"{label} result",
+                        result,
+                        Severity.MEDIUM,
+                        f"{label} ошибка проверки ({result})",
                     )
                 )
             elif result == "pass":
@@ -119,6 +136,44 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                         f"{label} отсутствует",
                     )
                 )
+
+        # Alignment hints from Authentication-Results (header.d / header.from)
+        dkim_d = re.search(r"header\.d\s*=\s*([a-z0-9.-]+)", auth_blob)
+        header_from = re.search(r"header\.from\s*=\s*([a-z0-9.-]+)", auth_blob)
+        if dkim_d and header_from:
+            d_dom = dkim_d.group(1).lower()
+            f_dom = header_from.group(1).lower()
+            if d_dom and f_dom and d_dom != f_dom and not f_dom.endswith("." + d_dom):
+                findings.append(
+                    HeaderFinding(
+                        "DKIM alignment",
+                        f"d={d_dom} vs from={f_dom}",
+                        Severity.HIGH,
+                        "DKIM d= не совпадает с From — возможный spoof / forward",
+                    )
+                )
+
+        # ARC present when forwarded; absence with broken auth is noted lightly
+        arc_results = _get_all(msg, "ARC-Authentication-Results")
+        arc_seal = _get_all(msg, "ARC-Seal")
+        if arc_results or arc_seal:
+            findings.append(
+                HeaderFinding(
+                    "ARC",
+                    f"results={len(arc_results)} seal={len(arc_seal)}",
+                    Severity.INFO,
+                    "Есть ARC — письмо могло быть переслано через доверенный посредник",
+                )
+            )
+        elif re.search(r"spf\s*=\s*fail|dkim\s*=\s*fail|dmarc\s*=\s*fail", auth_blob):
+            findings.append(
+                HeaderFinding(
+                    "ARC",
+                    "(нет)",
+                    Severity.LOW,
+                    "Auth fail без ARC — нет цепочки доверия при форварде",
+                )
+            )
     else:
         findings.append(
             HeaderFinding(
@@ -251,6 +306,8 @@ _RAW_HEADER_KEYS = (
     "Reply-To",
     "Sender",
     "Authentication-Results",
+    "ARC-Authentication-Results",
+    "ARC-Seal",
     "Received-SPF",
     "DKIM-Signature",
     "X-Mailer",

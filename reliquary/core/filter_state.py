@@ -9,24 +9,33 @@ from typing import Any, Mapping
 from reliquary.core.exporters import filter_iocs, with_iocs
 from reliquary.core.models import AnalysisResult, Ioc
 
-# Category → IOC type values (must stay in sync with gui.theme.IOC_GROUPS)
+# Single source of truth for category chips (GUI theme imports this).
+IOC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Сеть", ("ipv4", "ipv6", "ip_port", "domain", "url", "email", "messenger")),
+    ("Хеши и CVE", ("md5", "sha1", "sha256", "cve")),
+    ("Хост", ("filename", "filepath", "unc", "registry", "mutex", "command_line")),
+    ("Крипто", ("bitcoin", "monero")),
+)
+
+# Host-forensics leftovers — hidden in email triage unless full_ioc_types.
+LEGACY_HOST_TYPES: frozenset[str] = frozenset(
+    {"registry", "mutex", "command_line"}
+)
+# Kept for tests / docs; crypto is gated by cat_crypto (default off).
+LEGACY_IOC_TYPES: frozenset[str] = LEGACY_HOST_TYPES | frozenset({"bitcoin", "monero"})
+
 CATEGORY_TYPES: dict[str, frozenset[str]] = {
-    "Сеть": frozenset(
-        {"ipv4", "ipv6", "ip_port", "domain", "url", "email", "messenger"}
-    ),
-    "Хеши": frozenset({"md5", "sha1", "sha256", "cve"}),
-    "Хост": frozenset(
-        {"filename", "filepath", "unc", "registry", "mutex", "command_line"}
-    ),
-    "Крипто": frozenset({"bitcoin", "monero"}),
+    name: frozenset(types) for name, types in IOC_GROUPS
 }
 
 CAT_PREF_KEYS = {
     "Сеть": "cat_network",
-    "Хеши": "cat_hashes",
+    "Хеши и CVE": "cat_hashes",
     "Хост": "cat_host",
     "Крипто": "cat_crypto",
 }
+
+_ALL_TYPES: frozenset[str] = frozenset().union(*CATEGORY_TYPES.values())
 
 
 @dataclass
@@ -35,15 +44,15 @@ class FilterState:
 
     hide_rewriter: bool = True
     hide_allowlisted: bool = True
-    hide_private: bool = False
-    only_denylisted: bool = False
-    actionable_only: bool = False
+    hide_private: bool = True
+    actionable_only: bool = True
     search: str = ""
     source_file: str = ""
     cat_network: bool = True
     cat_hashes: bool = True
     cat_host: bool = True
-    cat_crypto: bool = True
+    cat_crypto: bool = False  # crypto off by default (email mode)
+    full_ioc_types: bool = False
     types: set[str] | None = field(default=None)
 
     @classmethod
@@ -51,45 +60,62 @@ class FilterState:
         return cls(
             hide_rewriter=bool(prefs.get("hide_rewriter", True)),
             hide_allowlisted=bool(prefs.get("hide_allowlisted", True)),
-            hide_private=bool(prefs.get("hide_private", False)),
-            only_denylisted=bool(prefs.get("only_denylisted", False)),
-            actionable_only=bool(prefs.get("actionable_only", False)),
+            hide_private=bool(prefs.get("hide_private", True)),
+            actionable_only=bool(prefs.get("actionable_only", True)),
             cat_network=bool(prefs.get("cat_network", True)),
             cat_hashes=bool(prefs.get("cat_hashes", True)),
             cat_host=bool(prefs.get("cat_host", True)),
-            cat_crypto=bool(prefs.get("cat_crypto", True)),
+            cat_crypto=bool(prefs.get("cat_crypto", False)),
+            full_ioc_types=bool(prefs.get("full_ioc_types", False)),
         )
 
     @classmethod
     def from_cli_args(cls, args: Any) -> FilterState:
+        """CLI flags; defaults should already match GUI prefs (see cli.py)."""
         types: set[str] | None = None
         raw = getattr(args, "types", None)
         if raw:
             types = {t.strip().lower() for t in str(raw).split(",") if t.strip()}
-        return cls(
-            hide_rewriter=bool(getattr(args, "hide_rewriter", False)),
-            hide_allowlisted=bool(getattr(args, "hide_allowlisted", False)),
-            hide_private=bool(getattr(args, "hide_private", False)),
-            only_denylisted=bool(getattr(args, "only_denylisted", False)),
-            actionable_only=bool(getattr(args, "actionable", False)),
+        full = bool(getattr(args, "full_ioc_types", False))
+        state = cls(
+            hide_rewriter=bool(getattr(args, "hide_rewriter", True)),
+            hide_allowlisted=bool(getattr(args, "hide_allowlisted", True)),
+            hide_private=bool(getattr(args, "hide_private", True)),
+            actionable_only=bool(getattr(args, "actionable", True)),
             search=str(getattr(args, "search", "") or ""),
             types=types,
+            full_ioc_types=full,
+            cat_network=True,
+            cat_hashes=True,
+            cat_host=True,
+            cat_crypto=full,
         )
+        if full and types is None:
+            # Show every category including legacy/crypto.
+            state.cat_crypto = True
+        return state
 
     def selected_types(self) -> set[str] | None:
         if self.types is not None:
-            return self.types
-        selected: set[str] = set()
-        flags = {
-            "Сеть": self.cat_network,
-            "Хеши": self.cat_hashes,
-            "Хост": self.cat_host,
-            "Крипто": self.cat_crypto,
-        }
-        for name, on in flags.items():
-            if on:
-                selected |= set(CATEGORY_TYPES[name])
-        if len(selected) == sum(len(v) for v in CATEGORY_TYPES.values()):
+            selected = set(self.types)
+        else:
+            selected = set()
+            flags = {
+                "Сеть": self.cat_network,
+                "Хеши и CVE": self.cat_hashes,
+                "Хост": self.cat_host,
+                "Крипто": self.cat_crypto,
+            }
+            for name, on in flags.items():
+                if on:
+                    selected |= set(CATEGORY_TYPES[name])
+
+        if not self.full_ioc_types:
+            selected -= LEGACY_HOST_TYPES
+
+        if not selected:
+            return set()
+        if self.full_ioc_types and selected >= _ALL_TYPES:
             return None
         return selected
 
@@ -99,7 +125,6 @@ class FilterState:
             "hide_private": self.hide_private,
             "hide_rewriter": self.hide_rewriter,
             "hide_allowlisted": self.hide_allowlisted,
-            "only_denylisted": self.only_denylisted,
             "actionable_only": self.actionable_only,
             "search": (self.search or "").strip(),
             "source_file": self.source_file or "",
@@ -113,10 +138,10 @@ class FilterState:
             "hide_private": kw.get("hide_private"),
             "hide_rewriter": kw.get("hide_rewriter"),
             "hide_allowlisted": kw.get("hide_allowlisted"),
-            "only_denylisted": kw.get("only_denylisted"),
             "actionable_only": kw.get("actionable_only"),
             "search": kw.get("search"),
             "source_file": kw.get("source_file"),
+            "full_ioc_types": self.full_ioc_types,
         }
 
     def apply(self, result: AnalysisResult) -> list[Ioc]:
@@ -130,7 +155,6 @@ class FilterState:
             hide_rewriter=self.hide_rewriter,
             hide_allowlisted=self.hide_allowlisted,
             hide_private=self.hide_private,
-            only_denylisted=self.only_denylisted,
             actionable_only=self.actionable_only,
             search=self.search,
             source_file=Path(source_file).name if source_file else "",
@@ -138,5 +162,6 @@ class FilterState:
             cat_hashes=self.cat_hashes,
             cat_host=self.cat_host,
             cat_crypto=self.cat_crypto,
+            full_ioc_types=self.full_ioc_types,
             types=set(self.types) if self.types is not None else None,
         )

@@ -1,5 +1,6 @@
-"""IOC Extractor — offline IOC extractor for SOC analysts."""
+"""Email IOC Extractor — offline email triage with phishing verdict for SOC analysts."""
 
-__version__ = "1.8.0"
-__app_name__ = "IOC Extractor"
-__tagline__ = "Extract. Normalize. Export."
+__version__ = "2.3.0"
+__app_name__ = "Email IOC Extractor"
+__tagline__ = "Mail. Extract. Decide."
+__log_name__ = "email_ioc_extractor_error.log"

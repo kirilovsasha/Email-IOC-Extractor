@@ -1,4 +1,4 @@
-"""Launch IOC Extractor GUI: python -m reliquary"""
+"""Launch Email IOC Extractor GUI: python -m reliquary"""
 
 from reliquary.gui.app import run
 

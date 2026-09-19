@@ -1,5 +1,116 @@
 # Changelog
 
+## 2.3.0
+
+### Detection / verdict
+- Lookalike / IDN / homoglyph (бренды + `brands.txt` в org profile)
+- Калибровка score: caps по категориям, breakdown (`verdict.breakdown`)
+- Content signals: credential harvest, href≠label, hidden HTML, forms, QR
+- Auth nuance: SPF/DKIM fail vs softfail, DKIM alignment, ARC
+
+### Product / UX
+- Org profile pack: папка или `.zip` (`--profile` / `org_profile/`)
+- `AnalysisOptions` — единые пути для CLI/GUI/batch
+- Handoff по уровню: `handoff_{malicious|suspicious|…}.txt` + `{version}` `{breakdown}`
+- Batch: группировка кампаний (Msg-ID / тема / хеш вложения)
+- GUI: разбор score, Ctrl+H/E/L/D, тема light/dark, плотность IOC
+- Meta: `overrides_loaded` + версия в отчёте / About
+
+### Quality / DX
+- Corpus ~15 писем + `scripts/corpus_metrics.py`
+- URL unwrap fuzz; mypy на pipeline / lookalike / content / org profile
+- GUI: `layout.py` mixin (тонкий `app.py`)
+- CI: Windows+Ubuntu, smoke после PyInstaller, release notes на тег `v*`
+
+### Tests
+- `test_v23_improvements.py`, расширенный corpus / unwrap fuzz
+
+## 2.2.0
+
+### Product
+- Override весов вердикта: `verdict_extra.json` / `--verdict` / prefs `verdict_path`
+- Handoff ITSM-шаблон: `handoff_extra.txt` / `--handoff-template` (плейсхолдеры `{verdict}` `{score}` …)
+- Email-mode IOC: по умолчанию скрыты registry/mutex/command_line; крипто выкл.; GUI «все типы» / `--full-ioc-types`
+- Batch summary: таблица файл · вердикт · score · top reason; Batch CSV колонка `top_reason`
+- Golden corpus `samples/corpus/` + snapshot-тесты URL unwrap (SafeLinks/Proofpoint/…)
+
+### Quality / DX
+- Runtime ошибки GUI → append в `email_ioc_extractor_error.log`
+- GUI split: `analysis_actions` + `clipboard_actions` mixins
+- Mypy на verdict / url_rewrite / error_log (+ прежние helpers)
+- Единый источник версии: `build/sync_version_info.py`
+- CI: artifact `EmailIOCExtractor.exe` на push в main
+- Docs: analyst runbook, optional rar/qr extras
+
+### Tests
+- Corpus verdicts, URL unwrap snapshots, verdict/handoff/filter 2.2 unit tests
+
+## 2.1.0
+
+### Product
+- Локальный allowlist override (`allowlist_extra.txt` / `--allowlist` / prefs)
+- Handoff: текстовый блок для ITSM (GUI «Handoff», CLI `--handoff`, экспорт)
+- Batch CSV + JSON `batch[]` — triage по письмам в пакете
+- CLI-фильтры по умолчанию как в GUI (`--no-actionable` / `--no-hide-*` чтобы снять)
+- Единый каталог категорий IOC (`IOC_GROUPS` в `filter_state`)
+
+### Cleanup / DX
+- Убраны хвосты denylist / root PDF-HTML-ticket parsers / case-pack комментарии
+- Убрана зависимость `pypdf` (PDF больше не корневой вход)
+- `requirements.txt` = runtime; `requirements-dev.txt` = pytest/pyinstaller/ruff/mypy
+- CI: ruff на `reliquary/`; mypy на typed helpers (models, filters, export…)
+- GUI: `result_panels` mixin; дешевле refresh при поиске/фильтрах; skip rebuild IOC-таблицы
+- GUI: нет кнопки «Вложения» — дамп файлов на диск убран; вкладка показывает хеши/флаги
+- GUI: нет постоянной нижней полосы — Стоп/Повтор только во время разбора или при ошибках
+- GUI: вкладки Вердикт / Вложения / URL читаются крупнее (14–18pt вместо 12pt Consolas)
+- GUI: панель «Детали» IOC больше не сжимает значение; типы в таблице окрашены по-разному
+- GUI: окно открывается по центру экрана, если сохранённая позиция уехала за монитор
+
+### Tests
+- `.msg` sample, allowlist extra, handoff/batch export, header/verdict edges
+
+## 2.0.2
+
+### Product
+- Пользовательское имя: **Email IOC Extractor** (пакет `reliquary` без изменений)
+
+### GUI
+- Единый шрифт UI (Segoe UI) и моноширинный (Consolas / Cascadia Mono)
+- Тулбар, сводка вердикта и панель IOC переносятся на узком окне вместо обрезки
+- Короткие подписи вкладок на узкой панели; таблица IOC масштабируется вместе с UI
+- Подсказки в статусбаре читаемые (не сливаются с фоном)
+- IOC-таблица уплотнена (11pt / ряд ~24px) — больше строк на экран
+- Фильтры: «к разбору» всегда на виду; типы и шум — в компактной панели «Ещё»
+
+## 2.0.1
+
+### Cleanup
+- Убраны внешние конфиги: `allowlist.txt`, `denylist.txt`, `verdict.ini`, `ticket.ini`
+- Встроенный allowlist (CDN/mail) и веса вердикта в коде
+- Экспорт только JSON / CSV (без STIX / MISP / OpenCTI / YARA / case pack)
+- Удалены шаблоны тикетов и импорт списков из GUI/CLI
+
+## 2.0.0
+
+### Product
+- Фокус: **только email** (`.eml` / `.msg`) → **вердикт** triage
+- Пользовательский бренд: **Email IOC Extractor** (пакет `reliquary`)
+- IOC остаются как доказательства и для экспорта / handoff
+- PDF / HTML / txt / Office / архивы больше не принимаются как корневой вход
+  (вложения внутри письма по-прежнему разбираются)
+
+### GUI (EXE UX)
+- Вердикт — hero в шапке результатов; вкладка «Вердикт» по умолчанию после разбора
+- Тулбар: Письмо · Буфер (Msg-ID) · Экспорт
+- Фильтры по умолчанию: шум скрыт, «к разбору» и скрытие локальных IP включены
+- Статусы/диалоги без наследия «извлечение IOC» / PDF/Office
+- Класс `ExtractorApp` (alias `ReliquaryApp`); лог `email_ioc_extractor_error.log`
+
+### CLI
+- Primary: `reliquary` (alias `ioc-extractor` deprecated)
+- Вердикт печатается в stderr по умолчанию
+- Default stdout: `{verdict, iocs, errors}`
+
 ## 1.8.0
 
 ### CLI
@@ -38,21 +149,3 @@
 - Частные IP: CGNAT 100.64/10, IPv6 ULA/link-local
 - Bitcoin: Base58Check / Bech32
 - Command-line только при подозрительных флагах
-- Messenger URL не дублируется как отдельный URL
-- Вложенные ZIP: inventory на 2 уровня глубины
-
-### Производительность
-- Файл читается один раз (hash + parse)
-- Лимиты PDF (80 стр.) и текста (~2M символов)
-
-### Конфиг
-- `ticket.ini` — язык ru/en и подписи шаблона тикета
-
-### Прочее
-- STIX-паттерны для mutex / registry / cmdline / crypto
-- Модули GUI: `tabs`, `tooltips`, `ioc_table`
-- Тесты: FP-регрессии, nested zip, HTML sample
-
-## 1.6.0
-
-- Case pack, фильтры actionable/denylist, пакетная вкладка, prefs

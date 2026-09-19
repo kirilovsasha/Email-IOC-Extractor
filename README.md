@@ -1,9 +1,11 @@
-# IOC Extractor
+# Email IOC Extractor
 
-**Extract. Normalize. Export.** · v1.8.0
+**Mail. Extract. Decide.** · v2.3.0
 
-Офлайн-приложение для извлечения IOC из писем, тикетов, PDF, HTML, Office (в т.ч. PPTX/macro) и ZIP/7z/RAR.
-Экспорт: CSV (UTF-8 BOM), STIX 2.1, JSON, MISP, OpenCTI, YARA, Case pack.
+Офлайн-приложение для triage электронных писем (`.eml` / `.msg`):
+заголовки, вложения, URL rewrite, IOC как доказательства и **вердикт** фишинга/вредоносности.
+
+Экспорт: JSON, CSV, Batch CSV (по письмам), Handoff (текст для тикета).
 
 ## Быстрый старт (Windows)
 
@@ -15,66 +17,105 @@ pip install -r requirements.txt
 run_gui.bat
 ```
 
+Для тестов и сборки EXE: `pip install -r requirements-dev.txt`
+
 CLI:
 
 ```bash
-ioc-extractor mail.eml --csv out.csv --actionable
-ioc-extractor ./inbox --case-pack case.zip --workers 4
-ioc-extractor ticket.txt --ticket - --hide-rewriter
+reliquary mail.eml
+reliquary mail.eml --csv out.csv
+reliquary mail.eml --handoff ticket.txt
+reliquary ./inbox --json report.json --batch-csv triage.csv --workers 4
+reliquary mail.eml --allowlist allowlist_extra.txt
+reliquary mail.eml --verdict verdict_extra.json
+reliquary mail.eml --full-ioc-types
+reliquary mail.eml --handoff-template handoff_extra.txt --handoff out.txt
+reliquary mail.eml --profile org_profile/
 ```
 
-При ошибке запуска смотрите `ioc_extractor_error.log` рядом с bat/exe.
+Фильтры CLI по умолчанию **как в GUI** (шум скрыт, «к разбору» включён, legacy IOC скрыты).
+Снять: `--no-actionable`, `--no-hide-rewriter`, …, `--full-ioc-types`.
+
+При ошибке запуска смотрите `email_ioc_extractor_error.log` рядом с bat/exe.
+
+## Analyst runbook
+
+1. Откройте письмо (`.eml` / `.msg`), папку или вставьте RFC822.
+2. Смотрите **Вердикт** (score / причины / действия).
+3. При необходимости ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы**.
+4. Скопируйте **Handoff** в тикет или экспортируйте JSON / CSV / Batch CSV.
+5. Для пакета — вкладка **Пакет**: файл · вердикт · score · top reason.
 
 ## GUI
 
 | Шаг | Действие |
 |-----|----------|
-| Источник | Файл / папка / буфер / drag-drop |
-| Таблица IOC | тип · значение · теги · файл · **откуда**; клик = copy, 2×клик = к фрагменту |
-| Фильтры | Скрыть шум (прокси/allowlist/private) · Фокус (denylist / к разбору) · Ctrl+F |
-| Экспорт | CSV / STIX / JSON / MISP / OpenCTI / YARA / Case pack |
+| Письмо | `.eml` / `.msg` / папка / RFC822 / drag-drop |
+| Вердикт | score · причины · действия |
+| Доказательства | вложения · URL rewrite · IOC |
+| Буфер | Msg-ID · **Handoff** (тикет) · копирование IOC |
+| Экспорт | JSON / CSV / Batch CSV / Handoff |
 
-**Горячие клавиши:** `Ctrl+O` файл · `Ctrl+Enter` извлечь · `Ctrl+C` / `Ctrl+Shift+C` value / defanged · `1–6` вкладки · `Ctrl+F` поиск · `Ctrl+/−` масштаб.
+Фильтры по умолчанию: SafeLinks / известный CDN-шум / локальные IP скрыты, «к разбору» включён,
+крипто и host-legacy (registry/mutex/…) скрыты.
 
-Prefs рядом с exe: `ui_prefs.json` (`max_workers`, `skip_broken`, фильтры, геометрия).
-Конфиги: `allowlist.txt`, `denylist.txt`, `verdict.ini`, `ticket.ini`.
+## Allowlist / verdict / handoff overrides
 
-Пакетный разбор: progress bar + ETA, Стоп / Повтор failed; битые файлы пропускаются по умолчанию.
+Локальные файлы рядом с exe/проектом (без пересборки):
 
-## Что извлекает
+| Файл | Назначение |
+|------|------------|
+| `allowlist_extra.txt` | доп. домены/IP (см. `allowlist_extra.example.txt`) |
+| `verdict_extra.json` | веса/пороги вердикта (см. `verdict_extra.example.json`) |
+| `handoff_extra.txt` | шаблон ITSM с `{verdict}` `{score}` `{msg_id}` … (см. `handoff_extra.example.txt`) |
+| `handoff_{level}.txt` | шаблон по вердикту (`malicious` / `suspicious` / …) |
+| `org_profile/` или `.zip` | пакет: allowlist + verdict + handoff + `brands.txt` |
 
-| Тип | Примеры |
-|-----|---------|
-| Сеть | IPv4/IPv6, `ip:port`, домены (широкие TLD / punycode), URL, email |
-| Хеши | MD5, SHA1, SHA256 (GUID/однородный hex отсекаются) |
-| Host | Windows-пути, UNC, registry, mutex, `command_line` |
-| Crypto / IM | Bitcoin (checksum), Monero, Telegram, Discord |
-| Прочее | CVE, имена вложений / членов ZIP, QR (опционально) |
+Также: CLI `--allowlist` / `--verdict` / `--handoff-template` / `--profile`, prefs в `ui_prefs.json`.
 
-Письма (`.eml` / `.msg`): тело, URL rewrite, вложения (вложенные `.eml`/`.msg`, OLE), вердикт triage, сырые заголовки.
-Office: `.docx/.docm`, `.xlsx/.xlsm`, `.pptx/.pptm` — текст и гиперссылки.
-Архивы: inventory до 4 уровней вложенности ZIP; парольные помечаются явно в ошибках/вердикте.
+Горячие клавиши GUI: `Ctrl+O` открыть · `Ctrl+H` handoff · `Ctrl+E` экспорт · `Ctrl+L` тема · `Ctrl+D` плотность IOC.
 
-Единый каталог форматов: `reliquary.core.formats` (GUI + CLI + parser).
+## Что анализируется
+
+Только письма. Внутри письма разбираются вложения (Office, ZIP/7z/RAR*, nested `.eml`/`.msg`, OLE/macros, QR*).
+
+\* RAR и QR — optional extras (`pip install '.[rar]'` / `'.[qr]'`); lite EXE их не включает.
+
+| Сигнал | Примеры |
+|--------|---------|
+| Заголовки | SPF/DKIM/DMARC, spoofing, цепочка Received |
+| Тело | urgency / social engineering, URL (в т.ч. SafeLinks unwrap) |
+| Вложения | double ext, macros, encrypted archives, nested mail |
+| IOC | IP, домены, URL, хеши вложений — как evidence |
+
+Веса вердикта встроены в код (`verdict.py`), override — JSON выше.
+
+Golden-корпус: `samples/corpus/` + `expected.json` (см. README там).
 
 ## Сборка EXE
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+python build/sync_version_info.py
 pyinstaller build/reliquary.spec
 ```
 
-`dist/IOC_Extractor.exe` — без консоли, без UPX. Рядом: списки и ini. Лог — `ioc_extractor_error.log`.
+или `bash build/build.sh`.
+
+`dist/EmailIOCExtractor.exe` — без консоли, без UPX. Лог — `email_ioc_extractor_error.log`.
+Подпись: `build/sign_exe.ps1`. Версия берётся из `reliquary/__init__.py` → `version_info.txt`.
 
 ## Структура
 
 ```
 reliquary/
-  core/     # pipeline, IOC, formats, batch, filter_state, office, export
-  gui/      # app + ioc_table, tabs, export_actions, batch_runner re-exports
-samples/
+  core/     # pipeline, verdict, IOC, export, handoff, allowlist
+  gui/      # app + analysis/clipboard mixins, result_panels, ioc_table
+samples/    # phishing_sample.eml, corpus/, nested_mail_sample.zip
 tests/
 ```
+
+Python-пакет по-прежнему называется `reliquary` (импорты / CLI). Пользовательское имя продукта — **Email IOC Extractor**.
 
 ## Лицензия
 

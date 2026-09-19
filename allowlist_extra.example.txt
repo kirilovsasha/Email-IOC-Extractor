@@ -1,0 +1,7 @@
+# Extra allowlist — optional, next to EmailIOCExtractor.exe / project root.
+# Copy to allowlist_extra.txt (or set allowlist_path in ui_prefs.json / --allowlist).
+# Lines: domain, IP, or domain:/ip: prefixes. # comments OK. Wildcards: *.cdn.example
+#
+# domain:corp-cdn.example
+# ip:10.10.10.10
+# *.internal.example

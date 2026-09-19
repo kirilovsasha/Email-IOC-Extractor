@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-set "LOG=%~dp0ioc_extractor_error.log"
+set "LOG=%~dp0email_ioc_extractor_error.log"
 set "PYW="
 set "PY="
 
@@ -26,7 +26,7 @@ if not defined PYW (
 
 :have_pyw
 if not defined PYW (
-  echo [IOC Extractor] pythonw.exe не найден.
+  echo [Email IOC Extractor] pythonw.exe не найден.
   echo Создайте .venv или установите Python с python.org
   pause
   exit /b 1
@@ -36,7 +36,7 @@ REM Smoke-import with console python; on failure show log
 if defined PY (
   "%PY%" -c "from reliquary.gui.app import run" 1>nul 2>"%LOG%"
   if errorlevel 1 (
-    echo [IOC Extractor] Ошибка запуска. См. ioc_extractor_error.log
+    echo [Email IOC Extractor] Ошибка запуска. См. email_ioc_extractor_error.log
     type "%LOG%"
     pause
     exit /b 1

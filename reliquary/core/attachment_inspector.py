@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import re
 import zipfile
 from pathlib import Path
@@ -13,8 +12,7 @@ import filetype
 
 from reliquary.core.models import AttachmentInfo
 
-MAX_KEEP_BYTES = 8 * 1024 * 1024  # hard cap for any kept payload
-KEEP_SMALL_BYTES = 2 * 1024 * 1024  # small attachments kept for case pack / save
+MAX_KEEP_BYTES = 8 * 1024 * 1024  # hard cap for nested-email payload
 MAX_ARCHIVE_ENTRIES = 200
 MAX_NEST_DEPTH = 4
 MAX_NESTED_MEMBER_BYTES = 5 * 1024 * 1024
@@ -434,16 +432,16 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         flags.append("mime_mismatch")
         notes.append(f"Расширение {ext}, но MIME похож на executable ({mime})")
 
-    # Keep: nested email (for pipeline) and small payloads (case pack / Save).
+    # Keep payload only for nested email (pipeline re-parses .eml/.msg bytes).
     if keep_bytes is None:
-        need_keep = ("nested_email" in flags) or (len(data) <= KEEP_SMALL_BYTES)
+        need_keep = "nested_email" in flags
     else:
         need_keep = keep_bytes
     keep = data if need_keep and len(data) <= MAX_KEEP_BYTES else None
     if need_keep and keep is None and data:
         notes.append(
             f"Содержимое не сохранено в памяти (>{MAX_KEEP_BYTES // (1024 * 1024)} МБ) — "
-            "вложенный разбор/case pack без payload"
+            "вложенный разбор без payload"
         )
 
     # Dedup flags preserving order
@@ -468,9 +466,3 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         nested_kind=nested_kind,
         data=keep,
     )
-
-
-def inspect_file(path: str | os.PathLike[str]) -> AttachmentInfo:
-    p = Path(path)
-    data = p.read_bytes()
-    return inspect_bytes(p.name, data)

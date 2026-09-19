@@ -1,0 +1,22 @@
+Return-Path: <bounce@bad.gq>
+Received: from mail.bad.gq (unknown [203.0.113.99]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "IT Helpdesk" <help@bad.gq>
+Reply-To: attacker@evil.top
+To: victim@company.local
+Subject: URGENT: Confirm your identity immediately
+Message-ID: <mal2@bad.gq>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="B"
+
+--B
+Content-Type: text/plain; charset=utf-8
+
+Confirm your identity immediately: http://198.51.100.20/login
+--B
+Content-Type: application/octet-stream; name="update.doc.exe"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="update.doc.exe"
+
+TVqQAAMAAAAEAAAA
+--B--

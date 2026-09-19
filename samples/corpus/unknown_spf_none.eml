@@ -1,0 +1,10 @@
+From: notes@partner.example
+To: you@company.local
+Subject: quick link
+Message-ID: <unk2@partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=none; dkim=pass; dmarc=pass
+
+FYI: https://notes.partner.example/read?id=42
+Also mirrored at https://cdn-mirror.top/doc/42

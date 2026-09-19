@@ -1,29 +1,19 @@
-"""PyInstaller build spec for IOC Extractor (Windows .exe / Linux binary).
+"""PyInstaller build spec for Email IOC Extractor (Windows .exe / Linux binary).
 
 Build:
   pyinstaller build/reliquary.spec
-
-The produced binary is fully offline — no network calls in application code.
-UPX is disabled to reduce corporate AV false positives.
 """
 
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 ROOT = Path(SPECPATH).resolve().parent
 
 ctk_datas, ctk_binaries, ctk_hidden = collect_all("customtkinter")
-stix_datas = collect_data_files("stix2")
-
-list_datas = []
-for name in ("allowlist.txt", "denylist.txt", "verdict.ini", "ticket.ini"):
-    src = ROOT / name
-    if src.is_file():
-        list_datas.append((str(src), "."))
 
 _version = str(ROOT / "build" / "version_info.txt") if sys.platform == "win32" else None
 
@@ -31,7 +21,7 @@ a = Analysis(
     [str(ROOT / "run_reliquary.py")],
     pathex=[],
     binaries=ctk_binaries,
-    datas=ctk_datas + stix_datas + list_datas,
+    datas=ctk_datas,
     hiddenimports=ctk_hidden
     + [
         "extract_msg",
@@ -39,9 +29,7 @@ a = Analysis(
         "filetype",
         "bs4",
         "lxml",
-        "pypdf",
         "chardet",
-        "stix2",
         "windnd",
         "py7zr",
         "PIL",
@@ -51,14 +39,24 @@ a = Analysis(
         "reliquary.gui.tooltips",
         "reliquary.gui.ioc_table",
         "reliquary.gui.theme",
+        "reliquary.gui.result_panels",
+        "reliquary.gui.windowing",
+        "reliquary.gui.export_actions",
+        "reliquary.gui.analysis_actions",
+        "reliquary.gui.clipboard_actions",
         "reliquary.cli",
         "reliquary.core.office_extract",
         "reliquary.core.paths",
         "reliquary.core.qr_scan",
-        "reliquary.core.ticket",
         "reliquary.core.defang",
         "reliquary.core.prefs",
+        "reliquary.core.handoff",
+        "reliquary.core.filter_state",
+        "reliquary.core.error_log",
+        "reliquary.core.verdict",
     ],
+    # Optional extras (rarfile / pyzbar) are NOT bundled in the lite EXE.
+    # For a full build: pip install '.[rar,qr]' then add them to hiddenimports.
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -78,7 +76,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="IOC_Extractor",
+    name="EmailIOCExtractor",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Authenticode-sign IOC_Extractor.exe for corporate SoftCert / EV cert.
+  Authenticode-sign EmailIOCExtractor.exe for corporate SoftCert / EV cert.
 
 .DESCRIPTION
   PyInstaller binaries without a signature are often blocked by SmartScreen / AV.
@@ -9,10 +9,10 @@
   in the CurrentUser or LocalMachine "My" store (or via PFX).
 
 .EXAMPLE
-  .\build\sign_exe.ps1 -ExePath .\dist\IOC_Extractor.exe
+  .\build\sign_exe.ps1 -ExePath .\dist\EmailIOCExtractor.exe
 
 .EXAMPLE
-  .\build\sign_exe.ps1 -ExePath .\dist\IOC_Extractor.exe -PfxPath .\certs\soc.pfx -PfxPassword (Read-Host -AsSecureString)
+  .\build\sign_exe.ps1 -ExePath .\dist\EmailIOCExtractor.exe -PfxPath .\certs\soc.pfx -PfxPassword (Read-Host -AsSecureString)
 #>
 param(
   [Parameter(Mandatory = $true)]
@@ -22,7 +22,7 @@ param(
   [string]$PfxPath = "",
   [SecureString]$PfxPassword,
   [string]$TimestampUrl = "http://timestamp.digicert.com",
-  [string]$Description = "IOC Extractor — offline SOC IOC extraction"
+  [string]$Description = "Email IOC Extractor — offline email triage with phishing verdict"
 )
 
 $ErrorActionPreference = "Stop"

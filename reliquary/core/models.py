@@ -1,4 +1,4 @@
-"""Shared data models for IOC Extractor analysis pipeline."""
+"""Shared data models for Email IOC Extractor analysis pipeline."""
 
 from __future__ import annotations
 
@@ -145,12 +145,26 @@ class ActionRecommendation:
 
 
 @dataclass
+class ScoreContribution:
+    """One scored evidence line for analyst score breakdown."""
+
+    category: str
+    points: int
+    reason: str
+    capped: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class Verdict:
     level: VerdictLevel
     score: int
     summary: str
     reasons: list[str] = field(default_factory=list)
     actions: list[ActionRecommendation] = field(default_factory=list)
+    breakdown: list[ScoreContribution] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -159,6 +173,7 @@ class Verdict:
             "summary": self.summary,
             "reasons": self.reasons,
             "actions": [a.to_dict() for a in self.actions],
+            "breakdown": [b.to_dict() for b in self.breakdown],
         }
 
 
@@ -172,10 +187,13 @@ class FileTriageRow:
     verdict_score: int | None = None
     ioc_count: int = 0
     top_iocs: list[str] = field(default_factory=list)
+    top_reason: str = ""
     errors: list[str] = field(default_factory=list)
     message_id: str = ""
     subject: str = ""
     sender: str = ""
+    campaign_key: str = ""
+    campaign_peers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -183,16 +201,15 @@ class FileTriageRow:
 
 @dataclass
 class AnalysisMeta:
-    """Audit trail for handoff between shifts."""
+    """Audit trail for analysis run."""
 
     app_version: str = ""
     analyzed_at: str = ""
     source_sha256: str = ""
     source_size: int | None = None
     filters_applied: dict[str, Any] = field(default_factory=dict)
-    allowlist_mtime: str = ""
-    denylist_mtime: str = ""
-    verdict_config_mtime: str = ""
+    overrides_loaded: dict[str, str] = field(default_factory=dict)
+    profile_dir: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -213,6 +230,8 @@ class AnalysisResult:
     attachments: list[AttachmentInfo] = field(default_factory=list)
     verdict: Verdict | None = None
     raw_text_preview: str = ""
+    html_preview: str = ""
+    content_signals: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     file_rows: list[FileTriageRow] = field(default_factory=list)
     meta: AnalysisMeta | None = None
@@ -232,6 +251,8 @@ class AnalysisResult:
             "attachments": [a.to_dict() for a in self.attachments],
             "verdict": self.verdict.to_dict() if self.verdict else None,
             "raw_text_preview": self.raw_text_preview,
+            "html_preview": self.html_preview,
+            "content_signals": list(self.content_signals),
             "errors": self.errors,
             "file_rows": [r.to_dict() for r in self.file_rows],
             "meta": self.meta.to_dict() if self.meta else None,

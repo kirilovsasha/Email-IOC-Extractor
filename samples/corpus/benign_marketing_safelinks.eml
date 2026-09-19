@@ -1,0 +1,15 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: marketing@contoso.com
+To: user@company.local
+Subject: Contoso product updates this month
+Message-ID: <benign3@contoso.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+<html><body>
+<p>Thanks for subscribing to the Contoso newsletter.</p>
+<p>Read more:
+<a href="https://nam.safelinks.protection.outlook.com/?url=https%3A%2F%2Fwww.contoso.com%2Fblog%2Fupdates&amp;data=01">Contoso blog</a>
+</p>
+</body></html>

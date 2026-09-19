@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import io
-import re
-
-_URL_IN_TEXT = re.compile(r"(?i)\b(?:https?|hxxps?)://[^\s<>\"']+")
 
 
 def decode_qr_payloads(data: bytes) -> tuple[list[str], list[str]]:
@@ -79,12 +76,3 @@ def _dedup(items: list[str]) -> list[str]:
         seen.add(key)
         out.append(it)
     return out
-
-
-def urls_from_payloads(payloads: list[str]) -> list[str]:
-    urls: list[str] = []
-    for p in payloads:
-        urls.extend(_URL_IN_TEXT.findall(p))
-        if p.startswith("http"):
-            urls.append(p)
-    return _dedup(urls)

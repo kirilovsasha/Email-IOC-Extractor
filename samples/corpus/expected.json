@@ -1,0 +1,143 @@
+{
+  "benign_newsletter.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_hr_notice.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_marketing_safelinks.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9,
+    "reason_substrings": [
+      "rewrite",
+      "SafeLinks",
+      "URL"
+    ]
+  },
+  "fp_hr_pdf_mention.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "unknown_weak_signals.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29,
+    "reason_substrings": [
+      ".xyz",
+      "SPF",
+      "none"
+    ]
+  },
+  "unknown_spf_none.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29,
+    "reason_substrings": [
+      "SPF",
+      ".top",
+      "none"
+    ]
+  },
+  "suspicious_invoice_tld.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      ".club"
+    ]
+  },
+  "suspicious_password_safelinks.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "softfail",
+      "password",
+      "rewrite",
+      "SafeLinks",
+      "verify",
+      "urgent"
+    ]
+  },
+  "suspicious_brand_spoof.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "Reply-To",
+      "spoof",
+      "Display",
+      "Microsoft"
+    ]
+  },
+  "suspicious_href_mismatch.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "evil.top",
+      "href",
+      "mismatch",
+      ".top",
+      "microsoft"
+    ]
+  },
+  "suspicious_credential_owa.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "OWA",
+      "password",
+      "webmail",
+      "login",
+      "credential"
+    ]
+  },
+  "suspicious_dmarc_fail.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "DMARC",
+      "softfail",
+      "fail"
+    ]
+  },
+  "malicious_lookalike.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "lookalike",
+      "micros0ft",
+      "microsoft"
+    ]
+  },
+  "malicious_phishing_sample.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "double_extension",
+      "dangerous_extension",
+      "SPF",
+      "fail"
+    ]
+  },
+  "malicious_exe_ip_url.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "double_extension",
+      "IP"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+From: "Account Security" <secure@micros0ft.com>
+To: user@company.local
+Subject: URGENT: verify your account immediately
+Message-ID: <mal3@micros0ft.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+
+Your account will be suspended. Confirm your identity now:
+https://micros0ft.com/login/verify

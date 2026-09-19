@@ -1,15 +1,13 @@
 [project]
 name = "reliquary"
-version = "1.8.0"
-description = "IOC Extractor — offline SOC IOC extractor for email, tickets, PDF/HTML"
+version = "2.3.0"
+description = "Email IOC Extractor — offline email triage with phishing verdict for SOC"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "customtkinter>=5.2.2,<7",
   "beautifulsoup4>=4.12.3",
   "lxml>=5.2.1",
-  "pypdf>=4.3.1",
-  "stix2>=3.0.1",
   "extract-msg>=0.48.5",
   "chardet>=5.2.0",
   "filetype>=1.2.0",
@@ -26,9 +24,9 @@ dev = ["pytest>=8.0", "pyinstaller>=6.0", "ruff>=0.8", "mypy>=1.8"]
 
 [project.scripts]
 reliquary = "reliquary.cli:main"
+email-ioc-extractor = "reliquary.cli:main"
 reliquary-gui = "reliquary.gui.app:run"
-ioc-extractor = "reliquary.cli:main"
-ioc-extractor-gui = "reliquary.gui.app:run"
+email-ioc-extractor-gui = "reliquary.gui.app:run"
 
 [build-system]
 requires = ["setuptools>=61"]

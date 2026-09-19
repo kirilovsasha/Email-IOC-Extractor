@@ -6,17 +6,14 @@ import email
 import email.policy
 import hashlib
 import io
+import re
 from copy import copy
 from datetime import datetime, timezone
 from pathlib import Path
 
 from reliquary import __version__
-from reliquary.core.allowlist import (
-    build_allowlist,
-    build_denylist,
-    list_mtime_label,
-    tag_allowlist_denylist,
-)
+from reliquary.core.allowlist import build_allowlist, resolve_allowlist_path, tag_allowlist
+from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.document_parser import parse_document
 from reliquary.core.header_analyzer import (
     analyze_headers,
@@ -32,9 +29,8 @@ from reliquary.core.models import (
     Ioc,
     IocType,
 )
-from reliquary.core.paths import config_path, ensure_user_lists, file_mtime_iso
 from reliquary.core.url_rewrite import find_and_unwrap
-from reliquary.core.verdict import render_verdict
+from reliquary.core.verdict import VerdictConfig, load_verdict_config, render_verdict
 
 
 def _tag_file(ioc: Ioc, filename: str) -> Ioc:
@@ -50,8 +46,6 @@ def _ioc_priority(ioc: Ioc) -> int:
     score = 0
     if "unwrapped" in ioc.tags:
         score += 50
-    if "denylisted" in ioc.tags:
-        score += 40
     if "from_url" in ioc.tags and "url_rewriter" not in ioc.tags:
         score += 20
     if "url_rewriter" in ioc.tags:
@@ -96,10 +90,14 @@ def _dedup_iocs(iocs: list[Ioc]) -> list[Ioc]:
     return result
 
 
-def _finalize_iocs(iocs: list[Ioc]) -> list[Ioc]:
-    allow_domains, allow_ips = build_allowlist()
-    deny = build_denylist()
-    tag_allowlist_denylist(iocs, allow_domains, allow_ips, deny)
+def _finalize_iocs(
+    iocs: list[Ioc],
+    *,
+    allowlist_path: str | Path | None = None,
+) -> list[Ioc]:
+    path = resolve_allowlist_path(allowlist_path)
+    allow_domains, allow_ips = build_allowlist(extra_path=path)
+    tag_allowlist(iocs, allow_domains, allow_ips)
     return _dedup_iocs(iocs)
 
 
@@ -115,17 +113,82 @@ def _source_hash(path: Path) -> tuple[str, int]:
     return _source_hash_bytes(data)
 
 
-def _build_meta(source_path: str, *, source_sha256: str = "", source_size: int | None = None) -> AnalysisMeta:
-    ensure_user_lists()
+def _build_meta(
+    source_path: str,
+    *,
+    source_sha256: str = "",
+    source_size: int | None = None,
+    options: AnalysisOptions | None = None,
+) -> AnalysisMeta:
+    del source_path
+    overrides: dict[str, str] = {}
+    profile_dir = ""
+    if options is not None:
+        overrides = options.overrides_loaded()
+        # Also record auto-resolved files that exist next to the app
+        from reliquary.core.allowlist import resolve_allowlist_path as _ral
+        from reliquary.core.handoff import resolve_handoff_template_path as _rht
+        from reliquary.core.verdict import resolve_verdict_path as _rvp
+
+        if "allowlist" not in overrides:
+            ap = _ral(options.allowlist_path)
+            if ap:
+                overrides["allowlist"] = str(ap)
+        if "verdict" not in overrides:
+            vp = _rvp(options.verdict_path)
+            if vp:
+                overrides["verdict"] = str(vp)
+        if "handoff" not in overrides:
+            hp = _rht(options.handoff_template_path)
+            if hp:
+                overrides["handoff"] = str(hp)
+        if options.profile_dir:
+            profile_dir = str(options.profile_dir)
+            overrides.setdefault("profile", profile_dir)
     return AnalysisMeta(
         app_version=__version__,
         analyzed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         source_sha256=source_sha256,
         source_size=source_size,
-        allowlist_mtime=list_mtime_label("allowlist.txt"),
-        denylist_mtime=list_mtime_label("denylist.txt"),
-        verdict_config_mtime=file_mtime_iso(config_path("verdict.ini")) or "—",
+        overrides_loaded=overrides,
+        profile_dir=profile_dir,
     )
+
+
+def campaign_key_for(result: AnalysisResult) -> str:
+    """Stable campaign fingerprint for batch grouping."""
+    mid = result.mail_identity
+    msg_id = ((mid.message_id if mid else "") or "").strip().lower()
+    if msg_id:
+        return f"msgid:{msg_id}"
+    att_hashes = sorted({a.sha256 for a in result.attachments if a.sha256})
+    if att_hashes:
+        return f"att:{att_hashes[0][:16]}"
+    subject = (result.subject or (mid.subject if mid else "") or "").strip().lower()
+    sender = (result.sender or (mid.from_header if mid else "") or "").strip().lower()
+    # Normalize sender to domain
+    if "@" in sender:
+        sender = sender.rsplit("@", 1)[-1].strip(">")
+    subject = re.sub(r"\s+", " ", subject)[:80]
+    if subject or sender:
+        return f"subj:{subject}|from:{sender}"
+    return ""
+
+
+def annotate_campaigns(rows: list[FileTriageRow]) -> None:
+    """Fill campaign_peers for rows sharing the same campaign_key."""
+    by_key: dict[str, list[FileTriageRow]] = {}
+    for row in rows:
+        if not row.campaign_key:
+            continue
+        by_key.setdefault(row.campaign_key, []).append(row)
+    for key, group in by_key.items():
+        if len(group) < 2:
+            continue
+        names = [Path(r.path).name for r in group]
+        for row in group:
+            row.campaign_peers = [n for n in names if n != Path(row.path).name]
+
 
 
 def _top_ioc_strings(iocs: list[Ioc], n: int = 5) -> list[str]:
@@ -149,6 +212,9 @@ def _top_ioc_strings(iocs: list[Ioc], n: int = 5) -> list[str]:
 
 def file_triage_row(result: AnalysisResult) -> FileTriageRow:
     mid = result.mail_identity
+    top_reason = ""
+    if result.verdict and result.verdict.reasons:
+        top_reason = result.verdict.reasons[0]
     return FileTriageRow(
         path=result.source_path,
         kind=result.source_kind,
@@ -156,10 +222,12 @@ def file_triage_row(result: AnalysisResult) -> FileTriageRow:
         verdict_score=result.verdict.score if result.verdict else None,
         ioc_count=len(result.iocs),
         top_iocs=_top_ioc_strings(result.iocs),
+        top_reason=top_reason,
         errors=list(result.errors),
         message_id=(mid.message_id if mid else "") or "",
         subject=result.subject or (mid.subject if mid else ""),
         sender=result.sender or (mid.from_header if mid else ""),
+        campaign_key=campaign_key_for(result),
     )
 
 
@@ -272,8 +340,33 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
         return "", [f"Nested mail {att.filename}: {exc}"]
 
 
-def analyze_file(path: str | Path) -> AnalysisResult:
+def _resolve_options(
+    *,
+    options: AnalysisOptions | None = None,
+    allowlist_path: str | Path | None = None,
+    verdict_path: str | Path | None = None,
+) -> AnalysisOptions:
+    if options is None:
+        options = AnalysisOptions()
+    if allowlist_path is not None:
+        options.allowlist_path = allowlist_path
+    if verdict_path is not None:
+        options.verdict_path = verdict_path
+    return options
+
+
+def analyze_file(
+    path: str | Path,
+    *,
+    allowlist_path: str | Path | None = None,
+    verdict_path: str | Path | None = None,
+    verdict_cfg: VerdictConfig | None = None,
+    options: AnalysisOptions | None = None,
+) -> AnalysisResult:
     path = Path(path)
+    opts = _resolve_options(
+        options=options, allowlist_path=allowlist_path, verdict_path=verdict_path
+    )
     try:
         data = path.read_bytes()
     except OSError as exc:
@@ -281,8 +374,20 @@ def analyze_file(path: str | Path) -> AnalysisResult:
             source_path=str(path),
             source_kind="unknown",
             errors=[f"Чтение файла: {exc}"],
-            meta=_build_meta(str(path)),
+            meta=_build_meta(str(path), options=opts),
         )
+
+    if path.suffix.lower() not in (".eml", ".msg"):
+        return AnalysisResult(
+            source_path=str(path),
+            source_kind="unknown",
+            errors=[
+                f"Поддерживаются только письма (.eml / .msg), получено: "
+                f"{path.suffix.lower() or '(без расширения)'}"
+            ],
+            meta=_build_meta(str(path), options=opts),
+        )
+
     source_sha, source_size = _source_hash_bytes(data)
     parsed = parse_document(path, data=data)
 
@@ -294,8 +399,11 @@ def analyze_file(path: str | Path) -> AnalysisResult:
         recipients=list(parsed.recipients),
         attachments=list(parsed.attachments),
         raw_text_preview=(parsed.text or "")[:4000],
+        html_preview=(parsed.html or "")[:8000],
         errors=list(parsed.errors),
-        meta=_build_meta(str(path), source_sha256=source_sha, source_size=source_size),
+        meta=_build_meta(
+            str(path), source_sha256=source_sha, source_size=source_size, options=opts
+        ),
     )
 
     if parsed.message is not None:
@@ -370,47 +478,167 @@ def analyze_file(path: str | Path) -> AnalysisResult:
 
     _lift_attachment_iocs(result.attachments, iocs)
 
-    result.iocs = _finalize_iocs(iocs)
+    result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
     fname = path.name
     result.iocs = [_tag_file(i, fname) for i in result.iocs]
-    result.verdict = render_verdict(result)
+    if result.source_kind == "email":
+        cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
+        result.verdict = render_verdict(result, cfg, brands_path=opts.brands_path)
     result.file_rows = [file_triage_row(result)]
     return result
 
 
-def analyze_text(text: str, label: str = "clipboard") -> AnalysisResult:
-    """Analyze pasted ticket / note text without a file on disk."""
+def _looks_like_rfc822(text: str) -> bool:
+    head = text.lstrip()[:4000]
+    if not head:
+        return False
+    lower = head.lower()
+    has_from = re.search(r"(?m)^from:\s*\S", head, re.I) is not None
+    has_subj = re.search(r"(?m)^subject:\s*", head, re.I) is not None
+    has_mid = "message-id:" in lower
+    has_received = re.search(r"(?m)^received:\s*", head, re.I) is not None
+    has_mime = "mime-version:" in lower or "content-type:" in lower
+    return (has_from and (has_subj or has_mid or has_received)) or (
+        has_from and has_mime
+    )
+
+
+def analyze_text(
+    text: str,
+    label: str = "clipboard",
+    *,
+    allowlist_path: str | Path | None = None,
+    verdict_path: str | Path | None = None,
+    verdict_cfg: VerdictConfig | None = None,
+    options: AnalysisOptions | None = None,
+) -> AnalysisResult:
+    """Analyze pasted RFC822 email source."""
+    opts = _resolve_options(
+        options=options, allowlist_path=allowlist_path, verdict_path=verdict_path
+    )
+    if not _looks_like_rfc822(text):
+        return AnalysisResult(
+            source_path=label,
+            source_kind="unknown",
+            raw_text_preview=text[:4000],
+            errors=[
+                "Буфер не похож на письмо RFC822. Вставьте исходник .eml "
+                "(заголовки From/Subject/…) или откройте файл .eml/.msg."
+            ],
+            meta=_build_meta(label, options=opts),
+        )
+
+    data = text.encode("utf-8", errors="replace")
+    # Use a synthetic .eml path so parse_document / analyze_file pathing stays consistent
+    from reliquary.core.document_parser import parse_eml
+
+    path = Path(f"{label}.eml") if not str(label).lower().endswith(".eml") else Path(label)
+    source_sha, source_size = _source_hash_bytes(data)
+    parsed = parse_eml(path, data=data)
+
     result = AnalysisResult(
         source_path=label,
-        source_kind="ticket",
-        raw_text_preview=text[:4000],
-        meta=_build_meta(label),
+        source_kind="email",
+        subject=parsed.subject,
+        sender=parsed.sender,
+        recipients=list(parsed.recipients),
+        attachments=list(parsed.attachments),
+        raw_text_preview=(parsed.text or "")[:4000],
+        html_preview=(parsed.html or "")[:8000],
+        errors=list(parsed.errors),
+        meta=_build_meta(
+            label, source_sha256=source_sha, source_size=source_size, options=opts
+        ),
     )
-    result.url_rewrites = find_and_unwrap(text)
-    enriched = text
+
+    if parsed.message is not None:
+        try:
+            result.headers = analyze_headers(parsed.message)
+            result.raw_headers = extract_raw_headers(parsed.message)
+            result.mail_identity = build_mail_identity(parsed.message)
+        except Exception as exc:  # noqa: BLE001
+            result.errors.append(f"Заголовки: {exc}")
+
+    blob = f"{parsed.text}\n{parsed.html}"
+    for att in result.attachments:
+        nested_text, nested_errs = _parse_nested_email_attachment(att)
+        if nested_text:
+            blob += "\n" + nested_text
+            att.notes.append("Вложенное письмо разобрано локально")
+        result.errors.extend(nested_errs)
+        if (
+            att.data is not None
+            and "nested_email" in att.risk_flags
+            and att.size > 2 * 1024 * 1024
+        ):
+            att.data = None
+        if "encrypted_archive" in att.risk_flags:
+            result.errors.append(
+                f"⚠ {att.filename}: архив защищён паролем — содержимое не извлечено"
+            )
+
+    try:
+        result.url_rewrites = find_and_unwrap(blob)
+    except Exception as exc:  # noqa: BLE001
+        result.errors.append(f"URL rewrite: {exc}")
+
+    enriched = blob
     for rewrite in result.url_rewrites:
         if rewrite.changed:
             enriched += f"\n{rewrite.unwrapped}"
-    iocs = extract_iocs(enriched, source="ticket")
+
+    try:
+        iocs = extract_iocs(enriched, source="email")
+    except Exception as exc:  # noqa: BLE001
+        result.errors.append(f"IOC: {exc}")
+        iocs = []
+
+    unwrap_map = {r.unwrapped: r.original for r in result.url_rewrites if r.changed}
+    rewriter_hosts: set[str] = set()
+    for r in result.url_rewrites:
+        if r.changed:
+            from urllib.parse import urlparse
+
+            host = urlparse(r.original).hostname
+            if host:
+                rewriter_hosts.add(host.lower())
+
     for ioc in iocs:
-        if ioc.ioc_type == IocType.URL:
-            for r in result.url_rewrites:
-                if r.changed and r.unwrapped == ioc.value:
-                    ioc.rewritten_from = r.original
-                    if "unwrapped" not in ioc.tags:
-                        ioc.tags.append("unwrapped")
-    result.iocs = _finalize_iocs(iocs)
-    result.verdict = render_verdict(result)
+        if ioc.ioc_type == IocType.URL and ioc.value in unwrap_map:
+            ioc.rewritten_from = unwrap_map[ioc.value]
+            if "unwrapped" not in ioc.tags:
+                ioc.tags.append("unwrapped")
+        if ioc.ioc_type == IocType.DOMAIN and ioc.value.lower() in rewriter_hosts:
+            if "url_rewriter" not in ioc.tags:
+                ioc.tags.append("url_rewriter")
+
+    _lift_attachment_iocs(result.attachments, iocs)
+    result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
+    cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
+    result.verdict = render_verdict(result, cfg, brands_path=opts.brands_path)
     result.file_rows = [file_triage_row(result)]
     return result
 
 
-def merge_results(results: list[AnalysisResult], label: str = "batch") -> AnalysisResult:
-    """Merge multiple file analyses into one result (batch open)."""
+def merge_results(
+    results: list[AnalysisResult],
+    label: str = "batch",
+    *,
+    verdict_path: str | Path | None = None,
+    verdict_cfg: VerdictConfig | None = None,
+    options: AnalysisOptions | None = None,
+) -> AnalysisResult:
+    """Merge multiple email analyses into one result (batch open)."""
+    opts = _resolve_options(options=options, verdict_path=verdict_path)
     if not results:
-        return AnalysisResult(source_path=label, source_kind="batch", meta=_build_meta(label))
+        return AnalysisResult(
+            source_path=label, source_kind="batch", meta=_build_meta(label, options=opts)
+        )
     if len(results) == 1:
         return results[0]
+
+    rows = [file_triage_row(r) for r in results]
+    annotate_campaigns(rows)
 
     merged = AnalysisResult(
         source_path=f"{label} ({len(results)} files)",
@@ -420,8 +648,8 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
         raw_text_preview="\n---\n".join(
             f"[{r.source_path}]\n{r.raw_text_preview}" for r in results
         )[:8000],
-        meta=_build_meta(label),
-        file_rows=[file_triage_row(r) for r in results],
+        meta=_build_meta(label, options=opts),
+        file_rows=rows,
     )
     iocs: list[Ioc] = []
     mail_sources: list[str] = []
@@ -445,24 +673,28 @@ def merge_results(results: list[AnalysisResult], label: str = "batch") -> Analys
             + ("…" if len(mail_sources) > 5 else "")
             + ") — см. вкладку «Пакет»"
         )
-    merged.iocs = _finalize_iocs(iocs)
-    if any(r.source_kind == "email" for r in results):
-        email_only = AnalysisResult(
-            source_path=merged.source_path,
-            source_kind="email",
-            subject=merged.subject,
-            sender=merged.sender,
-            recipients=list(merged.recipients),
-            iocs=list(merged.iocs),
-            headers=list(merged.headers),
-            raw_headers=dict(merged.raw_headers),
-            mail_identity=merged.mail_identity,
-            url_rewrites=list(merged.url_rewrites),
-            attachments=list(merged.attachments),
-            raw_text_preview=merged.raw_text_preview,
-            errors=list(merged.errors),
+    camp_groups = sum(1 for r in rows if r.campaign_peers)
+    if camp_groups:
+        merged.errors.append(
+            f"Кампании: {camp_groups} писем связаны по Msg-ID/теме/хешу вложения — см. «Пакет»"
         )
-        merged.verdict = render_verdict(email_only)
-    else:
-        merged.verdict = None
+    merged.iocs = _finalize_iocs(iocs)
+    # Batch of emails: score from merged email signals
+    email_only = AnalysisResult(
+        source_path=merged.source_path,
+        source_kind="email",
+        subject=merged.subject,
+        sender=merged.sender,
+        recipients=list(merged.recipients),
+        iocs=list(merged.iocs),
+        headers=list(merged.headers),
+        raw_headers=dict(merged.raw_headers),
+        mail_identity=merged.mail_identity,
+        url_rewrites=list(merged.url_rewrites),
+        attachments=list(merged.attachments),
+        raw_text_preview=merged.raw_text_preview,
+        errors=list(merged.errors),
+    )
+    cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
+    merged.verdict = render_verdict(email_only, cfg, brands_path=opts.brands_path)
     return merged

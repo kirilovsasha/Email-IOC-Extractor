@@ -1,0 +1,11 @@
+From: "Microsoft Support" <help@random-vendor.biz>
+Reply-To: support@totally-other.net
+To: user@company.local
+Subject: Your Microsoft account needs attention
+Message-ID: <sus3@random-vendor.biz>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+Please contact support regarding your subscription.
+Visit https://random-vendor.biz/help for details.

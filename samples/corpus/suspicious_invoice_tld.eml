@@ -1,0 +1,9 @@
+From: billing@partner-site.club
+To: finance@company.local
+Subject: Invoice attached - please review
+Message-ID: <sus1@partner-site.club>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=neutral; dmarc=pass
+
+Please review the invoice: https://partner-site.club/pay/123

@@ -1,5 +1,0 @@
-# IOC Extractor denylist — known-bad domains/IPs (optional).
-# Matched IOCs get tag "denylisted".
-# Wildcards and trailing comments (# ticket) supported.
-
-# evil.example  # INC-0001

@@ -1,4 +1,4 @@
-"""CLI — batch folder, filters, case pack, ticket (parity with GUI pipelines)."""
+"""CLI — email triage with verdict; batch folder, filters, JSON/CSV/handoff export."""
 
 from __future__ import annotations
 
@@ -9,24 +9,38 @@ from collections import Counter
 from pathlib import Path
 
 from reliquary import __app_name__, __version__
-from reliquary.core.exporters import (
-    export_case_pack,
-    export_case_pack_multi,
-    export_csv,
-    export_misp,
-    export_opencti,
-    export_report_json,
-    export_stix,
-    export_yara,
-)
+from reliquary.core.analysis_options import AnalysisOptions
+from reliquary.core.batch import default_max_workers, run_batch
+from reliquary.core.exporters import export_batch_csv, export_csv, export_report_json
 from reliquary.core.filter_state import FilterState
 from reliquary.core.formats import collect_supported, formats_help_line, is_supported
+from reliquary.core.handoff import export_handoff
 from reliquary.core.offline import enforce_offline
-from reliquary.core.paths import ensure_user_lists
-from reliquary.core.batch import default_max_workers, run_batch
+from reliquary.core.org_profile import load_org_profile
 from reliquary.core.pipeline import analyze_file, analyze_text
 from reliquary.core.prefs import load_prefs
-from reliquary.core.ticket import build_ticket_template
+
+
+def _print_verdict(result, stream=None) -> None:
+    if stream is None:
+        stream = sys.stderr
+    v = result.verdict
+    if not v:
+        print(f"\n[{__app_name__}] Вердикт: нет (не письмо или ошибка разбора)", file=stream)
+        for err in result.errors[:5]:
+            print(f"  ! {err}", file=stream)
+        return
+    print(
+        f"\n[{__app_name__}] VERDICT {v.level.value.upper()}  score={v.score}/100",
+        file=stream,
+    )
+    print(f"  {v.summary}", file=stream)
+    for reason in v.reasons[:10]:
+        print(f"  • {reason}", file=stream)
+    if v.actions:
+        print("  Действия:", file=stream)
+        for act in v.actions[:5]:
+            print(f"    {act.priority}. {act.action}", file=stream)
 
 
 def _print_ioc_summary(result, stream=None) -> None:
@@ -34,7 +48,7 @@ def _print_ioc_summary(result, stream=None) -> None:
         stream = sys.stderr
     counts = Counter(i.ioc_type.value for i in result.iocs)
     total = len(result.iocs)
-    print(f"\n[{__app_name__}] IOC извлечено: {total}", file=stream)
+    print(f"\n[{__app_name__}] IOC (доказательства): {total}", file=stream)
     if counts:
         parts = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
         print(f"  по типам: {parts}", file=stream)
@@ -62,7 +76,6 @@ def _resolve_inputs(args: argparse.Namespace) -> list[str]:
             paths.extend(collect_supported(ep, recursive=not args.no_recursive))
         elif ep.is_file():
             paths.append(str(ep))
-    # de-dupe preserve order
     seen: set[str] = set()
     out: list[str] = []
     for p in paths:
@@ -70,51 +83,63 @@ def _resolve_inputs(args: argparse.Namespace) -> list[str]:
         if key not in seen:
             seen.add(key)
             out.append(p)
-    if args.only_supported:
-        out = [p for p in out if is_supported(p)]
-    return out
+    return [p for p in out if is_supported(p)]
 
 
 def main(argv: list[str] | None = None) -> int:
     enforce_offline()
-    ensure_user_lists()
     prefs = load_prefs()
     default_workers = int(prefs.get("max_workers") or 0) or default_max_workers()
+    # Same defaults as GUI (prefs); override with --no-actionable / --no-hide-*
+    def_hide_rewriter = bool(prefs.get("hide_rewriter", True))
+    def_hide_allow = bool(prefs.get("hide_allowlisted", True))
+    def_hide_private = bool(prefs.get("hide_private", True))
+    def_actionable = bool(prefs.get("actionable_only", True))
+    def_allowlist = str(prefs.get("allowlist_path") or "") or None
+    def_verdict = str(prefs.get("verdict_path") or "") or None
+    def_handoff_tmpl = str(prefs.get("handoff_template_path") or "") or None
+    def_profile = str(prefs.get("profile_dir") or "") or None
+    def_full_ioc = bool(prefs.get("full_ioc_types", False))
 
     parser = argparse.ArgumentParser(
-        prog="ioc-extractor",
+        prog="reliquary",
         description=(
-            f"{__app_name__} v{__version__} — offline IOC extraction for SOC "
+            f"{__app_name__} v{__version__} — offline email IOC extractor "
             f"(formats: {formats_help_line()})"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            "Фильтры по умолчанию совпадают с GUI (шум скрыт, «к разбору» вкл.).\n"
+            "Отключить: --no-actionable --no-hide-rewriter …\n\n"
             "Примеры:\n"
-            "  ioc-extractor mail.eml --csv out.csv --actionable\n"
-            "  ioc-extractor ./inbox --case-pack case.zip --workers 4\n"
-            "  ioc-extractor ticket.txt --ticket - --hide-rewriter\n"
+            "  reliquary mail.eml\n"
+            "  reliquary mail.eml --csv out.csv\n"
+            "  reliquary mail.eml --no-actionable --handoff ticket.txt\n"
+            "  reliquary ./inbox --json report.json --workers 4\n"
+            "  reliquary mail.eml --allowlist allowlist_extra.txt\n"
+            "  reliquary mail.eml --verdict verdict_extra.json\n"
+            "  reliquary mail.eml --full-ioc-types\n"
         ),
     )
     parser.add_argument(
         "path",
         nargs="?",
-        help="Файл или папка с поддерживаемыми форматами",
+        help="Письмо (.eml/.msg) или папка с письмами",
     )
     parser.add_argument(
         "files",
         nargs="*",
-        help="Доп. файлы/папки",
+        help="Доп. письма / папки",
     )
-    parser.add_argument("-t", "--text", help="Извлечь IOC из строки / тикета")
+    parser.add_argument(
+        "-t",
+        "--text",
+        help="Разбор pasted RFC822 (.eml source) из строки",
+    )
     parser.add_argument(
         "--no-recursive",
         action="store_true",
         help="При разборе папки не обходить подкаталоги",
-    )
-    parser.add_argument(
-        "--only-supported",
-        action="store_true",
-        help="Игнорировать файлы с неизвестным суффиксом",
     )
     parser.add_argument(
         "--workers",
@@ -127,16 +152,65 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Не отбрасывать пустые/битые результаты (по умолчанию пропускаются)",
     )
+    parser.add_argument(
+        "--allowlist",
+        dest="allowlist_path",
+        default=def_allowlist,
+        help=(
+            "Доп. allowlist (domain/ip, по строке). "
+            "Иначе — allowlist_extra.txt рядом с приложением, если есть"
+        ),
+    )
+    parser.add_argument(
+        "--verdict",
+        dest="verdict_path",
+        default=def_verdict,
+        help=(
+            "JSON override весов вердикта. "
+            "Иначе — verdict_extra.json рядом с приложением, если есть"
+        ),
+    )
+    parser.add_argument(
+        "--handoff-template",
+        dest="handoff_template_path",
+        default=def_handoff_tmpl,
+        help=(
+            "Шаблон handoff с плейсхолдерами {verdict} {score} …. "
+            "Иначе — handoff_extra.txt / handoff_{level}.txt рядом с приложением"
+        ),
+    )
+    parser.add_argument(
+        "--profile",
+        dest="profile_dir",
+        default=def_profile,
+        help="Org profile: папка или .zip (allowlist/verdict/handoff/brands)",
+    )
 
-    # Filters (GUI parity)
-    filt = parser.add_argument_group("фильтры IOC")
-    filt.add_argument("--hide-rewriter", action="store_true", help="Скрыть proxy/SafeLinks URL")
-    filt.add_argument("--hide-allowlisted", action="store_true", help="Скрыть allowlisted")
-    filt.add_argument("--hide-private", action="store_true", help="Скрыть частные IP")
-    filt.add_argument("--only-denylisted", action="store_true", help="Только denylist")
+    filt = parser.add_argument_group(
+        "фильтры IOC (по умолчанию как в GUI; --no-* снимает)"
+    )
+    filt.add_argument(
+        "--hide-rewriter",
+        action=argparse.BooleanOptionalAction,
+        default=def_hide_rewriter,
+        help="Скрыть proxy/SafeLinks URL",
+    )
+    filt.add_argument(
+        "--hide-allowlisted",
+        action=argparse.BooleanOptionalAction,
+        default=def_hide_allow,
+        help="Скрыть известный шум (CDN/mail)",
+    )
+    filt.add_argument(
+        "--hide-private",
+        action=argparse.BooleanOptionalAction,
+        default=def_hide_private,
+        help="Скрыть частные IP",
+    )
     filt.add_argument(
         "--actionable",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=def_actionable,
         help="Только «к разбору» (без шума и голых имён файлов)",
     )
     filt.add_argument("--search", default="", help="Подстрока value/type/tags/context")
@@ -144,42 +218,25 @@ def main(argv: list[str] | None = None) -> int:
         "--types",
         help="Список типов через запятую (ipv4,domain,url,…)",
     )
+    filt.add_argument(
+        "--full-ioc-types",
+        action="store_true",
+        default=def_full_ioc,
+        help="Показать legacy IOC (registry/mutex/command_line) и крипто",
+    )
 
-    # Exports
     exp = parser.add_argument_group("экспорт")
     exp.add_argument("--csv", dest="csv_out", help="Экспорт CSV (UTF-8 BOM)")
-    exp.add_argument("--stix", dest="stix_out", help="Экспорт STIX 2.1 JSON")
     exp.add_argument("--json", dest="json_out", help="Полный отчёт JSON")
-    exp.add_argument("--misp", dest="misp_out", help="Экспорт MISP event JSON")
-    exp.add_argument("--opencti", dest="opencti_out", help="Экспорт OpenCTI JSON")
-    exp.add_argument("--yara", dest="yara_out", help="Экспорт YARA rules")
     exp.add_argument(
-        "--case-pack",
-        dest="case_pack_out",
-        help="Case pack ZIP (JSON+CSV+ticket+вложения)",
+        "--batch-csv",
+        dest="batch_csv_out",
+        help="CSV по письмам (пакетный triage)",
     )
     exp.add_argument(
-        "--case-pack-multi",
-        dest="case_pack_multi_out",
-        help="Case pack ZIP по файлам (пакет)",
-    )
-    exp.add_argument(
-        "--ticket",
-        nargs="?",
-        const="-",
-        metavar="PATH",
-        help="Шаблон тикета в файл или stdout (-)",
-    )
-    exp.add_argument(
-        "--ticket-short",
-        action="store_true",
-        help="Короткий шаблон тикета",
-    )
-    exp.add_argument(
-        "--ticket-lang",
-        choices=("ru", "en"),
-        default=None,
-        help="Язык тикета (по умолчанию из ticket.ini)",
+        "--handoff",
+        dest="handoff_out",
+        help="Текстовый handoff для тикета (ITSM)",
     )
     exp.add_argument(
         "-o",
@@ -188,9 +245,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Печатать полный JSON-отчёт в stdout",
     )
     exp.add_argument(
-        "--phishing",
+        "--quiet-verdict",
         action="store_true",
-        help="Показать доп. вердикт фишинга / triage письма",
+        help="Не печатать вердикт в stderr",
     )
     exp.add_argument(
         "--iocs-only",
@@ -205,19 +262,47 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     filters = FilterState.from_cli_args(args)
+    opts = AnalysisOptions.from_prefs(prefs)
+    opts.allowlist_path = args.allowlist_path or opts.allowlist_path
+    opts.verdict_path = args.verdict_path or opts.verdict_path
+    opts.handoff_template_path = args.handoff_template_path or opts.handoff_template_path
+    opts.profile_dir = args.profile_dir or opts.profile_dir
+    opts.max_workers = args.workers
+    opts.skip_broken = not args.no_skip_broken
 
-    batch_results: list = []
+    profile = load_org_profile(opts.profile_dir)
+    handoff_by_level = None
+    if profile is not None:
+        opts = opts.with_profile(profile)
+        handoff_by_level = {
+            k: str(v) for k, v in (profile.handoff_by_level or {}).items()
+        } or None
+
+    handoff_template_path = opts.handoff_template_path
+    batch_results = None
+
     try:
         if args.text:
-            result = analyze_text(args.text)
-            batch_results = [result]
+            result = analyze_text(args.text, options=opts)
         else:
             inputs = _resolve_inputs(args)
             if not inputs:
-                print("Нет поддерживаемых файлов для разбора", file=sys.stderr)
+                print(
+                    "Нет писем (.eml / .msg) для разбора.",
+                    file=sys.stderr,
+                )
                 return 2
+            for raw in [args.path, *(args.files or [])]:
+                if not raw:
+                    continue
+                rp = Path(raw)
+                if rp.is_file() and not is_supported(rp):
+                    print(
+                        f"Пропуск (не письмо): {rp.name} — только .eml / .msg",
+                        file=sys.stderr,
+                    )
             if len(inputs) == 1:
-                result = analyze_file(inputs[0])
+                result = analyze_file(inputs[0], options=opts)
                 batch_results = [result]
             else:
 
@@ -237,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
                     max_workers=args.workers,
                     skip_broken=not args.no_skip_broken,
                     on_progress=_progress,
+                    options=opts,
                 )
                 print(file=sys.stderr)
                 if outcome.result is None:
@@ -263,68 +349,42 @@ def main(argv: list[str] | None = None) -> int:
     if args.csv_out:
         export_csv(filtered, args.csv_out)
         print(f"CSV → {args.csv_out}", file=sys.stderr)
-    if args.stix_out:
-        export_stix(filtered, args.stix_out)
-        print(f"STIX → {args.stix_out}", file=sys.stderr)
+    if args.batch_csv_out:
+        export_batch_csv(result, args.batch_csv_out, batch_results=batch_results)
+        print(f"Batch CSV → {args.batch_csv_out}", file=sys.stderr)
     if args.json_out:
-        export_report_json(filtered, args.json_out, filters_applied=filt_meta)
-        print(f"JSON → {args.json_out}", file=sys.stderr)
-    if args.misp_out:
-        export_misp(filtered, args.misp_out, iocs=filtered.iocs)
-        print(f"MISP → {args.misp_out}", file=sys.stderr)
-    if args.opencti_out:
-        export_opencti(filtered, args.opencti_out, iocs=filtered.iocs)
-        print(f"OpenCTI → {args.opencti_out}", file=sys.stderr)
-    if args.yara_out:
-        export_yara(filtered, args.yara_out, iocs=filtered.iocs)
-        print(f"YARA → {args.yara_out}", file=sys.stderr)
-    if args.case_pack_out:
-        out = export_case_pack(
-            filtered, args.case_pack_out, filters_applied=filt_meta
-        )
-        print(f"Case pack → {out}", file=sys.stderr)
-    if args.case_pack_multi_out:
-        pack_src = batch_results or [filtered]
-        out = export_case_pack_multi(
-            pack_src, args.case_pack_multi_out, filters_applied=filt_meta
-        )
-        print(f"Case pack (по файлам ×{len(pack_src)}) → {out}", file=sys.stderr)
-    if args.ticket is not None:
-        ticket = build_ticket_template(
+        export_report_json(
             filtered,
-            filtered.iocs,
-            defang=True,
-            short=bool(args.ticket_short),
-            lang=args.ticket_lang,
+            args.json_out,
+            filters_applied=filt_meta,
+            batch_results=batch_results,
         )
-        if args.ticket == "-":
-            print(ticket)
-        else:
-            Path(args.ticket).write_text(ticket, encoding="utf-8")
-            print(f"Ticket → {args.ticket}", file=sys.stderr)
+        print(f"JSON → {args.json_out}", file=sys.stderr)
+    if args.handoff_out:
+        export_handoff(
+            filtered,
+            args.handoff_out,
+            iocs=filtered.iocs,
+            template_path=handoff_template_path,
+            handoff_by_level=handoff_by_level,
+        )
+        print(f"Handoff → {args.handoff_out}", file=sys.stderr)
 
+    if result.meta and result.meta.overrides_loaded:
+        ov = ", ".join(f"{k}={Path(v).name}" for k, v in result.meta.overrides_loaded.items())
+        print(f"[{__app_name__}] overrides: {ov}", file=sys.stderr)
+    print(f"[{__app_name__}] v{__version__}", file=sys.stderr)
+
+    if not args.quiet_verdict:
+        _print_verdict(result)
     _print_ioc_summary(filtered)
-
-    if args.phishing and result.verdict:
-        v = result.verdict
-        print(
-            f"\n[фишинг/доп.] {v.level.value.upper()} score={v.score} — {v.summary}",
-            file=sys.stderr,
-        )
-        for reason in v.reasons[:8]:
-            print(f"  • {reason}", file=sys.stderr)
 
     exported = any(
         (
             args.csv_out,
-            args.stix_out,
             args.json_out,
-            args.misp_out,
-            args.opencti_out,
-            args.yara_out,
-            args.case_pack_out,
-            args.case_pack_multi_out,
-            args.ticket is not None,
+            args.batch_csv_out,
+            args.handoff_out,
             args.iocs_only,
         )
     )
@@ -333,8 +393,13 @@ def main(argv: list[str] | None = None) -> int:
     elif args.stdout_json or not exported:
         if args.stdout_json:
             print(json.dumps(filtered.to_dict(), ensure_ascii=False, indent=2))
-        elif not exported:
-            print(json.dumps([i.to_dict() for i in filtered.iocs], ensure_ascii=False, indent=2))
+        else:
+            payload = {
+                "verdict": result.verdict.to_dict() if result.verdict else None,
+                "iocs": [i.to_dict() for i in filtered.iocs],
+                "errors": list(result.errors),
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
 
     return 0
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.models import AnalysisResult
 from reliquary.core.pipeline import analyze_file, merge_results
 
@@ -57,14 +58,26 @@ def run_batch(
     skip_broken: bool = True,
     is_cancelled: Callable[[], bool] | None = None,
     on_progress: ProgressCb | None = None,
+    allowlist_path: str | Path | None = None,
+    verdict_path: str | Path | None = None,
+    options: AnalysisOptions | None = None,
 ) -> BatchOutcome:
     """Analyze many files; merge into one result. Soft parse errors stay in result.errors."""
+    opts = options or AnalysisOptions()
+    if allowlist_path is not None:
+        opts.allowlist_path = allowlist_path
+    if verdict_path is not None:
+        opts.verdict_path = verdict_path
+    if max_workers is not None and max_workers > 0:
+        opts.max_workers = max_workers
+    opts.skip_broken = skip_broken
+
     total = len(paths)
     if total == 0:
         return BatchOutcome(None, [], [], ["Нет файлов для разбора"])
 
     cancel = is_cancelled or (lambda: False)
-    workers = default_max_workers(max_workers)
+    workers = default_max_workers(opts.max_workers or max_workers)
     slots: list[AnalysisResult | None] = [None] * total
     failed: list[str] = []
     hard_errors: list[str] = []
@@ -75,7 +88,11 @@ def run_batch(
         if cancel():
             return idx, None, "cancelled"
         try:
-            return idx, analyze_file(path), None
+            return (
+                idx,
+                analyze_file(path, options=opts),
+                None,
+            )
         except Exception as exc:  # noqa: BLE001
             return idx, None, f"{path}: {exc}"
 
@@ -130,7 +147,11 @@ def run_batch(
     if len(results) == 1:
         merged = results[0]
     else:
-        merged = merge_results(results, label=f"batch:{len(results)}")
+        merged = merge_results(
+            results,
+            label=f"batch:{len(results)}",
+            options=opts,
+        )
 
     for err in hard_errors:
         merged.errors.append(err)
