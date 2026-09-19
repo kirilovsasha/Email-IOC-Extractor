@@ -368,14 +368,14 @@ def _valid_port(port: str) -> bool:
 def _b58decode(s: str) -> bytes | None:
     try:
         n = 0
-        for ch in s.encode("ascii"):
-            n = n * 58 + _BASE58_ALPHABET.index(ch)
+        for byte in s.encode("ascii"):
+            n = n * 58 + _BASE58_ALPHABET.index(byte)
     except (ValueError, UnicodeEncodeError):
         return None
     # Preserve leading zeros (Base58 '1')
     pad = 0
-    for ch in s:
-        if ch == "1":
+    for char in s:
+        if char == "1":
             pad += 1
         else:
             break

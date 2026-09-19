@@ -308,7 +308,7 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
                 pass
             return f"Nested MSG {att.filename}\nFrom: {sender}\nSubject: {subj}\n{body}\n{html}", errors
         # .eml / rfc822
-        msg = email.message_from_bytes(att.data, policy=email.policy.default)
+        msg = email.message_from_bytes(att.data, policy=email.policy.default)  # type: ignore[arg-type]
         parts: list[str] = [
             f"Nested EML {att.filename}",
             f"From: {msg.get('From', '')}",
@@ -323,16 +323,21 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
                     continue
                 if ctype in ("text/plain", "text/html"):
                     try:
-                        payload = part.get_payload(decode=True) or b""
+                        raw = part.get_payload(decode=True)
+                        if not isinstance(raw, (bytes, bytearray)):
+                            continue
                         charset = part.get_content_charset() or "utf-8"
-                        parts.append(payload.decode(charset, errors="replace"))
+                        parts.append(bytes(raw).decode(charset, errors="replace"))
                     except Exception:
                         continue
         else:
             try:
-                payload = msg.get_payload(decode=True) or b""
-                charset = msg.get_content_charset() or "utf-8"
-                parts.append(payload.decode(charset, errors="replace"))
+                raw = msg.get_payload(decode=True)
+                if isinstance(raw, (bytes, bytearray)):
+                    charset = msg.get_content_charset() or "utf-8"
+                    parts.append(bytes(raw).decode(charset, errors="replace"))
+                else:
+                    parts.append(str(msg.get_payload()))
             except Exception:
                 parts.append(str(msg.get_payload()))
         return "\n".join(parts), errors
