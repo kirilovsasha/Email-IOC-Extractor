@@ -44,8 +44,11 @@ def test_org_profile_zip(tmp_path: Path) -> None:
 def test_org_profile_m365_preset() -> None:
     profile = load_org_profile(PRESETS / "m365")
     assert profile is not None
-    assert profile.allowlist_path is not None
     assert profile.brands_path is not None
+    assert profile.verdict_path is not None
+    # allowlist_extra.txt is part of the preset pack (must be tracked in git)
+    assert profile.allowlist_path is not None
+    assert Path(profile.allowlist_path).is_file()
 
 
 def test_campaign_key_grouping() -> None:
