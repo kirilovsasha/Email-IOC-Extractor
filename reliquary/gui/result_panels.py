@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from pathlib import Path
 
+from reliquary.core.diff import diff_results, find_batch_peer
 from reliquary.core.models import AnalysisResult
 from reliquary.gui.theme import SEVERITY_LABELS_RU
 
@@ -15,14 +16,17 @@ class ResultPanelsMixin:
     def _fill_batch(self, result: AnalysisResult) -> None:
         self._clear_box(self.batch_box)
         self._batch_row_tags.clear()
+        if not hasattr(self, "_batch_diff_tags"):
+            self._batch_diff_tags = {}
+        self._batch_diff_tags.clear()
         rows = result.file_rows or []
         if len(rows) < 2:
             self._put(self.batch_box, "Нужно ≥2 файла для пакетной таблицы\n", "empty")
             return
-        # Summary table header
         self._put(
             self.batch_box,
-            f"▸ Сводка пакета  ({len(rows)})  — клик по имени → IOC этого файла\n\n",
+            f"▸ Сводка пакета  ({len(rows)})  — клик по имени → IOC; "
+            f"«diff» → сравнение с peer кампании\n\n",
             "section",
         )
         self._put(
@@ -60,6 +64,17 @@ class ResultPanelsMixin:
                     + "\n",
                     "warn",
                 )
+                peer0 = row.campaign_peers[0]
+                dtag = f"batchdiff_{idx}"
+                self._batch_diff_tags[dtag] = (name, peer0)
+                self._put(self.batch_box, "      ", "muted")
+                self._put(
+                    self.batch_box,
+                    f"[diff vs {peer0}]\n",
+                    "info",
+                    "diff_click",
+                    dtag,
+                )
             if row.subject:
                 self._put(self.batch_box, f"      Subject  {row.subject[:120]}\n", "muted")
             if row.errors:
@@ -71,6 +86,36 @@ class ResultPanelsMixin:
         self._put(self.batch_box, "\n")
         if widget is not None:
             widget.tag_bind("ioc_click", "<Button-1>", self._on_batch_row_click)
+            widget.tag_bind("diff_click", "<Button-1>", self._on_batch_diff_click)
+
+    def _on_batch_diff_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]
+        widget = self._tk(self.batch_box)
+        if widget is None:
+            return
+        index = widget.index(f"@{event.x},{event.y}")
+        tags = getattr(self, "_batch_diff_tags", {})
+        for tag in widget.tag_names(index):
+            if tag.startswith("batchdiff_") and tag in tags:
+                left_name, right_name = tags[tag]
+                self._show_campaign_diff(left_name, right_name)
+                return
+
+    def _show_campaign_diff(self, left_name: str, right_name: str) -> None:
+        batch = getattr(self, "_batch_results", []) or []
+        left = find_batch_peer(batch, filename=left_name)
+        right = find_batch_peer(batch, filename=right_name)
+        if left is None or right is None:
+            self._set_status(f"Diff: нет данных для {left_name} / {right_name}")
+            return
+        delta = diff_results(left, right)
+        self._clear_box(self.batch_box)
+        self._put(self.batch_box, delta.to_text(), "value")
+        self._put(
+            self.batch_box,
+            "\n  (повторный разбор пакета восстановит сводку)\n",
+            "muted",
+        )
+        self._set_status(f"Diff: {left_name} ↔ {right_name}")
 
     def _on_batch_row_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]
         widget = self._tk(self.batch_box)
@@ -170,7 +215,6 @@ class ResultPanelsMixin:
             if a.nested_kind:
                 self._put(self.att_box, f"      nested  {a.nested_kind}\n", "meta")
             if a.archive_entries:
-                # Hide QR: stash lines from archive preview — show separately
                 members = [e for e in a.archive_entries if not e.startswith("QR:")]
                 qr_lines = [e[3:] for e in a.archive_entries if e.startswith("QR:")]
                 if members:
@@ -217,9 +261,12 @@ class ResultPanelsMixin:
             if v.breakdown:
                 self._put(self.mail_box, "  Разбор score\n", "label")
                 for b in v.breakdown:
-                    if b.points <= 0:
+                    if b.points == 0:
                         continue
-                    self._put(self.mail_box, f"    +{b.points:>3}  ", "warn")
+                    if b.points < 0:
+                        self._put(self.mail_box, f"    {b.points:>4}  ", "ok")
+                    else:
+                        self._put(self.mail_box, f"    +{b.points:>3}  ", "warn")
                     self._put(self.mail_box, f"[{b.category}] ", "info")
                     self._put(self.mail_box, f"{b.reason}\n", "muted")
                 self._put(self.mail_box, f"    ────  итого {v.score}/100\n\n", "value")
@@ -255,7 +302,6 @@ class ResultPanelsMixin:
                 "muted",
             )
 
-        # Per-file mail cards in batch (file_rows already carry identity snippets)
         mail_rows = [
             r
             for r in (result.file_rows or [])
@@ -319,7 +365,6 @@ class ResultPanelsMixin:
                 self._put(self.mail_box, f"  {name}: ", "label")
                 self._put(self.mail_box, f"{value}\n", "value")
 
-        # Copy shortcuts at end of mail tab content via status — bind keys when mail present
         if mid and (mid.from_header or mid.message_id):
             self._put(self.mail_box, "\n", "muted")
             self._put(self.mail_box, "  [F] Copy From   [M] Copy Message-ID\n", "info")
@@ -338,4 +383,3 @@ class ResultPanelsMixin:
         self._put(self.err_box, f"▸ Ошибки / замечания  ({len(result.errors)})\n", "section")
         for err in result.errors:
             self._put(self.err_box, f"  ! {err}\n", "danger")
-

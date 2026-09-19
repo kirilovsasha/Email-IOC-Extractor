@@ -1,0 +1,10 @@
+microsoft.com
+office.com
+outlook.com
+live.com
+azure.com
+sharepoint.com
+teams.microsoft.com
+onedrive.com
+skype.com
+bing.com

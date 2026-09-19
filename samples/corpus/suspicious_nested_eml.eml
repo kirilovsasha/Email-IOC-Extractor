@@ -1,0 +1,25 @@
+From: relay@odd.example
+To: user@company.local
+Subject: FW: invoice
+Message-ID: <sus12@odd.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="N"
+
+--N
+Content-Type: text/plain; charset=utf-8
+
+Forwarded message attached.
+--N
+Content-Type: message/rfc822; name="inner.eml"
+Content-Disposition: attachment; filename="inner.eml"
+Content-Transfer-Encoding: 7bit
+
+From: inner@evil.top
+To: victim@company.local
+Subject: pay now
+Message-ID: <inner@evil.top>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Pay https://evil.top/pay immediately
+--N--

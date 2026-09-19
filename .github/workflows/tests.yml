@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
-        python-version: ["3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +46,12 @@ jobs:
           reliquary/core/content_signals.py
           reliquary/core/analysis_options.py
           reliquary/core/org_profile.py
+          reliquary/core/diff.py
+          reliquary/core/export_hook.py
+          reliquary/core/pipeline.py
+          reliquary/core/ioc_extractor.py
+          reliquary/core/header_analyzer.py
+          reliquary/core/attachment_inspector.py
           reliquary/gui/export_actions.py
           reliquary/gui/tabs.py
           reliquary/gui/windowing.py
@@ -95,11 +101,20 @@ jobs:
             echo EXE too small
             exit /b 1
           )
+      - name: SHA256
+        shell: pwsh
+        run: |
+          Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
+          Get-Content dist\EmailIOCExtractor.exe.sha256
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
           name: EmailIOCExtractor
-          path: dist/EmailIOCExtractor.exe
+          path: |
+            dist/EmailIOCExtractor.exe
+            dist/EmailIOCExtractor.exe.sha256
           if-no-files-found: error
 
   release:
@@ -121,6 +136,12 @@ jobs:
           pip install -e .
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
+      - name: SHA256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  EmailIOCExtractor.exe" | Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
+          Get-Content dist\EmailIOCExtractor.exe.sha256
       - name: Extract changelog snippet
         shell: bash
         run: |
@@ -137,11 +158,19 @@ jobs:
                   started = True
               if started:
                   out.append(line)
-          Path("release_notes.md").write_text("\n".join(out) + "\n", encoding="utf-8")
+          sha = Path("dist/EmailIOCExtractor.exe.sha256").read_text(encoding="utf-8").strip()
+          digest = sha.split()[0] if sha else "(missing)"
+          body = "\n".join(out) + "\n\n## Artifacts\n\n"
+          body += "- `EmailIOCExtractor.exe` — **Lite** build (no RAR/QR extras bundled)\n"
+          body += f"- SHA256: `{digest}`\n"
+          body += "- **Full** (RAR/QR): source install `pip install -e \".[rar,qr]\"`\n"
+          Path("release_notes.md").write_text(body, encoding="utf-8")
           PY
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/EmailIOCExtractor.exe
+          files: |
+            dist/EmailIOCExtractor.exe
+            dist/EmailIOCExtractor.exe.sha256
           body_path: release_notes.md
           generate_release_notes: true

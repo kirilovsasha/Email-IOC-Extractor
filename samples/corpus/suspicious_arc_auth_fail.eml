@@ -1,0 +1,13 @@
+Received: from mail.protection.outlook.com by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: sender@partner.example
+To: user@company.local
+Subject: Status with ARC
+Message-ID: <sus10@partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+ARC-Authentication-Results: i=1; mx.company.local; spf=fail; dkim=fail; dmarc=fail
+ARC-Seal: i=1; a=rsa-sha256; s=arc; d=company.local; b=xyz
+
+Routine note with broken auth but ARC present.
+https://partner.example/status

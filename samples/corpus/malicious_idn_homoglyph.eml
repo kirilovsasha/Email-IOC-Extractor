@@ -1,0 +1,10 @@
+From: "Apple Support" <secure@xn--pple-43d.com>
+To: user@company.local
+Subject: URGENT: verify your Apple ID immediately
+Message-ID: <mal5@xn--pple-43d.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+
+Your Apple ID will be locked. Confirm your identity:
+https://xn--pple-43d.com/login

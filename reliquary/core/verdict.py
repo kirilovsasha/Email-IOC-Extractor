@@ -61,12 +61,18 @@ class VerdictConfig:
     weight_qr_present: int = 8
     weight_lookalike: int = 22
     weight_idn: int = 12
+    # Mitigating (negative) signals — reduce score when auth/path looks trusted
+    weight_dmarc_pass_aligned: int = -12
+    weight_auth_full_pass: int = -6
+    weight_internal_relay: int = -8
     # Per-category caps (evidence stacking without score explosion)
     cap_headers: int = 45
     cap_attachments: int = 40
     cap_urls: int = 30
     cap_content: int = 35
     cap_lookalike: int = 30
+    # Max absolute mitigation (floor on how much score can be reduced)
+    cap_mitigation: int = 25
 
 
 _CONFIG_KEYS = frozenset(f.name for f in fields(VerdictConfig))
@@ -382,6 +388,145 @@ def _score_lookalike(
     return _apply_cap(parts, cfg.cap_lookalike, "lookalike")
 
 
+_INTERNAL_RELAY_RE = re.compile(
+    r"(?i)\b("
+    r"mail\.internal|intranet|"
+    r"outlook\.office365\.com|mail\.protection\.outlook\.com|"
+    r"protection\.outlook\.com|mail\.google\.com|googlemail\.com"
+    r")"
+)
+
+
+def _apply_mitigation_floor(
+    contributions: list[ScoreContribution],
+    max_abs: int,
+) -> tuple[int, list[ScoreContribution]]:
+    """Clamp total mitigation so score cannot be reduced by more than ``max_abs``."""
+    total = sum(c.points for c in contributions)
+    if total >= 0:
+        return 0, []
+    floor = -abs(max_abs)
+    if total >= floor:
+        return total, contributions
+    # Scale negative points up toward floor (less mitigation)
+    if total == 0:
+        return 0, contributions
+    scaled: list[ScoreContribution] = []
+    remaining = floor
+    for i, c in enumerate(contributions):
+        if i == len(contributions) - 1:
+            pts = remaining
+        else:
+            pts = int(round(c.points * floor / total))
+            remaining -= pts
+        scaled.append(
+            ScoreContribution(
+                category="mitigation",
+                points=pts,
+                reason=c.reason + " [cap]",
+                capped=True,
+            )
+        )
+    drift = floor - sum(c.points for c in scaled)
+    if drift and scaled:
+        scaled[-1] = ScoreContribution(
+            category="mitigation",
+            points=scaled[-1].points + drift,
+            reason=scaled[-1].reason,
+            capped=True,
+        )
+    return floor, scaled
+
+
+def _score_mitigations(
+    result: AnalysisResult, cfg: VerdictConfig
+) -> tuple[int, list[ScoreContribution]]:
+    """Negative contributions when auth/path looks trusted (DMARC pass, internal MX).
+
+    Skipped when strong attack signals are present so phishing with forged
+    'pass' auth (or brand spoof) is not under-scored.
+    """
+    mid = result.mail_identity
+    if mid is None:
+        return 0, []
+
+    high_att = {
+        "double_extension",
+        "dangerous_extension",
+        "ole_macros_suspected",
+        "ooxml_vba",
+        "macro_enabled_office",
+        "nested_email",
+        "qr_url",
+        "archive_dangerous_member",
+        "encrypted_archive",
+        "mime_mismatch",
+    }
+    if any(high_att.intersection(a.risk_flags) for a in result.attachments):
+        return 0, []
+    bad_content = {
+        "href_mismatch",
+        "credential_harvest",
+        "qr_only",
+        "hidden_text",
+    }
+    if bad_content.intersection(result.content_signals or []):
+        return 0, []
+
+    attack_headers = any(
+        h.severity in (Severity.HIGH, Severity.CRITICAL)
+        and not (h.name.endswith(" result") and (h.value or "").lower() == "pass")
+        for h in result.headers
+    )
+    auth_impaired = any(
+        h.name.endswith(" result")
+        and (h.value or "").lower()
+        in ("fail", "softfail", "permerror", "temperror", "none")
+        for h in result.headers
+    )
+    if attack_headers or auth_impaired:
+        return 0, []
+
+    parts: list[ScoreContribution] = []
+    has_alignment_fail = any(h.name == "DKIM alignment" for h in result.headers)
+
+    dmarc_ok = (mid.dmarc or "").lower() == "pass"
+    dkim_ok = (mid.dkim or "").lower() == "pass"
+    spf_ok = (mid.spf or "").lower() == "pass"
+
+    if dmarc_ok and dkim_ok and not has_alignment_fail:
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_dmarc_pass_aligned,
+                "DMARC+DKIM pass без misalignment — смягчение score",
+            )
+        )
+    elif spf_ok and dkim_ok and dmarc_ok:
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_auth_full_pass,
+                "SPF+DKIM+DMARC pass — смягчение score",
+            )
+        )
+
+    hop = mid.first_received or ""
+    # Only credit internal/trusted *origin* hops, not the local receiving MX.
+    from_m = re.search(r"(?i)\bfrom\s+([^\s\(;]+)", hop)
+    hop_from = from_m.group(1) if from_m else hop
+    if hop_from and _INTERNAL_RELAY_RE.search(hop_from):
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_internal_relay,
+                "Received hop похож на внутренний / доверенный MX",
+            )
+        )
+
+    return _apply_mitigation_floor(parts, cfg.cap_mitigation)
+
+
 def render_verdict(
     result: AnalysisResult,
     cfg: VerdictConfig | None = None,
@@ -402,12 +547,13 @@ def render_verdict(
         lambda r, c: _score_urls(r, c),
         lambda r, c: _score_content(r, c),
         lambda r, c: _score_lookalike(r, c, brands_path=brands_path),
+        lambda r, c: _score_mitigations(r, c),
     ):
         part, parts = scorer(result, cfg)
         score += part
         breakdown.extend(parts)
 
-    reasons = [b.reason for b in breakdown if b.points > 0]
+    reasons = [b.reason for b in breakdown if b.points != 0]
     seen: set[str] = set()
     uniq_reasons: list[str] = []
     for r in reasons:

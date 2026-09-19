@@ -1,0 +1,11 @@
+Return-Path: <bounce@totally-other.net>
+From: support@vendor.example
+To: user@company.local
+Subject: Password will expire soon
+Message-ID: <sus14@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=softfail; dkim=pass; dmarc=pass
+
+Please verify your account immediately:
+https://vendor.example/reset

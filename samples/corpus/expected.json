@@ -1,10 +1,30 @@
 {
-  "benign_newsletter.eml": {
+  "benign_arc_forward.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_calendar_invite.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_dmarc_pass_only.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_google_workspace.eml": {
     "level": "benign",
     "score_min": 0,
     "score_max": 9
   },
   "benign_hr_notice.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_internal_relay.eml": {
     "level": "benign",
     "score_min": 0,
     "score_max": 9
@@ -19,30 +39,161 @@
       "URL"
     ]
   },
+  "benign_newsletter.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "campaign_a1.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29,
+    "reason_substrings": [
+      ".xyz"
+    ]
+  },
+  "campaign_a2.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29,
+    "reason_substrings": [
+      ".xyz"
+    ]
+  },
   "fp_hr_pdf_mention.eml": {
     "level": "benign",
     "score_min": 0,
     "score_max": 9
   },
-  "unknown_weak_signals.eml": {
+  "fp_softfail_legit_brand.eml": {
     "level": "unknown",
     "score_min": 10,
-    "score_max": 29,
+    "score_max": 29
+  },
+  "malicious_encrypted_zip.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
     "reason_substrings": [
-      ".xyz",
-      "SPF",
-      "none"
+      "encrypted",
+      "archive",
+      "fail"
     ]
   },
-  "unknown_spf_none.eml": {
-    "level": "unknown",
-    "score_min": 10,
-    "score_max": 29,
+  "malicious_exe_ip_url.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
     "reason_substrings": [
-      "SPF",
-      ".top",
-      "none"
+      "double_extension",
+      "IP"
     ]
+  },
+  "malicious_idn_homoglyph.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
+  },
+  "malicious_ip_url_urgency.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
+  },
+  "malicious_lookalike.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "lookalike",
+      "micros0ft",
+      "microsoft"
+    ]
+  },
+  "malicious_macro_docm.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
+  },
+  "malicious_phishing_sample.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "double_extension",
+      "dangerous_extension",
+      "SPF",
+      "fail"
+    ]
+  },
+  "suspicious_arc_auth_fail.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59
+  },
+  "suspicious_bec_ceo.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59
+  },
+  "suspicious_brand_spoof.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "Reply-To",
+      "spoof",
+      "Display",
+      "Microsoft"
+    ]
+  },
+  "suspicious_credential_owa.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "OWA",
+      "password",
+      "webmail",
+      "login",
+      "credential"
+    ]
+  },
+  "suspicious_dkim_misalign.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59
+  },
+  "suspicious_dmarc_fail.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "DMARC",
+      "softfail",
+      "fail"
+    ]
+  },
+  "suspicious_hidden_html.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59
+  },
+  "suspicious_href_mismatch.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "evil.top",
+      "href",
+      "mismatch",
+      ".top",
+      "microsoft"
+    ]
+  },
+  "suspicious_html_form.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59
   },
   "suspicious_invoice_tld.eml": {
     "level": "suspicious",
@@ -50,6 +201,20 @@
     "score_max": 59,
     "reason_substrings": [
       ".club"
+    ]
+  },
+  "suspicious_messenger_lure.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
+  },
+  "suspicious_nested_eml.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "nested",
+      "evil.top"
     ]
   },
   "suspicious_password_safelinks.eml": {
@@ -65,79 +230,54 @@
       "urgent"
     ]
   },
-  "suspicious_brand_spoof.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59,
-    "reason_substrings": [
-      "Reply-To",
-      "spoof",
-      "Display",
-      "Microsoft"
-    ]
+  "suspicious_qr_mention.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
-  "suspicious_href_mismatch.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59,
-    "reason_substrings": [
-      "evil.top",
-      "href",
-      "mismatch",
-      ".top",
-      "microsoft"
-    ]
+  "suspicious_return_path_mismatch.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
-  "suspicious_credential_owa.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59,
-    "reason_substrings": [
-      "OWA",
-      "password",
-      "webmail",
-      "login",
-      "credential"
-    ]
+  "unknown_bec_wire.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
-  "suspicious_dmarc_fail.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59,
-    "reason_substrings": [
-      "DMARC",
-      "softfail",
-      "fail"
-    ]
+  "unknown_empty_body.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
-  "malicious_lookalike.eml": {
-    "level": "malicious",
-    "score_min": 60,
-    "score_max": 100,
-    "reason_substrings": [
-      "lookalike",
-      "micros0ft",
-      "microsoft"
-    ]
+  "unknown_proofpoint_url.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
-  "malicious_phishing_sample.eml": {
-    "level": "malicious",
-    "score_min": 60,
-    "score_max": 100,
+  "unknown_short_received.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "unknown_spf_none.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29,
     "reason_substrings": [
-      "double_extension",
-      "dangerous_extension",
       "SPF",
-      "fail"
+      ".top",
+      "none"
     ]
   },
-  "malicious_exe_ip_url.eml": {
-    "level": "malicious",
-    "score_min": 60,
-    "score_max": 100,
+  "unknown_weak_signals.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29,
     "reason_substrings": [
-      "double_extension",
-      "IP"
+      ".xyz",
+      "SPF",
+      "none"
     ]
   }
 }

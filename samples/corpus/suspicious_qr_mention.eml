@@ -1,0 +1,10 @@
+From: facilities@vendor.example
+To: user@company.local
+Subject: Scan QR to unlock door
+Message-ID: <sus11@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+Scan the QR code image in the next message to verify your account immediately.
+Do not share the code. Visit https://door-access.club/unlock

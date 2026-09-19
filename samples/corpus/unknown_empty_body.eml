@@ -1,0 +1,8 @@
+From: blank@example.com
+To: you@company.local
+Subject: (no subject)
+Message-ID: <unk5@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=none; dkim=none; dmarc=none
+

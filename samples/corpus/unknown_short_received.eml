@@ -1,0 +1,10 @@
+Received: from unknown (unknown [203.0.113.50]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: tip@random.example
+To: you@company.local
+Subject: FYI
+Message-ID: <unk4@random.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=none; dkim=none; dmarc=none
+
+See https://notes.example/read/1

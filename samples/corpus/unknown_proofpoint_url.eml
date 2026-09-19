@@ -1,0 +1,11 @@
+From: news@vendor.example
+To: user@company.local
+Subject: Link wrapped
+Message-ID: <unk6@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=none; dkim=none; dmarc=none
+
+<html><body>
+<a href="https://urldefense.proofpoint.com/v2/url?u=https-3A__notes.partner.example_read&amp;d=DwMFaQ">notes</a>
+</body></html>

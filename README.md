@@ -1,85 +1,105 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.3.0
+**Mail. Extract. Decide.** · v2.4.0
 
-🔒 Офлайн-инструмент SOC для triage электронных писем (`.eml` / `.msg`):
-заголовки, вложения, URL rewrite, IOC как доказательства и **вердикт**
-(benign / unknown / suspicious / malicious) со score, разбором весов и рекомендуемыми действиями.
+Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
+URL rewrite, IOC как доказательства и **вердикт**
+(`benign` / `unknown` / `suspicious` / `malicious`) со score, разбором весов
+(включая mitigations) и рекомендуемыми действиями.
 
-📡 Сеть не используется. Пакет Python — `reliquary`; пользовательское имя — **Email IOC Extractor**.
+Сеть не используется. Пакет Python — `reliquary`; продукт — **Email IOC Extractor**.
 
-📦 Экспорт: JSON · CSV · Batch CSV · Handoff (текст для ITSM).
-
-| 🖥️ GUI | ⌨️ CLI | 📁 Batch | 🎫 Handoff | 🧩 Org profile |
+Экспорт: JSON (`schema_version`) · CSV · Batch CSV · Handoff (ITSM).
 
 ---
 
-## 🚀 Быстрый старт (Windows)
+## Быстрый старт (Windows)
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e .
 
 run_gui.bat
 ```
 
-🧪 Тесты и сборка EXE: `pip install -r requirements-dev.txt`
-
-Опционально:
+Требуется **Python ≥ 3.10**. CLI без GUI:
 
 ```bash
-pip install -e ".[rar]"   # RAR-архивы во вложениях
-pip install -e ".[qr]"    # QR в изображениях/архивах
+reliquary mail.eml
+# или
+python -m reliquary.cli mail.eml
 ```
 
-⚠️ При ошибке GUI смотрите `email_ioc_extractor_error.log` рядом с bat/exe.
+Тесты и сборка EXE: `pip install -r requirements-dev.txt`
+
+Опциональные extras:
+
+```bash
+pip install -e ".[rar]"   # RAR во вложениях
+pip install -e ".[qr]"    # QR в изображениях/архивах
+pip install -e ".[rar,qr]"
+```
+
+### Lite vs Full
+
+| Сборка | Что внутри |
+|--------|------------|
+| **Lite** — `EmailIOCExtractor.exe` из CI / GitHub Release | Базовый разбор; без rarfile / pyzbar |
+| **Full** — source с extras | RAR inventory + QR decode |
+
+В Release notes публикуется **SHA256** Lite EXE.
+
+При ошибке GUI смотрите `email_ioc_extractor_error.log` рядом с bat/exe.
 
 ---
 
-## 📋 Analyst runbook
+## Analyst runbook
 
-1. 📧 Откройте письмо (`.eml` / `.msg`), папку или вставьте RFC822 (слева / Ctrl+Enter).
-2. ⚖️ Смотрите вкладку **Вердикт**: уровень, score, **разбор score** (+N по категориям), действия.
-3. 🔎 При необходимости ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы** IOC.
-4. 🎫 Скопируйте **Handoff** (Ctrl+H) в тикет или экспортируйте JSON / CSV / Batch CSV (Ctrl+E).
-5. 📁 Пакет писем → вкладка **Пакет**: файл · вердикт · score · top reason · связанные кампании.
+1. Откройте письмо (`.eml` / `.msg`), папку или вставьте RFC822 слева (Ctrl+Enter).
+2. Вкладка **Вердикт**: уровень, score, **разбор** (`+N` risk / `−N` mitigation), действия.
+3. При шуме ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы** IOC.
+4. **Handoff** (Ctrl+H) → тикет; либо JSON / CSV / Batch CSV (Ctrl+E).
+5. Пакет писем → вкладка **Пакет**: файл · вердикт · score · top reason · кампании;
+   клик **`[diff vs peer]`** — сравнение IOC/score с письмом той же кампании.
 
 ---
 
-## 🖥️ GUI
+## GUI
 
-| | Область | Содержание |
-|---|---------|------------|
-| 📧 | Письмо | `.eml` / `.msg` / папка / RFC822 / drag-drop |
-| ⚖️ | Вердикт | score · разбор весов · причины · действия |
-| 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
-| 📁 | Пакет | сводка по файлам + группировка кампаний |
-| 📋 | Буфер | Msg-ID · Handoff · копирование IOC |
-| 💾 | Экспорт | JSON / CSV / Batch CSV / Handoff |
+| Область | Содержание |
+|---------|------------|
+| Письмо | `.eml` / `.msg` / папка / RFC822 / drag-drop |
+| Вердикт | score · breakdown (+/−) · причины · действия |
+| Доказательства | вложения · URL rewrite · IOC-таблица |
+| Пакет | сводка + кампании + diff peer |
+| Буфер | Msg-ID · Handoff · копирование IOC |
+| Экспорт | JSON / CSV / Batch CSV / Handoff |
 
-**Фильтры по умолчанию:** SafeLinks / CDN-шум / локальные IP скрыты; «к разбору» включён;
+**Фильтры по умолчанию:** SafeLinks / CDN / локальные IP скрыты; «к разбору» включён;
 крипто и legacy host-IOC (registry / mutex / …) скрыты.
 
-### ⌨️ Горячие клавиши
+### Горячие клавиши
 
 | Клавиши | Действие |
 |---------|----------|
-| Ctrl+O | 📂 Открыть письмо |
-| Ctrl+Enter | ▶ Разбор RFC822 из левой панели |
-| Ctrl+H | 🎫 Копировать Handoff |
-| Ctrl+E | 💾 Экспорт (выбранный формат) |
-| Ctrl+L | 🌓 Тема light / dark |
-| Ctrl+D | 📏 Плотность IOC (compact / normal / comfortable) |
-| Ctrl± | 🔍 Масштаб UI |
-| 1–6 | 📑 Вкладки (Вердикт … Ошибки) |
-| Ctrl+F | 🔎 Поиск по IOC |
+| Ctrl+O | Открыть письмо |
+| Ctrl+Enter | Разбор RFC822 из левой панели |
+| Ctrl+H | Копировать Handoff |
+| Ctrl+E | Экспорт (выбранный формат) |
+| Ctrl+L | Тема light / dark |
+| Ctrl+D | Плотность IOC (compact / normal / comfortable) |
+| Ctrl± | Масштаб UI |
+| 1–6 | Вкладки результатов (Вердикт … Ошибки) |
+| Ctrl+F | Поиск по IOC |
 
-Prefs сохраняются в `ui_prefs.json` рядом с приложением.
+Prefs: `ui_prefs.json` рядом с приложением
+(`appearance_mode`, `ioc_density`, пути overrides, `post_export_hook`, …).
 
 ---
 
-## ⌨️ CLI
+## CLI
 
 ```bash
 # одно письмо — вердикт в stderr, краткий JSON в stdout
@@ -98,95 +118,111 @@ reliquary mail.eml --allowlist allowlist_extra.txt
 reliquary mail.eml --verdict verdict_extra.json
 reliquary mail.eml --handoff-template handoff_extra.txt --handoff out.txt
 reliquary mail.eml --profile org_profile/
+reliquary mail.eml --profile org_profile.example/m365
 reliquary mail.eml --profile org_pack.zip
 
-# IOC
+# IOC-фильтры (по умолчанию как в GUI)
 reliquary mail.eml --full-ioc-types
 reliquary mail.eml --no-actionable --no-hide-rewriter
+
+# после экспорта — локальная команда; путь к файлу добавляется последним argv
+reliquary mail.eml --json out.json --post-export-hook "python scripts/my_hook.py"
 ```
 
-Фильтры CLI по умолчанию совпадают с GUI. Снять: `--no-actionable`, `--no-hide-rewriter`, …
+Снять фильтры: `--no-actionable`, `--no-hide-rewriter`, `--no-hide-allowlisted`, `--no-hide-private`.  
 Полный отчёт в stdout: `--stdout-json`. Только IOC-массив: `--iocs-only`.
 
+JSON содержит top-level **`schema_version`** (сейчас `1`) — см. [`docs/TUNING.md`](docs/TUNING.md).
+
 ---
 
-## 🔬 Что анализируется
+## Что анализируется
 
 Корневой вход — **только письма** (`.eml` / `.msg`).
-Внутри письма разбираются вложения: Office, ZIP / 7z / RAR\*, nested `.eml` / `.msg`, OLE / macros, QR\*.
+Внутри письма: Office, ZIP / 7z / RAR\*, nested `.eml` / `.msg`, OLE / macros, QR\*.
 
-\* RAR и QR — optional extras; lite EXE их не включает.
+\* RAR и QR — optional extras; Lite EXE их не включает.
 
-| | Сигнал | Примеры |
-|---|--------|---------|
-| 📨 | Заголовки | SPF / DKIM / DMARC (fail vs softfail), alignment, ARC, Reply-To / Return-Path mismatch, display-name spoof, Received |
-| 📝 | Тело | urgency / social engineering, credential / OWA login, href≠видимый текст, скрытый HTML, формы |
-| 🔗 | URL | SafeLinks / Proofpoint / Barracuda / Mimecast / … unwrap (офлайн) |
-| 🎭 | Lookalike | IDN / punycode, homoglyph, Levenshtein к брендам (`brands.txt`) |
-| 📎 | Вложения | double ext, macros, encrypted archives, nested mail, QR-URL |
-| 🎯 | IOC | IP, домены, URL, хеши вложений — как evidence для экспорта / handoff |
+| Сигнал | Примеры |
+|--------|---------|
+| Заголовки | SPF / DKIM / DMARC (fail vs softfail), alignment, ARC, Reply-To / Return-Path, display-name spoof, Received |
+| Тело | urgency / SE, credential / OWA, href≠label, скрытый HTML, формы |
+| URL | SafeLinks / Proofpoint / Barracuda / Mimecast / … unwrap (офлайн) |
+| Lookalike | IDN / punycode, homoglyph, Levenshtein к брендам (`brands.txt`) |
+| Вложения | double ext, macros, encrypted archives, nested mail, QR-URL |
+| IOC | IP, домены, URL, хеши — evidence для экспорта / handoff |
 
-**Вердикт (score 0–100)** с caps по категориям (headers / attachments / urls / content / lookalike),
-чтобы одинаковые флаги не раздували malicious. Пороги по умолчанию:
+### Вердикт (score 0–100)
 
-| | Уровень | Score |
-|---|---------|-------|
-| ✅ | benign | 0–9 |
-| ❔ | unknown | 10–29 |
-| ⚠️ | suspicious | 30–59 |
-| 🛑 | malicious | ≥ 60 |
+Сумма вкладов по категориям с **caps** (headers / attachments / urls / content / lookalike)
+и **mitigations** (отрицательные веса: DMARC+DKIM pass, trusted Received hop).
+Mitigations не применяются при auth fail/softfail/none, HIGH-атаках в заголовках,
+опасных вложениях или content signals (href mismatch, credential harvest, …).
 
-Веса встроены в `reliquary/core/verdict.py`; override — `verdict_extra.json`.
+| Уровень | Score |
+|---------|-------|
+| benign | 0–9 |
+| unknown | 10–29 |
+| suspicious | 30–59 |
+| malicious | ≥ 60 |
+
+Веса: `reliquary/core/verdict.py`. Override: `verdict_extra.json`.  
+Калибровка FP/FN: [`docs/TUNING.md`](docs/TUNING.md).
 
 ---
 
-## 🧩 Overrides и org profile
+## Overrides и org profile
 
 Файлы рядом с exe / проектом (без пересборки) или через CLI / prefs:
 
-| | Файл / путь | Назначение |
-|---|-------------|------------|
-| ✅ | `allowlist_extra.txt` | доп. домены / IP (см. `allowlist_extra.example.txt`) |
-| ⚖️ | `verdict_extra.json` | веса, пороги, caps (см. `verdict_extra.example.json`) |
-| 🎫 | `handoff_extra.txt` | шаблон ITSM по умолчанию |
-| 🏷️ | `handoff_{level}.txt` | шаблон для `malicious` / `suspicious` / `unknown` / `benign` |
-| 🏛️ | `brands.txt` | доп. бренды для lookalike |
-| 📦 | `org_profile/` или `.zip` | пакет всего выше сразу |
+| Файл / путь | Назначение |
+|-------------|------------|
+| `allowlist_extra.txt` | доп. домены / IP (`allowlist_extra.example.txt`) |
+| `verdict_extra.json` | веса, пороги, caps, mitigations (`verdict_extra.example.json`) |
+| `handoff_extra.txt` | шаблон ITSM по умолчанию |
+| `handoff_{level}.txt` | шаблон для `malicious` / `suspicious` / `unknown` / `benign` |
+| `brands.txt` | бренды для lookalike |
+| `org_profile/` или `.zip` | пакет всего выше |
 
-CLI: `--allowlist` · `--verdict` · `--handoff-template` · `--profile`  
-Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`, `brands_path`, …
+**Пресеты:** [`org_profile.example/m365`](org_profile.example/m365) ·
+[`google`](org_profile.example/google) ·
+[`banking`](org_profile.example/banking) —
+см. [`org_profile.example/README.md`](org_profile.example/README.md).
 
-Подробности пакета: [`org_profile.example/README.md`](org_profile.example/README.md).
+CLI: `--allowlist` · `--verdict` · `--handoff-template` · `--profile` · `--post-export-hook`  
+Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`, `brands_path`, `post_export_hook`, …
 
-### ✏️ Плейсхолдеры handoff
+### Плейсхолдеры handoff
 
 `{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{breakdown}`  
 `{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`
 
-Порядок выбора шаблона: явный путь → `handoff_{level}.txt` (profile / рядом с app) → `handoff_extra.txt` → встроенный блок.
+Порядок шаблона: явный путь → `handoff_{level}.txt` (profile / app dir) → `handoff_extra.txt` → встроенный блок.
 
-В JSON-отчёте и meta: `app_version`, `overrides_loaded`, `profile_dir` — для аудита triage.
+В JSON / meta: `schema_version`, `app_version`, `overrides_loaded`, `profile_dir`.
 
 ---
 
-## 🧪 Корпус и тесты
+## Корпус и тесты
 
-Golden-корпус: `samples/corpus/` + `expected.json` (~15 писем: ✅ benign / ❔ unknown / ⚠️ suspicious / 🛑 malicious).
+Golden corpus: `samples/corpus/` + `expected.json` (**40** писем по всем уровням).
 
 ```bash
 pip install -r requirements-dev.txt
 pip install -e ".[dev]"
 
 pytest -q
-python scripts/corpus_metrics.py          # accuracy уровней + drift score
-python scripts/gen_corpus.py              # пересобрать sample .eml (dev)
+python scripts/corpus_metrics.py                        # accuracy + drift
+python scripts/corpus_metrics.py --inbox path/to/emls   # калибровка на локальном inbox
+python scripts/gen_corpus.py                            # пересобрать sample .eml
+python scripts/regen_expected.py                        # обновить expected.json (dev)
 ```
 
-См. также `samples/corpus/README.md`.
+См. [`samples/corpus/README.md`](samples/corpus/README.md) и [`docs/TUNING.md`](docs/TUNING.md).
 
 ---
 
-## 🏗️ Сборка EXE
+## Сборка EXE
 
 ```bash
 pip install -r requirements-dev.txt
@@ -196,32 +232,36 @@ pyinstaller build/reliquary.spec
 
 или `bash build/build.sh`.
 
-- 📦 Артефакт: `dist/EmailIOCExtractor.exe` (без консоли, без UPX)
-- 🏷️ Версия: `reliquary/__init__.py` → `build/version_info.txt`
-- ✍️ Подпись: `build/sign_exe.ps1`
-- 📜 Лог runtime: `email_ioc_extractor_error.log`
+| | |
+|--|--|
+| Артефакт | `dist/EmailIOCExtractor.exe` (Lite, без консоли, без UPX) + `.sha256` |
+| Версия | `reliquary/__init__.py` → `build/version_info.txt` |
+| Подпись | `build/sign_exe.ps1` (опционально) |
+| Лог | `email_ioc_extractor_error.log` |
 
-CI (GitHub Actions): pytest на Windows + Ubuntu; на push в `main` — сборка EXE + smoke; на тег `v*` — GitHub Release с changelog.
+CI: pytest Windows + Ubuntu, **Python 3.10–3.12**; push в `main` → EXE + smoke + SHA256;
+тег `v*` → GitHub Release с changelog и хешем. История изменений: [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
-## 📂 Структура репозитория
+## Структура репозитория
 
 ```
 reliquary/
-  core/     # pipeline, verdict, lookalike, content_signals, IOC, export,
-            # handoff, allowlist, org_profile, analysis_options, batch
-  gui/      # app + layout / analysis / clipboard / result_panels / ioc_table
-samples/
-  corpus/   # golden verdict EMLs + expected.json
-tests/
-scripts/    # gen_corpus.py, corpus_metrics.py
-build/      # PyInstaller spec, version sync, sign
-org_profile.example/
+  core/     # pipeline, verdict (+ mitigations), lookalike, content_signals,
+            # IOC, diff, export / export_hook, handoff, allowlist, org_profile, batch
+  gui/      # app + mixins: layout, analysis, clipboard, result_panels,
+            # hotkeys, prefs_actions, about, ioc_table
+samples/corpus/          # golden EMLs + expected.json
+org_profile.example/     # README + пресеты m365 / google / banking
+docs/TUNING.md           # калибровка verdict_extra.json
+tests/                   # corpus + доменные тесты (verdict, export, filters, …)
+scripts/                 # gen_corpus, regen_expected, corpus_metrics
+build/                   # PyInstaller, version sync, sign
 ```
 
 ---
 
-## 📄 Лицензия
+## Лицензия
 
 Внутренний инструмент SOC.

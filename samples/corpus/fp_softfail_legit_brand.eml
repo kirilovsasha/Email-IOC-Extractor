@@ -1,0 +1,11 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: noreply@microsoft.com
+To: user@company.local
+Subject: Your Microsoft 365 subscription
+Message-ID: <fp2@microsoft.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=softfail; dkim=pass; dmarc=pass
+
+Your Microsoft 365 subscription renews soon.
+Manage at https://account.microsoft.com/services

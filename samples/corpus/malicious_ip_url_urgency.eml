@@ -1,0 +1,10 @@
+From: help@bad.gq
+To: victim@company.local
+Subject: URGENT: confirm your identity immediately
+Message-ID: <mal7@bad.gq>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+
+Your account is locked. Confirm your identity:
+http://203.0.113.77/login

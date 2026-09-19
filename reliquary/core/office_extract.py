@@ -115,9 +115,9 @@ def extract_docx_text(data: bytes) -> tuple[str, list[str]]:
     except KeyError:
         errors.append("docx: нет word/document.xml")
     except ET.ParseError as exc:
-        errors.append(f"docx XML: {exc}")
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"docx: {exc}")
+        errors.append(f"docx XML: {type(exc).__name__}: {exc}")
+    except (OSError, UnicodeDecodeError, ValueError, RuntimeError) as exc:
+        errors.append(f"docx ({type(exc).__name__}): {exc}")
     finally:
         zf.close()
     return "\n".join(parts), errors
@@ -148,8 +148,8 @@ def extract_xlsx_text(data: bytes) -> tuple[str, list[str]]:
         for sheet in sorted(sheet_names)[:20]:
             try:
                 root = ET.fromstring(zf.read(sheet))
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{sheet}: {exc}")
+            except (ET.ParseError, KeyError, OSError) as exc:
+                errors.append(f"{sheet} ({type(exc).__name__}): {exc}")
                 continue
             for el in root.iter():
                 tag = _local(el.tag)
@@ -165,8 +165,8 @@ def extract_xlsx_text(data: bytes) -> tuple[str, list[str]]:
             if rels in zf.namelist():
                 try:
                     urls.extend(_external_targets_from_rels(zf, rels))
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"{rels}: {exc}")
+                except (OSError, KeyError, ET.ParseError) as exc:
+                    errors.append(f"{rels} ({type(exc).__name__}): {exc}")
 
         if "xl/_rels/workbook.xml.rels" in zf.namelist():
             urls.extend(_external_targets_from_rels(zf, "xl/_rels/workbook.xml.rels"))
@@ -178,8 +178,8 @@ def extract_xlsx_text(data: bytes) -> tuple[str, list[str]]:
             text_chunks.append("URLs:")
             text_chunks.extend(dict.fromkeys(urls))
         return "\n".join(text_chunks), errors
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"xlsx: {exc}")
+    except (ET.ParseError, KeyError, OSError, UnicodeDecodeError, ValueError, RuntimeError) as exc:
+        errors.append(f"xlsx ({type(exc).__name__}): {exc}")
         return "", errors
     finally:
         zf.close()
@@ -211,13 +211,12 @@ def extract_pptx_text(data: bytes) -> tuple[str, list[str]]:
         for slide in slide_files[:40]:
             try:
                 root = ET.fromstring(zf.read(slide))
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{slide}: {exc}")
+            except (ET.ParseError, KeyError, OSError) as exc:
+                errors.append(f"{slide} ({type(exc).__name__}): {exc}")
                 continue
             texts = _collect_text_nodes(root, "t")
             if texts:
                 parts.append(" ".join(texts))
-            # drawingML hyperlinks sometimes inline
             for el in root.iter():
                 href = el.attrib.get(
                     "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
@@ -228,8 +227,8 @@ def extract_pptx_text(data: bytes) -> tuple[str, list[str]]:
             if rels in names:
                 try:
                     urls.extend(_external_targets_from_rels(zf, rels))
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"{rels}: {exc}")
+                except (OSError, KeyError, ET.ParseError) as exc:
+                    errors.append(f"{rels} ({type(exc).__name__}): {exc}")
 
         for notes in notes_files[:40]:
             try:
@@ -237,8 +236,8 @@ def extract_pptx_text(data: bytes) -> tuple[str, list[str]]:
                 texts = _collect_text_nodes(root, "t")
                 if texts:
                     parts.append(" ".join(texts))
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{notes}: {exc}")
+            except (ET.ParseError, KeyError, OSError) as exc:
+                errors.append(f"{notes} ({type(exc).__name__}): {exc}")
 
         if not slide_files:
             errors.append("pptx: слайды не найдены")
@@ -248,8 +247,8 @@ def extract_pptx_text(data: bytes) -> tuple[str, list[str]]:
             parts.append("URLs:")
             parts.extend(dict.fromkeys(urls))
         return "\n".join(parts), errors
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"pptx: {exc}")
+    except (ET.ParseError, KeyError, OSError, UnicodeDecodeError, ValueError, RuntimeError) as exc:
+        errors.append(f"pptx ({type(exc).__name__}): {exc}")
         return "", errors
     finally:
         zf.close()

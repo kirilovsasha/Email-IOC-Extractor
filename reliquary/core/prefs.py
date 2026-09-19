@@ -35,6 +35,8 @@ _DEFAULTS: dict[str, Any] = {
     "profile_dir": "",  # empty = use org_profile/ next to app if present
     "appearance_mode": "dark",  # dark|light
     "ioc_density": "normal",  # compact|normal|comfortable
+    # Local command/script run after successful export; receives export path as argv
+    "post_export_hook": "",
 }
 
 

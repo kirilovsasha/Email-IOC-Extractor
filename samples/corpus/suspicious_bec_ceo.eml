@@ -1,0 +1,11 @@
+From: "CEO" <ceo@company-mail.biz>
+Reply-To: personal@totally-other.net
+To: finance@company.local
+Subject: URGENT: process payment immediately
+Message-ID: <sus7@company-mail.biz>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+I need you to process this payment immediately. Do not discuss with anyone.
+Confirm your identity on the call later.

@@ -1,0 +1,13 @@
+From: notices@partner.example
+To: user@company.local
+Subject: Account notice
+Message-ID: <sus8@partner.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+<html><body>
+<p style="font-size:0;color:#fff;display:none">verify your account password expire unlock</p>
+<p>Please review your account settings.</p>
+<p><a href="https://portal.partner.example/settings">Open settings</a></p>
+</body></html>

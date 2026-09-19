@@ -1,0 +1,10 @@
+{
+  "_comment": "Banking: stricter malicious threshold + stronger brand/lookalike weights. Tune FP via docs/TUNING.md",
+  "threshold_malicious": 55,
+  "threshold_suspicious": 25,
+  "weight_lookalike": 28,
+  "weight_credential_harvest": 18,
+  "weight_href_mismatch": 22,
+  "weight_dmarc_pass_aligned": -10,
+  "cap_mitigation": 20
+}

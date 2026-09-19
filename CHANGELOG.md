@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.0
+
+### Detection / verdict
+- Mitigations: отрицательные веса (DMARC+DKIM pass, trusted Received hop) с `cap_mitigation`
+- Расширенный golden corpus (~40 писем) + `scripts/regen_expected.py`
+
+### Product / UX
+- Diff кампании во вкладке «Пакет» (`[diff vs peer]`)
+- Org profile presets: M365 / Google / banking
+- Post-export hook: prefs `post_export_hook` / CLI `--post-export-hook`
+- JSON `schema_version` для стабильных интеграций
+- GUI: mixins `hotkeys` / `prefs_actions` / `about` (тонкий `app.py`)
+
+### Quality / DX
+- CI: Python 3.10–3.12; mypy на pipeline / ioc_extractor / header_analyzer / attachment_inspector
+- Release: SHA256 рядом с EXE + Lite/Full в notes
+- Узкие except в office/attachment с классом ошибки в notes
+- Тесты по доменам (`test_verdict_scoring`, `test_content_lookalike`, …) вместо v21/v22/v23
+- Docs: `docs/TUNING.md`, калибровка `--inbox`
+
 ## 2.3.0
 
 ### Detection / verdict

@@ -1,0 +1,13 @@
+Received: from outlook.office365.com (outlook.office365.com [40.92.0.1]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: colleague@partner.example
+To: you@company.local
+Subject: Fwd: project notes
+Message-ID: <benign6@partner.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+ARC-Authentication-Results: i=1; mx.company.local; spf=pass; dkim=pass; dmarc=pass
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector; d=company.local; b=abc
+
+Forwarded notes from the partner thread.
+https://www.contoso.com/docs/notes

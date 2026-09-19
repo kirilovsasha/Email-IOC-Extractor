@@ -11,6 +11,7 @@ from pathlib import Path
 from reliquary import __app_name__, __version__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, run_batch
+from reliquary.core.export_hook import run_post_export_hook
 from reliquary.core.exporters import export_batch_csv, export_csv, export_report_json
 from reliquary.core.filter_state import FilterState
 from reliquary.core.formats import collect_supported, formats_help_line, is_supported
@@ -245,6 +246,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Текстовый handoff для тикета (ITSM)",
     )
     exp.add_argument(
+        "--post-export-hook",
+        dest="post_export_hook",
+        default=str(load_prefs().get("post_export_hook") or ""),
+        help=(
+            "Локальная команда после экспорта (путь к файлу — последний аргумент). "
+            "Иначе prefs post_export_hook"
+        ),
+    )
+    exp.add_argument(
         "-o",
         "--stdout-json",
         action="store_true",
@@ -352,12 +362,19 @@ def main(argv: list[str] | None = None) -> int:
     filtered = filters.filtered_result(result)
     filt_meta = filters.serializable()
 
+    hook = str(getattr(args, "post_export_hook", "") or "")
     if args.csv_out:
         export_csv(filtered, args.csv_out)
         print(f"CSV → {args.csv_out}", file=sys.stderr)
+        msg = run_post_export_hook(hook, args.csv_out)
+        if msg:
+            print(f"  {msg}", file=sys.stderr)
     if args.batch_csv_out:
         export_batch_csv(result, args.batch_csv_out, batch_results=batch_results)
         print(f"Batch CSV → {args.batch_csv_out}", file=sys.stderr)
+        msg = run_post_export_hook(hook, args.batch_csv_out)
+        if msg:
+            print(f"  {msg}", file=sys.stderr)
     if args.json_out:
         export_report_json(
             filtered,
@@ -366,6 +383,9 @@ def main(argv: list[str] | None = None) -> int:
             batch_results=batch_results,
         )
         print(f"JSON → {args.json_out}", file=sys.stderr)
+        msg = run_post_export_hook(hook, args.json_out)
+        if msg:
+            print(f"  {msg}", file=sys.stderr)
     if args.handoff_out:
         export_handoff(
             filtered,
@@ -375,6 +395,9 @@ def main(argv: list[str] | None = None) -> int:
             handoff_by_level=handoff_by_level,
         )
         print(f"Handoff → {args.handoff_out}", file=sys.stderr)
+        msg = run_post_export_hook(hook, args.handoff_out)
+        if msg:
+            print(f"  {msg}", file=sys.stderr)
 
     if result.meta and result.meta.overrides_loaded:
         ov = ", ".join(f"{k}={Path(v).name}" for k, v in result.meta.overrides_loaded.items())

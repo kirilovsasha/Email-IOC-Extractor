@@ -97,8 +97,10 @@ def _zip_encrypted(data: bytes) -> bool:
             for info in zf.infolist():
                 if info.flag_bits & 0x1:
                     return True
-    except Exception as exc:  # noqa: BLE001
+    except zipfile.BadZipFile as exc:
         # Fall through to heuristics; caller may still see BadZipFile notes
+        _ = exc
+    except OSError as exc:
         _ = exc
     # AES extra field / Encrypt marker heuristic
     if b"Encrypt" in data[:8192] or b"AE\x01" in data[:16384] or b"AE\x02" in data[:16384]:
@@ -179,8 +181,10 @@ def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str]
                         continue
                     try:
                         nested_data = zf.read(zi)
-                    except Exception as exc:  # noqa: BLE001
-                        notes.append(f"Не прочитан {zi.filename}: {exc}")
+                    except (KeyError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
+                        notes.append(
+                            f"Не прочитан {zi.filename} ({type(exc).__name__}): {exc}"
+                        )
                         continue
                     peeked += 1
                     n_entries, n_flags, n_notes = _inventory_zip(nested_data, depth=depth + 1)
@@ -198,8 +202,8 @@ def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str]
             flags.append("encrypted_archive")
             notes.append("Возможно зашифрованный ZIP (не удалось открыть)")
         return entries, flags, notes
-    except Exception as exc:  # noqa: BLE001
-        notes.append(f"ZIP inventory: {exc}")
+    except (OSError, RuntimeError, ValueError) as exc:
+        notes.append(f"ZIP inventory ({type(exc).__name__}): {exc}")
         return entries, flags, notes
 
     return entries, flags, notes
@@ -221,18 +225,18 @@ def _inventory_7z(data: bytes) -> tuple[list[str], list[str], list[str]]:
             needs_pw = False
             try:
                 needs_pw = bool(zf.needs_password())
-            except Exception:  # noqa: BLE001
+            except (AttributeError, OSError, RuntimeError):
                 needs_pw = False
             if needs_pw:
                 flags.append("encrypted_archive")
                 notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: 7z — содержимое недоступно без пароля")
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, ValueError) as exc:
         msg = str(exc).lower()
         if "password" in msg:
             flags.append("encrypted_archive")
             notes.append("7z: требуется пароль")
         else:
-            notes.append(f"7z inventory: {exc}")
+            notes.append(f"7z inventory ({type(exc).__name__}): {exc}")
             flags.append("archive_unlisted")
         return entries, flags, notes
 
@@ -275,9 +279,9 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
             notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: RAR — содержимое недоступно без пароля")
         names = [i.filename for i in rf.infolist() if not i.is_dir()]
         rf.close()
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, ValueError) as exc:
         flags.append("archive_unlisted")
-        notes.append(f"RAR inventory: {exc}")
+        notes.append(f"RAR inventory ({type(exc).__name__}): {exc}")
         return entries, flags, notes
 
     entries = names[:MAX_ARCHIVE_ENTRIES]
@@ -308,8 +312,8 @@ def _ole_streams(data: bytes) -> tuple[list[str], list[str], list[str]]:
             flags.append("ole_embedded_object")
             notes.append("В OLE есть встроенные OLE-объекты")
         notes.append(f"OLE потоков: {len(streams)}")
-    except Exception as exc:  # noqa: BLE001
-        notes.append(f"OLE разбор ограничен: {exc}")
+    except (OSError, RuntimeError, ValueError, ImportError) as exc:
+        notes.append(f"OLE разбор ограничен ({type(exc).__name__}): {exc}")
     return streams, flags, notes
 
 
@@ -320,8 +324,8 @@ def _qr_urls_from_image(data: bytes) -> tuple[list[str], list[str]]:
 
         payloads, notes = decode_qr_payloads(data)
         return payloads, notes
-    except Exception as exc:  # noqa: BLE001
-        return [], [f"QR: сбой декодера ({exc})"]
+    except (OSError, RuntimeError, ValueError, ImportError) as exc:
+        return [], [f"QR: сбой декодера ({type(exc).__name__}: {exc})"]
 
 
 def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None) -> AttachmentInfo:

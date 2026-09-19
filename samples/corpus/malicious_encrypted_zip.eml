@@ -1,0 +1,21 @@
+Return-Path: <bounce@bad.gq>
+Received: from mail.bad.gq (unknown [203.0.113.88]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "IT" <help@bad.gq>
+To: victim@company.local
+Subject: URGENT: password protected archive
+Message-ID: <mal4@bad.gq>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="Z"
+
+--Z
+Content-Type: text/plain; charset=utf-8
+
+Open the attached archive. Password is 1234. Confirm your identity immediately.
+--Z
+Content-Type: application/zip; name="invoice.zip"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice.zip"
+
+UEsDBBQACQAIAAAAIQAAAAAAAAAAAAAAAAAJAAAAaW52b2ljZS50eHRTW4O/nJcAUesL
+--Z--

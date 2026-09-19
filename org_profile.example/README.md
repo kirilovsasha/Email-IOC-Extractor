@@ -7,13 +7,20 @@ Drop this folder next to the Reliquary exe as `org_profile/`, or point prefs `pr
 | File | Purpose |
 |------|---------|
 | `allowlist_extra.txt` | Extra allowlisted hosts/domains (one per line). Merged with built-in allowlist. |
-| `verdict_extra.json` | Override `VerdictConfig` thresholds, weights, and per-category caps. See `verdict_extra.example.json` at repo root. |
-| `handoff_extra.txt` | Default ITSM handoff template (used when no level-specific file matches). Placeholders: `{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{breakdown}` `{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`. |
-| `handoff_malicious.txt` | Handoff template when verdict is **malicious**. |
-| `handoff_suspicious.txt` | Handoff template when verdict is **suspicious**. |
-| `handoff_unknown.txt` | Handoff template when verdict is **unknown**. |
-| `handoff_benign.txt` | Handoff template when verdict is **benign**. |
-| `brands.txt` | Brand / lookalike watchlist (one brand domain or name per line). |
+| `verdict_extra.json` | Override `VerdictConfig` thresholds, weights, and per-category caps. See [`docs/TUNING.md`](../docs/TUNING.md). |
+| `handoff_extra.txt` | Default ITSM handoff template. |
+| `handoff_{level}.txt` | Level-specific handoff (`malicious` / `suspicious` / `unknown` / `benign`). |
+| `brands.txt` | Brand / lookalike watchlist. |
+
+## Ready-made presets
+
+| Preset | Path | Focus |
+|--------|------|--------|
+| Microsoft 365 | [`m365/`](m365/) | SafeLinks / Outlook / Graph / CDN allowlist + brands |
+| Google Workspace | [`google/`](google/) | Google mail / Drive / CDN allowlist + brands |
+| Banking / finance | [`banking/`](banking/) | Stricter thresholds, bank brand watchlist |
+
+Copy a preset to `org_profile/` next to the exe, or: `reliquary mail.eml --profile org_profile.example/m365`
 
 ## Resolution order for handoff templates
 
@@ -27,4 +34,4 @@ Repo-root examples: `allowlist_extra.example.txt`, `verdict_extra.example.json`,
 
 ## Zip packs
 
-A `.zip` may contain the files at the archive root or inside a single top-level folder. Reliquary extracts to a temp dir and picks the same filenames.
+A `.zip` may contain the files at the archive root or inside a single top-level folder.

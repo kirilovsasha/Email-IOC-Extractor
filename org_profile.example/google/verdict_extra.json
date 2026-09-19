@@ -1,0 +1,5 @@
+{
+  "_comment": "Google Workspace org profile — mild content weight tweak",
+  "weight_credential_harvest": 16,
+  "weight_href_mismatch": 18
+}

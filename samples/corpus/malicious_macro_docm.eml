@@ -1,0 +1,21 @@
+Return-Path: <x@evil.top>
+Received: from evil.top by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: billing@evil.top
+To: finance@company.local
+Subject: Invoice - open urgently
+Message-ID: <mal6@evil.top>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="M"
+
+--M
+Content-Type: text/plain; charset=utf-8
+
+Open the attached macro-enabled document immediately.
+--M
+Content-Type: application/vnd.ms-word.document.macroEnabled.12; name="invoice.docm"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice.docm"
+
+UEsDBBQABgAIAAAAIQAAAAAAAAAAAAAAAAAAAAAAAA==
+--M--

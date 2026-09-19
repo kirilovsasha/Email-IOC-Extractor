@@ -22,9 +22,13 @@
   "weight_qr_present": 8,
   "weight_lookalike": 22,
   "weight_idn": 12,
+  "weight_dmarc_pass_aligned": -12,
+  "weight_auth_full_pass": -6,
+  "weight_internal_relay": -8,
   "cap_headers": 45,
   "cap_attachments": 40,
   "cap_urls": 30,
   "cap_content": 35,
-  "cap_lookalike": 30
+  "cap_lookalike": 30,
+  "cap_mitigation": 25
 }

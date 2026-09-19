@@ -1,0 +1,6 @@
+{
+  "_comment": "M365 org: slightly lower lookalike noise; keep default thresholds. See docs/TUNING.md",
+  "weight_url_rewrite": 3,
+  "weight_lookalike": 24,
+  "cap_lookalike": 32
+}

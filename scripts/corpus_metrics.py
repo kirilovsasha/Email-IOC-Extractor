@@ -1,7 +1,13 @@
-﻿"""Compare samples/corpus/*.eml verdicts against expected.json."""
+﻿"""Compare samples/corpus/*.eml verdicts against expected.json.
+
+Also supports offline calibration on a local inbox folder of .eml/.msg files::
+
+    python scripts/corpus_metrics.py --inbox path/to/emls
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -13,7 +19,37 @@ CORPUS = ROOT / "samples" / "corpus"
 EXPECTED_PATH = CORPUS / "expected.json"
 
 
-def main() -> int:
+def _score_inbox(folder: Path) -> int:
+    files = sorted(
+        p for p in folder.rglob("*") if p.suffix.lower() in {".eml", ".msg"} and p.is_file()
+    )
+    if not files:
+        print(f"No .eml/.msg under {folder}")
+        return 1
+    counts: dict[str, int] = {}
+    scores: list[int] = []
+    print(f"Inbox calibration ({len(files)} files) under {folder}\n")
+    for path in files:
+        result = analyze_file(path)
+        v = result.verdict
+        if v is None:
+            print(f"SKIP  {path.name}: no verdict")
+            continue
+        counts[v.level.value] = counts.get(v.level.value, 0) + 1
+        scores.append(v.score)
+        print(f"  {path.name}: {v.level.value} score={v.score}")
+    print()
+    print("Level distribution:")
+    for level in ("benign", "unknown", "suspicious", "malicious"):
+        print(f"  {level}: {counts.get(level, 0)}")
+    if scores:
+        avg = sum(scores) / len(scores)
+        print(f"Mean score: {avg:.1f}  (n={len(scores)})")
+    print("\nUse docs/TUNING.md to adjust verdict_extra.json / org profile.")
+    return 0
+
+
+def _score_corpus() -> int:
     expected = json.loads(EXPECTED_PATH.read_text(encoding="utf-8"))
     total = len(expected)
     correct_level = 0
@@ -76,6 +112,19 @@ def main() -> int:
         return 1
     print("\nAll levels and score ranges matched.")
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--inbox",
+        type=Path,
+        help="Offline folder of .eml/.msg for score distribution (no expected.json)",
+    )
+    args = parser.parse_args()
+    if args.inbox:
+        return _score_inbox(args.inbox)
+    return _score_corpus()
 
 
 if __name__ == "__main__":

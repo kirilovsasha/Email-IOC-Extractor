@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections import Counter
-from tkinter import messagebox
 
 import customtkinter as ctk
 
-from reliquary import __app_name__, __log_name__, __tagline__, __version__
+from reliquary import __app_name__, __version__
 from reliquary.core.defang import defang_value
-from reliquary.core.error_log import append_error_log
 from reliquary.core.filter_state import CAT_PREF_KEYS, CATEGORY_TYPES, FilterState
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
 from reliquary.core.paths import app_dir
-from reliquary.core.prefs import load_prefs, save_prefs
+from reliquary.core.prefs import load_prefs
+from reliquary.gui.about import show_about_dialog
 from reliquary.gui.analysis_actions import AnalysisActionsMixin
 from reliquary.gui.clipboard_actions import ClipboardActionsMixin
+from reliquary.gui.hotkeys import HotkeysMixin
 from reliquary.gui.layout import LayoutMixin
+from reliquary.gui.prefs_actions import PrefsMixin
 from reliquary.gui.result_panels import ResultPanelsMixin
 from reliquary.gui.tabs import desired_result_tabs
 from reliquary.gui.theme import (
@@ -32,7 +33,6 @@ from reliquary.gui.theme import (
     apply_global_fonts,
     ctk_font,
 )
-from reliquary.gui.windowing import fit_window_geometry
 
 ctk.set_default_color_theme("dark-blue")
 apply_global_fonts()
@@ -43,8 +43,6 @@ _PLACEHOLDER = (
 )
 
 _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
-_TAB_HOTKEYS = ("mail", "att", "url", "ioc", "batch", "err")
-_SCALE_STEPS = (0.85, 1.0, 1.15, 1.25, 1.35, 1.5)
 
 # Filter strip for email evidence (hide = drop noise; focus = narrow list).
 _HIDE_NOISE_FILTERS = (
@@ -79,7 +77,15 @@ _TYPE_FILTER_TIPS = {
 }
 
 
-class ExtractorApp(AnalysisActionsMixin, ClipboardActionsMixin, ResultPanelsMixin, LayoutMixin, ctk.CTk):
+class ExtractorApp(
+    AnalysisActionsMixin,
+    ClipboardActionsMixin,
+    ResultPanelsMixin,
+    HotkeysMixin,
+    PrefsMixin,
+    LayoutMixin,
+    ctk.CTk,
+):
     """Email triage GUI — verdict first, IOC as evidence."""
     def __init__(self) -> None:
         super().__init__()
@@ -559,48 +565,6 @@ class ExtractorApp(AnalysisActionsMixin, ClipboardActionsMixin, ResultPanelsMixi
             vx, vy, vw, vh = 0, 0, sw, sh
         return (sw, sh), (vx, vy, vw, vh)
 
-    def _apply_saved_geometry(self) -> None:
-        geom = str(self._prefs.get("window_geometry") or "1320x820")
-        screen, virtual = self._screen_metrics()
-        fitted = fit_window_geometry(geom, screen=screen, virtual=virtual)
-        try:
-            self.geometry(fitted)
-        except Exception:  # noqa: BLE001
-            self.geometry("1320x820")
-
-    def _persist_prefs(self) -> None:
-        screen, virtual = self._screen_metrics()
-        updates = {
-            "last_dir": self._last_dir,
-            "last_export_dir": self._last_export_dir,
-            "copy_format": self._copy_format.get(),
-            "export_choice": self._export_choice.get(),
-            "ui_scale": self._ui_scale,
-            "window_geometry": fit_window_geometry(
-                str(self.geometry()), screen=screen, virtual=virtual
-            ),
-            "hide_rewriter": bool(self.hide_rewriter.get()),
-            "hide_allowlisted": bool(self.hide_allowlisted.get()),
-            "hide_private": bool(self.hide_private.get()),
-            "actionable_only": bool(self.actionable_only.get()),
-            "full_ioc_types": bool(self.full_ioc_types.get()),
-            "appearance_mode": self._appearance_mode,
-            "ioc_density": self._ioc_density,
-            "brands_path": self._brands_path or "",
-            "profile_dir": self._profile_dir or "",
-        }
-        for name, var in self.cat_vars.items():
-            updates[CAT_PREF_KEYS[name]] = bool(var.get())
-        if not save_prefs(updates):
-            append_error_log("failed to save ui_prefs.json")
-
-    def _on_close(self) -> None:
-        try:
-            self._persist_prefs()
-        except Exception as exc:  # noqa: BLE001
-            append_error_log("prefs save on close failed", exc=exc)
-        self.destroy()
-
     def _schedule_search_refresh(self) -> None:
         if self._search_after_id is not None:
             try:
@@ -705,119 +669,6 @@ class ExtractorApp(AnalysisActionsMixin, ClipboardActionsMixin, ResultPanelsMixi
         self._focus_source_file = ""
         self._update_focus_hint()
         self._on_filter_change()
-
-    def _bind_global_hotkeys(self) -> None:
-        self.bind("<Control-f>", self._focus_search)
-        self.bind("<Control-F>", self._focus_search)
-        self.bind("<Control-c>", self._hotkey_copy_values)
-        self.bind("<Control-C>", self._hotkey_copy_values)
-        self.bind("<Control-Shift-C>", self._hotkey_copy_defanged)
-        self.bind("<Control-Shift-c>", self._hotkey_copy_defanged)
-        self.bind("<Control-h>", lambda _e: self.copy_handoff())
-        self.bind("<Control-H>", lambda _e: self.copy_handoff())
-        self.bind("<Control-e>", lambda _e: self._export_clicked())
-        self.bind("<Control-E>", lambda _e: self._export_clicked())
-        self.bind("<Control-l>", lambda _e: self._cycle_appearance())
-        self.bind("<Control-L>", lambda _e: self._cycle_appearance())
-        self.bind("<Control-d>", lambda _e: self._cycle_density())
-        self.bind("<Control-D>", lambda _e: self._cycle_density())
-        self.bind("<Control-plus>", lambda _e: self._bump_scale(1))
-        self.bind("<Control-equal>", lambda _e: self._bump_scale(1))
-        self.bind("<Control-minus>", lambda _e: self._bump_scale(-1))
-        self.bind("<Control-KP_Add>", lambda _e: self._bump_scale(1))
-        self.bind("<Control-KP_Subtract>", lambda _e: self._bump_scale(-1))
-        for i, key in enumerate(_TAB_HOTKEYS, start=1):
-            self.bind(str(i), lambda _e, k=key: self._hotkey_tab(k))
-            self.bind(f"<Key-{i}>", lambda _e, k=key: self._hotkey_tab(k))
-
-    def _cycle_appearance(self) -> None:
-        nxt = "light" if self._appearance_mode != "light" else "dark"
-        self._appearance_mode = nxt
-        apply_appearance(nxt)
-        self.configure(fg_color=COLORS["bg"])
-        self._persist_prefs()
-        self._set_status(f"Тема: {nxt}")
-
-    def _cycle_density(self) -> None:
-        order = ("compact", "normal", "comfortable")
-        try:
-            idx = order.index(self._ioc_density)
-        except ValueError:
-            idx = 1
-        self._ioc_density = order[(idx + 1) % len(order)]
-        if hasattr(self, "ioc_table"):
-            self.ioc_table.set_density(self._ioc_density)
-        self._persist_prefs()
-        self._set_status(f"Плотность IOC: {self._ioc_density}")
-
-    def _focus_search(self, _event: object = None) -> str:
-        try:
-            self.search_entry.focus_set()
-            self.search_entry.select_range(0, "end")
-        except Exception:  # noqa: BLE001
-            pass
-        return "break"
-
-    def _hotkey_tab(self, key: str) -> str:
-        label = self._tab_label_by_key.get(key)
-        if not label:
-            return "break"
-        self._tab_var.set(label)
-        self._tab_seg.set(label)
-        self._show_tab_frame(key)
-        return "break"
-
-    def _hotkey_copy_values(self, _event: object = None) -> str:
-        # Don't steal copy from text widgets with selection
-        try:
-            focus = self.focus_get()
-            if focus is not None and focus not in (self,):
-                if focus != self.ioc_table.tree:
-                    return ""
-        except Exception:  # noqa: BLE001
-            pass
-        if not self.result:
-            return "break"
-        iocs = self._filtered_iocs()
-        text = "\n".join(i.value for i in iocs)
-        self.clipboard_clear()
-        self.clipboard_append(text)
-        self._set_status(f"Ctrl+C: значений {len(iocs)}")
-        return "break"
-
-    def _hotkey_copy_defanged(self, _event: object = None) -> str:
-        if not self.result:
-            return "break"
-        iocs = self._filtered_iocs()
-        text = "\n".join(defang_value(i.value) for i in iocs)
-        self.clipboard_clear()
-        self.clipboard_append(text)
-        self._set_status(f"Ctrl+Shift+C: defanged {len(iocs)}")
-        return "break"
-
-    def _bump_scale(self, direction: int) -> None:
-        try:
-            idx = _SCALE_STEPS.index(
-                min(_SCALE_STEPS, key=lambda s: abs(s - self._ui_scale))
-            )
-        except ValueError:
-            idx = 1
-        idx = max(0, min(len(_SCALE_STEPS) - 1, idx + direction))
-        self._ui_scale = _SCALE_STEPS[idx]
-        try:
-            ctk.set_widget_scaling(self._ui_scale)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            self.ioc_table.set_ui_scale(self._ui_scale)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            self._apply_panel_fonts()
-        except Exception:  # noqa: BLE001
-            pass
-        self._persist_prefs()
-        self._set_status(f"Масштаб UI: {int(self._ui_scale * 100)}%")
 
     # ----------------------------------------------------------- filtering
     def _current_filter_state(self) -> FilterState:
@@ -959,36 +810,12 @@ class ExtractorApp(AnalysisActionsMixin, ClipboardActionsMixin, ResultPanelsMixi
         )
 
     def show_about(self) -> None:
-        from pathlib import Path
-
-        root = app_dir()
-        overrides = ""
-        if self.result and self.result.meta and self.result.meta.overrides_loaded:
-            ov = self.result.meta.overrides_loaded
-            overrides = "\nOverrides: " + ", ".join(
-                f"{k}={Path(v).name}" for k, v in ov.items()
-            )
-        elif self._profile_dir:
-            overrides = f"\nProfile: {self._profile_dir}"
-        messagebox.showinfo(
-            f"О программе — {__app_name__}",
-            f"{__app_name__} v{__version__}\n"
-            f"{__tagline__}\n\n"
-            "Офлайн анализ писем (.eml / .msg).\n"
-            "Вердикт — главный результат; IOC — доказательства.\n"
-            "Сеть заблокирована.\n\n"
-            "1. Открыть письмо или папку\n"
-            "2. Вердикт — score / разбор / действия\n"
-            "3. Вложения · URL · IOC\n"
-            "4. Экспорт JSON / CSV / Handoff\n\n"
-            f"Лог: {__log_name__}\n"
-            "Ctrl+O · Ctrl+H handoff · Ctrl+E экспорт · Ctrl+L тема · Ctrl+D плотность\n"
-            f"Тема: {self._appearance_mode} · IOC: {self._ioc_density}"
-            f"{overrides}\n\n"
-            f"Папка:\n{root}",
+        show_about_dialog(
+            appearance_mode=self._appearance_mode,
+            ioc_density=self._ioc_density,
+            result=self.result,
+            profile_dir=self._profile_dir,
         )
-
-
 
 
 def run() -> None:

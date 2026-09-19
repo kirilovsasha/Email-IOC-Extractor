@@ -6,6 +6,9 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
+# Bump when top-level JSON report shape changes in a breaking way.
+SCHEMA_VERSION = 1
+
 
 class IocType(str, Enum):
     IPV4 = "ipv4"
@@ -238,6 +241,7 @@ class AnalysisResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": SCHEMA_VERSION,
             "source_path": self.source_path,
             "source_kind": self.source_kind,
             "subject": self.subject,

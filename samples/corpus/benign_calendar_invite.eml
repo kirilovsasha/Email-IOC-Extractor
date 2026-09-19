@@ -1,0 +1,11 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: calendar@contoso.com
+To: user@company.local
+Subject: Meeting: Q3 planning
+Message-ID: <benign7@contoso.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+You are invited to Q3 planning tomorrow at 10:00.
+Join: https://teams.microsoft.com/l/meetup-join/example
