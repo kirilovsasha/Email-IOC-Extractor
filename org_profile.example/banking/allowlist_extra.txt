@@ -1,0 +1,6 @@
+# Common bank portals / payment noise (extend for your region)
+*.visa.com
+*.mastercard.com
+*.swift.com
+*.paypal.com
+*.stripe.com

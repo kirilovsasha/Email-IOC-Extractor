@@ -1,0 +1,11 @@
+# Microsoft CDN / mail infrastructure (noise)
+*.outlook.com
+*.office365.com
+*.microsoft.com
+*.microsoftonline.com
+*.azureedge.net
+*.office.net
+*.sharepoint.com
+*.windows.net
+nam.safelinks.protection.outlook.com
+urldefense.proofpoint.com

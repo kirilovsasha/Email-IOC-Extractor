@@ -1,0 +1,11 @@
+# Google / Workspace noise
+*.google.com
+*.googleapis.com
+*.gstatic.com
+*.googleusercontent.com
+*.gmail.com
+*.googlemail.com
+mail.google.com
+accounts.google.com
+drive.google.com
+docs.google.com

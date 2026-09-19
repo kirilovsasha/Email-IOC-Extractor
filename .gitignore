@@ -17,7 +17,11 @@ _t_*.csv
 _t_*.json
 _t_*.txt
 ui_prefs.json
-allowlist_extra.txt
+# Local runtime overrides next to the app (do not ignore examples under org_profile.example/)
+/allowlist_extra.txt
+/verdict_extra.json
+/handoff_extra.txt
+/brands.txt
 email_ioc_extractor_error.log
 reliquary_error.log
 ioc_extractor_error.log
