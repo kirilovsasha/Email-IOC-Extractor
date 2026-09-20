@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.6.0
+
+### Hardening / core
+- Zip-bomb inflate-ratio + declared-size guards in attachment ZIP inventory
+- Source EML/MSG size cap (`MAX_SOURCE_BYTES`); shared `_enrich_parsed_result` in pipeline
+- URL unwrap: Cisco Umbrella / Trend, Google `/url`, Defender ATP / aka.ms
+- Lookalike: stricter short-brand levenshtein to cut FP
+- Allowlist append API; encrypted-archive handoff note helper
+- Offline `update.json` manifest check
+
+### GUI / analyst workflow
+- Batch tab Treeview (select → focus; double-click → campaign diff)
+- ПКМ: allowlist host, verdict override, encrypted-archive note
+- Cancel applies to single-mail text analysis; Stop button shared
+- Prefs `ui_lang` / `high_contrast`; i18n catalog; About shows update + runbook path
+
+### Quality / DX
+- FP corpus samples + drift gate (`CORPUS_MAX_DRIFT`); more unwrap snapshots
+- Docs: `ANALYST_RU.md`, `PACKAGING.md`, `update.json.example`
+- CI: optional Full EXE artifact; broader mypy; coverage floor raised
+
 ## 2.5.0
 
 ### Security / hardening

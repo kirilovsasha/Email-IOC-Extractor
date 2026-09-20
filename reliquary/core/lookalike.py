@@ -214,7 +214,13 @@ def check_domain(
             continue
         # Brand label in a different TLD / extra labels (microsoft-secure.com)
         brand_label = brand_reg.split(".")[0]
-        if len(brand_label) >= 5 and brand_label in norm.replace("-", "") and brand_reg not in reg:
+        # Short brand labels (vtb, sber, …) are noisy for substring / edit-distance FP
+        short_brand = len(brand_label) < 5
+        if (
+            len(brand_label) >= 5
+            and brand_label in norm.replace("-", "")
+            and brand_reg not in reg
+        ):
             if brand_label not in reg.split(".")[0]:
                 # e.g. secure-microsoft.top
                 pass
@@ -229,7 +235,13 @@ def check_domain(
                 )
                 continue
         dist = levenshtein(norm, brand_norm)
-        if 1 <= dist <= max_distance and abs(len(norm) - len(brand_norm)) <= max_distance:
+        eff_max = 1 if short_brand else max_distance
+        len_slack = 0 if short_brand else max_distance
+        if (
+            1 <= dist <= eff_max
+            and abs(len(norm) - len(brand_norm)) <= len_slack
+            and (not short_brand or len(norm) >= 4)
+        ):
             hits.append(
                 LookalikeHit(
                     value=domain,

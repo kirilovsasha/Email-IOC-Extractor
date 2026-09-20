@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -105,6 +106,10 @@ def _score_corpus() -> int:
     print()
     print(f"Level accuracy: {correct_level}/{total}")
     print(f"Mean |score - range mid|: {avg_drift:.2f}")
+    max_drift = float(os.environ.get("CORPUS_MAX_DRIFT", "25"))
+    if avg_drift > max_drift:
+        print(f"\nDRIFT GATE FAIL: mean abs drift {avg_drift:.2f} > {max_drift}")
+        return 1
     if mismatches:
         print("\nMismatches:")
         for m in mismatches:

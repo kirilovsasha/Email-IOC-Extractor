@@ -51,11 +51,51 @@ COLORS_LIGHT = {
 
 # Active palette (mutated by apply_appearance)
 COLORS = dict(COLORS_DARK)
+_HIGH_CONTRAST = False
+
+COLORS_HC_DARK = {
+    **COLORS_DARK,
+    "bg": "#000000",
+    "surface": "#0a0a0a",
+    "text": "#ffffff",
+    "muted": "#c0c0c0",
+    "accent": "#00e0c0",
+    "border": "#ffffff",
+}
+COLORS_HC_LIGHT = {
+    **COLORS_LIGHT,
+    "bg": "#ffffff",
+    "surface": "#ffffff",
+    "text": "#000000",
+    "muted": "#333333",
+    "accent": "#005a4a",
+    "border": "#000000",
+}
+
+
+def set_high_contrast(enabled: bool) -> None:
+    global _HIGH_CONTRAST
+    _HIGH_CONTRAST = bool(enabled)
+
+
+def apply_appearance(mode: str = "dark") -> None:
+    """Switch COLORS dict and CustomTkinter appearance mode."""
+    light = str(mode).lower() == "light"
+    if _HIGH_CONTRAST:
+        palette = COLORS_HC_LIGHT if light else COLORS_HC_DARK
+    else:
+        palette = COLORS_LIGHT if light else COLORS_DARK
+    COLORS.clear()
+    COLORS.update(palette)
+    try:
+        import customtkinter as ctk
+
+        ctk.set_appearance_mode("Light" if light else "Dark")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # Typography (pt). Sized for 100% scale; Ctrl+/- still available.
-# table / dense — scan lists (IOC) where density beats size.
-# panel — verdict / attachments / URL text (reading, not scanning).
 FONT = {
     "tip": 10,
     "dense": 11,
@@ -130,19 +170,6 @@ BTN_SECONDARY = dict(
     border_width=1,
     border_color=COLORS["border"],
 )
-
-
-def apply_appearance(mode: str = "dark") -> None:
-    """Switch COLORS dict and CustomTkinter appearance mode."""
-    palette = COLORS_LIGHT if str(mode).lower() == "light" else COLORS_DARK
-    COLORS.clear()
-    COLORS.update(palette)
-    try:
-        import customtkinter as ctk
-
-        ctk.set_appearance_mode("Light" if mode == "light" else "Dark")
-    except Exception:  # noqa: BLE001
-        pass
 
 
 def ioc_density_metrics(density: str = "normal") -> tuple[int, int]:

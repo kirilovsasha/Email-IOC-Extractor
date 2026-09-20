@@ -360,6 +360,102 @@ def _resolve_options(
     return options
 
 
+# Hard cap for source EML/MSG bytes loaded into memory (DoS / RAM).
+MAX_SOURCE_BYTES = 40 * 1024 * 1024
+# Soft timeout hint for GUI cancel (seconds); analysis checks cancel flag between stages.
+DEFAULT_ANALYSIS_TIMEOUT_S = 120.0
+
+
+def _enrich_parsed_result(
+    result: AnalysisResult,
+    parsed,
+    *,
+    opts: AnalysisOptions,
+    verdict_cfg: VerdictConfig | None,
+    ioc_source: str,
+    tag_filename: str | None,
+    surface_ole_notes: bool = True,
+) -> AnalysisResult:
+    """Shared post-parse enrichment: nested mail, URL unwrap, IOC, verdict."""
+    if parsed.message is not None:
+        try:
+            result.headers = analyze_headers(parsed.message)
+            result.raw_headers = extract_raw_headers(parsed.message)
+            result.mail_identity = build_mail_identity(parsed.message)
+        except Exception as exc:  # noqa: BLE001
+            result.errors.append(f"Заголовки: {exc}")
+
+    blob = f"{parsed.text}\n{parsed.html}"
+
+    for att in result.attachments:
+        nested_text, nested_errs = _parse_nested_email_attachment(att)
+        if nested_text:
+            blob += "\n" + nested_text
+            att.notes.append("Вложенное письмо разобрано локально")
+        result.errors.extend(nested_errs)
+        if (
+            att.data is not None
+            and "nested_email" in att.risk_flags
+            and att.size > 2 * 1024 * 1024
+        ):
+            att.data = None
+        if "encrypted_archive" in att.risk_flags:
+            msg = f"⚠ {att.filename}: архив защищён паролем — содержимое не извлечено"
+            if msg not in result.errors:
+                result.errors.append(msg)
+        if surface_ole_notes:
+            for note in att.notes:
+                if note.startswith("⚠") or note.startswith("OLE разбор"):
+                    tagged = f"{att.filename}: {note}"
+                    if tagged not in result.errors:
+                        result.errors.append(tagged)
+
+    try:
+        result.url_rewrites = find_and_unwrap(blob)
+    except Exception as exc:  # noqa: BLE001
+        result.errors.append(f"URL rewrite: {exc}")
+
+    enriched = blob
+    for rewrite in result.url_rewrites:
+        if rewrite.changed:
+            enriched += f"\n{rewrite.unwrapped}"
+
+    try:
+        iocs = extract_iocs(enriched, source=ioc_source)
+    except Exception as exc:  # noqa: BLE001
+        result.errors.append(f"IOC: {exc}")
+        iocs = []
+
+    unwrap_map = {r.unwrapped: r.original for r in result.url_rewrites if r.changed}
+    rewriter_hosts: set[str] = set()
+    for r in result.url_rewrites:
+        if r.changed:
+            from urllib.parse import urlparse
+
+            host = urlparse(r.original).hostname
+            if host:
+                rewriter_hosts.add(host.lower())
+
+    for ioc in iocs:
+        if ioc.ioc_type == IocType.URL and ioc.value in unwrap_map:
+            ioc.rewritten_from = unwrap_map[ioc.value]
+            if "unwrapped" not in ioc.tags:
+                ioc.tags.append("unwrapped")
+        if ioc.ioc_type == IocType.DOMAIN and ioc.value.lower() in rewriter_hosts:
+            if "url_rewriter" not in ioc.tags:
+                ioc.tags.append("url_rewriter")
+
+    _lift_attachment_iocs(result.attachments, iocs)
+    result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
+    if tag_filename:
+        result.iocs = [_tag_file(i, tag_filename) for i in result.iocs]
+    if result.source_kind == "email":
+        cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
+        result.verdict = render_verdict(result, cfg, brands_path=opts.brands_path)
+    result.file_rows = [file_triage_row(result)]
+    return result
+
+
 def analyze_file(
     path: str | Path,
     *,
@@ -372,6 +468,25 @@ def analyze_file(
     opts = _resolve_options(
         options=options, allowlist_path=allowlist_path, verdict_path=verdict_path
     )
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return AnalysisResult(
+            source_path=str(path),
+            source_kind="unknown",
+            errors=[f"Чтение файла: {exc}"],
+            meta=_build_meta(str(path), options=opts),
+        )
+    if size > MAX_SOURCE_BYTES:
+        return AnalysisResult(
+            source_path=str(path),
+            source_kind="unknown",
+            errors=[
+                f"Файл слишком большой для офлайн-разбора: {size} байт "
+                f"(лимит {MAX_SOURCE_BYTES}). Разбейте вложение или увеличьте лимит."
+            ],
+            meta=_build_meta(str(path), options=opts),
+        )
     try:
         data = path.read_bytes()
     except OSError as exc:
@@ -410,87 +525,15 @@ def analyze_file(
             str(path), source_sha256=source_sha, source_size=source_size, options=opts
         ),
     )
-
-    if parsed.message is not None:
-        try:
-            result.headers = analyze_headers(parsed.message)
-            result.raw_headers = extract_raw_headers(parsed.message)
-            result.mail_identity = build_mail_identity(parsed.message)
-        except Exception as exc:  # noqa: BLE001
-            result.errors.append(f"Заголовки: {exc}")
-
-    blob = f"{parsed.text}\n{parsed.html}"
-
-    # Nested emails inside attachments
-    for att in result.attachments:
-        nested_text, nested_errs = _parse_nested_email_attachment(att)
-        if nested_text:
-            blob += "\n" + nested_text
-            att.notes.append("Вложенное письмо разобрано локально")
-        result.errors.extend(nested_errs)
-        # Drop large nested payloads after parse to free RAM on folder batches
-        if (
-            att.data is not None
-            and "nested_email" in att.risk_flags
-            and att.size > 2 * 1024 * 1024
-        ):
-            att.data = None
-        # Surface password-protected / soft inspector notes into analysis errors
-        if "encrypted_archive" in att.risk_flags:
-            result.errors.append(
-                f"⚠ {att.filename}: архив защищён паролем — содержимое не извлечено"
-            )
-        for note in att.notes:
-            if note.startswith("⚠") or note.startswith("OLE разбор"):
-                tagged = f"{att.filename}: {note}"
-                if tagged not in result.errors:
-                    result.errors.append(tagged)
-
-    try:
-        result.url_rewrites = find_and_unwrap(blob)
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"URL rewrite: {exc}")
-
-    enriched = blob
-    for rewrite in result.url_rewrites:
-        if rewrite.changed:
-            enriched += f"\n{rewrite.unwrapped}"
-
-    try:
-        iocs = extract_iocs(enriched, source=parsed.kind)
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"IOC: {exc}")
-        iocs = []
-
-    unwrap_map = {r.unwrapped: r.original for r in result.url_rewrites if r.changed}
-    rewriter_hosts = set()
-    for r in result.url_rewrites:
-        if r.changed:
-            from urllib.parse import urlparse
-
-            host = urlparse(r.original).hostname
-            if host:
-                rewriter_hosts.add(host.lower())
-
-    for ioc in iocs:
-        if ioc.ioc_type == IocType.URL and ioc.value in unwrap_map:
-            ioc.rewritten_from = unwrap_map[ioc.value]
-            if "unwrapped" not in ioc.tags:
-                ioc.tags.append("unwrapped")
-        if ioc.ioc_type == IocType.DOMAIN and ioc.value.lower() in rewriter_hosts:
-            if "url_rewriter" not in ioc.tags:
-                ioc.tags.append("url_rewriter")
-
-    _lift_attachment_iocs(result.attachments, iocs)
-
-    result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
-    fname = path.name
-    result.iocs = [_tag_file(i, fname) for i in result.iocs]
-    if result.source_kind == "email":
-        cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
-        result.verdict = render_verdict(result, cfg, brands_path=opts.brands_path)
-    result.file_rows = [file_triage_row(result)]
-    return result
+    return _enrich_parsed_result(
+        result,
+        parsed,
+        opts=opts,
+        verdict_cfg=verdict_cfg,
+        ioc_source=parsed.kind,
+        tag_filename=path.name,
+        surface_ole_notes=True,
+    )
 
 
 def _looks_like_rfc822(text: str) -> bool:
@@ -534,7 +577,13 @@ def analyze_text(
         )
 
     data = text.encode("utf-8", errors="replace")
-    # Use a synthetic .eml path so parse_document / analyze_file pathing stays consistent
+    if len(data) > MAX_SOURCE_BYTES:
+        return AnalysisResult(
+            source_path=label,
+            source_kind="unknown",
+            errors=[f"Текст слишком большой (лимит {MAX_SOURCE_BYTES} байт)"],
+            meta=_build_meta(label, options=opts),
+        )
     from reliquary.core.document_parser import parse_eml
 
     path = Path(f"{label}.eml") if not str(label).lower().endswith(".eml") else Path(label)
@@ -555,74 +604,15 @@ def analyze_text(
             label, source_sha256=source_sha, source_size=source_size, options=opts
         ),
     )
-
-    if parsed.message is not None:
-        try:
-            result.headers = analyze_headers(parsed.message)
-            result.raw_headers = extract_raw_headers(parsed.message)
-            result.mail_identity = build_mail_identity(parsed.message)
-        except Exception as exc:  # noqa: BLE001
-            result.errors.append(f"Заголовки: {exc}")
-
-    blob = f"{parsed.text}\n{parsed.html}"
-    for att in result.attachments:
-        nested_text, nested_errs = _parse_nested_email_attachment(att)
-        if nested_text:
-            blob += "\n" + nested_text
-            att.notes.append("Вложенное письмо разобрано локально")
-        result.errors.extend(nested_errs)
-        if (
-            att.data is not None
-            and "nested_email" in att.risk_flags
-            and att.size > 2 * 1024 * 1024
-        ):
-            att.data = None
-        if "encrypted_archive" in att.risk_flags:
-            result.errors.append(
-                f"⚠ {att.filename}: архив защищён паролем — содержимое не извлечено"
-            )
-
-    try:
-        result.url_rewrites = find_and_unwrap(blob)
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"URL rewrite: {exc}")
-
-    enriched = blob
-    for rewrite in result.url_rewrites:
-        if rewrite.changed:
-            enriched += f"\n{rewrite.unwrapped}"
-
-    try:
-        iocs = extract_iocs(enriched, source="email")
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"IOC: {exc}")
-        iocs = []
-
-    unwrap_map = {r.unwrapped: r.original for r in result.url_rewrites if r.changed}
-    rewriter_hosts: set[str] = set()
-    for r in result.url_rewrites:
-        if r.changed:
-            from urllib.parse import urlparse
-
-            host = urlparse(r.original).hostname
-            if host:
-                rewriter_hosts.add(host.lower())
-
-    for ioc in iocs:
-        if ioc.ioc_type == IocType.URL and ioc.value in unwrap_map:
-            ioc.rewritten_from = unwrap_map[ioc.value]
-            if "unwrapped" not in ioc.tags:
-                ioc.tags.append("unwrapped")
-        if ioc.ioc_type == IocType.DOMAIN and ioc.value.lower() in rewriter_hosts:
-            if "url_rewriter" not in ioc.tags:
-                ioc.tags.append("url_rewriter")
-
-    _lift_attachment_iocs(result.attachments, iocs)
-    result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
-    cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
-    result.verdict = render_verdict(result, cfg, brands_path=opts.brands_path)
-    result.file_rows = [file_triage_row(result)]
-    return result
+    return _enrich_parsed_result(
+        result,
+        parsed,
+        opts=opts,
+        verdict_cfg=verdict_cfg,
+        ioc_source="email",
+        tag_filename=None,
+        surface_ole_notes=True,
+    )
 
 
 def merge_results(

@@ -35,6 +35,8 @@ _DEFAULTS: dict[str, Any] = {
     "profile_dir": "",  # empty = use org_profile/ next to app if present
     "appearance_mode": "dark",  # dark|light
     "ioc_density": "normal",  # compact|normal|comfortable
+    "ui_lang": "ru",  # ru|en
+    "high_contrast": False,
     # Local command/script run after successful export; receives export path as argv
     "post_export_hook": "",
     # If true, allow hook executables outside the app directory (still blocked patterns apply)
@@ -45,6 +47,7 @@ _DEFAULTS: dict[str, Any] = {
 
 _APPEARANCE_OK = frozenset({"dark", "light", "system"})
 _DENSITY_OK = frozenset({"compact", "normal", "comfortable"})
+_LANG_OK = frozenset({"ru", "en"})
 _COPY_OK = frozenset({"type|value", "value", "csv", "defanged", "defanged|type"})
 _EXPORT_OK = frozenset({"JSON", "CSV", "Batch CSV", "Handoff"})
 
@@ -61,6 +64,9 @@ def _coerce_value(key: str, value: Any, default: Any) -> Any:
     if key == "ioc_density":
         s = str(value or default).strip().lower()
         return s if s in _DENSITY_OK else default
+    if key == "ui_lang":
+        s = str(value or default).strip().lower()
+        return s if s in _LANG_OK else default
     if key == "copy_format":
         s = str(value or default).strip()
         return s if s in _COPY_OK else default

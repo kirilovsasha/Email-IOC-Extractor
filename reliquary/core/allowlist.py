@@ -191,3 +191,40 @@ def tag_allowlist(iocs, allow_domains: set[str], allow_ips: set[str]) -> None:
             if value_matches(ip, allow_ips) or ip in allow_ips:
                 if "allowlisted" not in ioc.tags:
                     ioc.tags.append("allowlisted")
+
+
+def append_allowlist_entry(
+    entry: str,
+    *,
+    path: str | Path | None = None,
+) -> Path:
+    """Append a domain/IP to ``allowlist_extra.txt`` (create if missing).
+
+    Returns the path written. Raises ``ValueError`` on empty entry.
+    """
+    raw = (entry or "").strip().lower().rstrip(".")
+    if not raw:
+        raise ValueError("empty allowlist entry")
+    # Strip URL/email to host when possible
+    if "@" in raw and "://" not in raw:
+        raw = raw.split("@", 1)[-1]
+    elif "://" in raw or raw.startswith("www."):
+        host = urlparse(raw if "://" in raw else f"https://{raw}").hostname
+        if host:
+            raw = host.lower().rstrip(".")
+    target = (
+        Path(path) if path is not None and str(path).strip() else default_extra_allowlist_path()
+    )
+    existing_domains, existing_ips = load_extra_allowlist(
+        target if target.is_file() else None
+    )
+    is_ip = bool(_IP_RE.match(raw) or (":" in raw and raw.count(":") >= 2))
+    if is_ip and raw in existing_ips:
+        return target
+    if not is_ip and raw in existing_domains:
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prefix = "ip:" if is_ip else "domain:"
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write(f"{prefix}{raw}\n")
+    return target

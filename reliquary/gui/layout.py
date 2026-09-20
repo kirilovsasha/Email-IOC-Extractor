@@ -563,7 +563,42 @@ class LayoutMixin:
         )
         self.ioc_table.set_density(self._ioc_density)
         self.ioc_table.pack(fill="both", expand=True)
-        self.batch_box = self._make_text(self._tab_frames["batch"])
+
+        # Batch: Treeview table + optional diff text below
+        batch_frame = self._tab_frames["batch"]
+        import tkinter.ttk as ttk
+
+        self._batch_tree_scroll = ctk.CTkFrame(batch_frame, fg_color="transparent")
+        self._batch_tree_scroll.pack(fill="both", expand=True, padx=4, pady=4)
+        cols = ("file", "verdict", "score", "reason", "peers")
+        self.batch_tree = ttk.Treeview(
+            self._batch_tree_scroll,
+            columns=cols,
+            show="headings",
+            selectmode="browse",
+            height=12,
+        )
+        self.batch_tree.heading("file", text="Файл")
+        self.batch_tree.heading("verdict", text="Вердикт")
+        self.batch_tree.heading("score", text="Score")
+        self.batch_tree.heading("reason", text="Top reason")
+        self.batch_tree.heading("peers", text="Кампания")
+        self.batch_tree.column("file", width=220, minwidth=100)
+        self.batch_tree.column("verdict", width=100, minwidth=70)
+        self.batch_tree.column("score", width=60, minwidth=40)
+        self.batch_tree.column("reason", width=280, minwidth=80)
+        self.batch_tree.column("peers", width=140, minwidth=60)
+        ys = ttk.Scrollbar(
+            self._batch_tree_scroll, orient="vertical", command=self.batch_tree.yview
+        )
+        self.batch_tree.configure(yscrollcommand=ys.set)
+        self.batch_tree.pack(side="left", fill="both", expand=True)
+        ys.pack(side="right", fill="y")
+        self.batch_tree.bind("<<TreeviewSelect>>", self._on_batch_tree_select)
+        self.batch_tree.bind("<Double-1>", self._on_batch_tree_diff)
+        self.batch_box = self._make_text(batch_frame)
+        self.batch_box.pack_forget()  # shown only for campaign diff text
+
         self.url_box = self._make_text(self._tab_frames["url"])
         self.att_box = self._make_text(self._tab_frames["att"])
         self.err_box = self._make_text(self._tab_frames["err"])

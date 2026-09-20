@@ -58,16 +58,19 @@ jobs:
           reliquary/core/header_analyzer.py
           reliquary/core/attachment_inspector.py
           reliquary/core/defang.py
+          reliquary/core/update_check.py
+          reliquary/core/qr_scan.py
           reliquary/gui/export_actions.py
           reliquary/gui/tabs.py
           reliquary/gui/windowing.py
           reliquary/gui/filters_actions.py
+          reliquary/gui/i18n.py
       - name: Test + coverage (core)
         run: >
           python -m pytest -q
           --cov=reliquary/core
           --cov-report=term-missing:skip-covered
-          --cov-fail-under=60
+          --cov-fail-under=65
       - name: Corpus metrics
         run: python scripts/corpus_metrics.py
 
@@ -132,6 +135,43 @@ jobs:
           path: |
             dist/EmailIOCExtractor.exe
             dist/EmailIOCExtractor.exe.sha256
+          if-no-files-found: error
+
+  build-exe-full:
+    runs-on: windows-latest
+    needs: pytest
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install full extras + build
+        env:
+          RELIQUARY_FULL: "1"
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+          pip install -e ".[rar,qr]"
+          python build/sync_version_info.py
+          python -m PyInstaller build/reliquary.spec --noconfirm
+      - name: SHA256 Full
+        shell: pwsh
+        run: |
+          Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Full.exe
+          Get-FileHash dist\EmailIOCExtractor-Full.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
+      - name: Upload Full EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmailIOCExtractor-Full
+          path: |
+            dist/EmailIOCExtractor-Full.exe
+            dist/EmailIOCExtractor-Full.exe.sha256
           if-no-files-found: error
 
   release:

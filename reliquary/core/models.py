@@ -168,9 +168,12 @@ class Verdict:
     reasons: list[str] = field(default_factory=list)
     actions: list[ActionRecommendation] = field(default_factory=list)
     breakdown: list[ScoreContribution] = field(default_factory=list)
+    # Analyst manual override (GUI/CLI); does not recompute score
+    analyst_override: str | None = None
+    analyst_note: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "level": self.level.value,
             "score": self.score,
             "summary": self.summary,
@@ -178,6 +181,11 @@ class Verdict:
             "actions": [a.to_dict() for a in self.actions],
             "breakdown": [b.to_dict() for b in self.breakdown],
         }
+        if self.analyst_override:
+            data["analyst_override"] = self.analyst_override
+        if self.analyst_note:
+            data["analyst_note"] = self.analyst_note
+        return data
 
 
 @dataclass

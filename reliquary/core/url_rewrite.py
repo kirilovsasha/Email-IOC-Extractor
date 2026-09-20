@@ -32,6 +32,19 @@ FIREYE = re.compile(
     r"https?://[a-z0-9.-]*fireeye\.com/[^\\s\"'<>]*url\?[^\\s\"'<>]+",
     re.IGNORECASE,
 )
+CISCO_UMBRELLA = re.compile(
+    r"https?://(?:secure-web\.cisco\.com|.*\.url\.trendmicro\.com)/[^\\s\"'<>]+",
+    re.IGNORECASE,
+)
+GOOGLE_REDIRECT = re.compile(
+    r"https?://(?:www\.)?google\.[a-z.]+/url\?[^\\s\"'<>]+",
+    re.IGNORECASE,
+)
+DEFENDER_ATP = re.compile(
+    r"https?://[a-z0-9.-]*(?:safelinks\.protection\.outlook\.com|"
+    r"protection\.office\.com|aka\.ms)/[^\\s\"'<>]*",
+    re.IGNORECASE,
+)
 GENERIC_URL = re.compile(r"(?i)\bhttps?://[^\s<>\"')\]]+")
 
 
@@ -107,6 +120,18 @@ def unwrap_url(url: str) -> UrlRewriteResult:
             candidate = _param_url(original, ("url", "u"))
             if candidate:
                 unwrapped, rewriter = candidate, "fireeye"
+        elif "secure-web.cisco.com" in lower or "url.trendmicro.com" in lower:
+            candidate = _param_url(original, ("url", "u", "dest", "target", "link"))
+            if candidate:
+                unwrapped, rewriter = candidate, "cisco_umbrella"
+        elif "google." in lower and "/url?" in lower:
+            candidate = _param_url(original, ("q", "url", "u"))
+            if candidate and candidate.startswith("http"):
+                unwrapped, rewriter = candidate, "google_redirect"
+        elif "protection.office.com" in lower or "aka.ms" in lower:
+            candidate = _param_url(original, ("url", "u", "link"))
+            if candidate:
+                unwrapped, rewriter = candidate, "defender_atp"
         else:
             # Generic redirectors: ?url=, ?dest=, ?redirect=, ?r=, ?target=
             candidate = _param_url(

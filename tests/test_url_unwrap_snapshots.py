@@ -45,6 +45,24 @@ CASES = [
         "https://evil.example.com/w",
     ),
     (
+        "cisco_umbrella",
+        "https://secure-web.cisco.com/1/abc?url=https%3A%2F%2Fevil.example.com%2Fcisco",
+        "cisco_umbrella",
+        "https://evil.example.com/cisco",
+    ),
+    (
+        "google_redirect",
+        "https://www.google.com/url?q=https%3A%2F%2Fevil.example.com%2Fg&sa=D",
+        "google_redirect",
+        "https://evil.example.com/g",
+    ),
+    (
+        "defender_atp",
+        "https://protection.office.com/?url=https%3A%2F%2Fevil.example.com%2Fatp",
+        "defender_atp",
+        "https://evil.example.com/atp",
+    ),
+    (
         "generic_redirect",
         "https://tracker.mail.example/click?url=https%3A%2F%2Fevil.example.com%2Fq",
         "generic_redirect",

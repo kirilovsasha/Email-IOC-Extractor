@@ -63,12 +63,26 @@
   "fp_hr_pdf_mention.eml": {
     "level": "benign",
     "score_min": 0,
-    "score_max": 9
+    "score_max": 9,
+    "reason_substrings": []
   },
   "fp_softfail_legit_brand.eml": {
     "level": "unknown",
     "score_min": 10,
-    "score_max": 29
+    "score_max": 29,
+    "reason_substrings": []
+  },
+  "fp_marketing_safelinks.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 15,
+    "reason_substrings": []
+  },
+  "fp_short_brand_partner.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 20,
+    "reason_substrings": []
   },
   "malicious_encrypted_zip.eml": {
     "level": "malicious",

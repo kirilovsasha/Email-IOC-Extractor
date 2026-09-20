@@ -17,6 +17,10 @@ MAX_ARCHIVE_ENTRIES = 200
 MAX_NEST_DEPTH = 4
 MAX_NESTED_MEMBER_BYTES = 5 * 1024 * 1024
 MAX_NESTED_MEMBERS = 12
+# Zip-bomb heuristics: reject members with extreme inflate ratios / cumulative bytes
+MAX_INFLATE_RATIO = 100
+MAX_TOTAL_INFLATED_BYTES = 40 * 1024 * 1024
+MAX_ARCHIVE_UNCOMPRESSED_SUM = 80 * 1024 * 1024
 
 DANGEROUS_EXTENSIONS = {
     ".exe",
@@ -108,11 +112,18 @@ def _zip_encrypted(data: bytes) -> bool:
     return False
 
 
-def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str], list[str]]:
+def _inventory_zip(
+    data: bytes,
+    *,
+    depth: int = 0,
+    inflated_budget: list[int] | None = None,
+) -> tuple[list[str], list[str], list[str]]:
     """Return (entries, risk_flags, notes) for a ZIP/OOXML container. No full extract."""
     entries: list[str] = []
     flags: list[str] = []
     notes: list[str] = []
+    if inflated_budget is None:
+        inflated_budget = [0]
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             infos = [zi for zi in zf.infolist() if not zi.is_dir()]
@@ -124,6 +135,19 @@ def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str]
                 notes.append(
                     "⚠ ЗАЩИЩЁН ПАРОЛЕМ: ZIP encrypted — имена видны, содержимое не извлечено"
                 )
+
+            # Declared uncompressed sum (zip-bomb signal without reading)
+            try:
+                declared = sum(max(0, int(zi.file_size)) for zi in infos)
+            except Exception:  # noqa: BLE001
+                declared = 0
+            if declared > MAX_ARCHIVE_UNCOMPRESSED_SUM:
+                flags.append("zip_bomb_suspect")
+                notes.append(
+                    f"⚠ Zip-bomb: сумма file_size={declared} > {MAX_ARCHIVE_UNCOMPRESSED_SUM}"
+                )
+                entries = names[:MAX_ARCHIVE_ENTRIES]
+                return entries, flags, notes
 
             entries = names[:MAX_ARCHIVE_ENTRIES]
             if len(names) > MAX_ARCHIVE_ENTRIES:
@@ -174,9 +198,22 @@ def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str]
                             f"Вложенные архивы: разобраны первые {MAX_NESTED_MEMBERS}"
                         )
                         break
+                    if inflated_budget[0] >= MAX_TOTAL_INFLATED_BYTES:
+                        flags.append("zip_bomb_suspect")
+                        notes.append("⚠ Zip-bomb: лимит раздутых байт — вложенные пропущены")
+                        break
                     if zi.file_size > MAX_NESTED_MEMBER_BYTES:
                         notes.append(
                             f"Пропуск крупного вложенного архива: {Path(zi.filename).name}"
+                        )
+                        continue
+                    csize = max(1, int(zi.compress_size or 0))
+                    fsize = max(0, int(zi.file_size or 0))
+                    if fsize and (fsize / csize) > MAX_INFLATE_RATIO:
+                        flags.append("zip_bomb_suspect")
+                        notes.append(
+                            f"⚠ Zip-bomb ratio: {Path(zi.filename).name} "
+                            f"({fsize}/{csize})"
                         )
                         continue
                     try:
@@ -186,8 +223,17 @@ def _inventory_zip(data: bytes, *, depth: int = 0) -> tuple[list[str], list[str]
                             f"Не прочитан {zi.filename} ({type(exc).__name__}): {exc}"
                         )
                         continue
+                    if len(nested_data) > MAX_NESTED_MEMBER_BYTES:
+                        notes.append(
+                            f"Пропуск: inflated {Path(zi.filename).name} "
+                            f"> {MAX_NESTED_MEMBER_BYTES}"
+                        )
+                        continue
+                    inflated_budget[0] += len(nested_data)
                     peeked += 1
-                    n_entries, n_flags, n_notes = _inventory_zip(nested_data, depth=depth + 1)
+                    n_entries, n_flags, n_notes = _inventory_zip(
+                        nested_data, depth=depth + 1, inflated_budget=inflated_budget
+                    )
                     prefix = zi.filename.rstrip("/")
                     entries.extend(f"{prefix}::{e}" for e in n_entries[:80])
                     for fl in n_flags:

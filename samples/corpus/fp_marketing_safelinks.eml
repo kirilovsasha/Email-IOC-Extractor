@@ -1,0 +1,12 @@
+From: newsletter@contoso.com
+To: analyst@example.com
+Subject: Your Contoso weekly digest
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+DKIM-Signature: v=1; a=rsa-sha256; d=contoso.com; s=s1; b=abc
+Authentication-Results: mx; dkim=pass header.d=contoso.com; spf=pass; dmarc=pass
+
+<html><body>
+<p>Thanks for subscribing to Contoso.</p>
+<p><a href="https://nam.safelinks.protection.outlook.com/?url=https%3A%2F%2Fwww.contoso.com%2Fdigest&data=01">Open digest</a></p>
+</body></html>

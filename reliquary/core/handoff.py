@@ -243,3 +243,13 @@ def export_handoff(
         encoding="utf-8",
     )
     return out
+
+
+def encrypted_archive_handoff_note(filename: str = "") -> str:
+    """Short ITSM-ready note when an attachment archive is password-protected."""
+    name = filename.strip() or "attachment"
+    return (
+        f"Encrypted archive: {name}. Content not extracted offline. "
+        "Ask sender/IT for password out-of-band or obtain clean copy; "
+        "do not open on analyst workstation without sandbox."
+    )

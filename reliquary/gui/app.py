@@ -16,9 +16,11 @@ from reliquary.core.paths import app_dir
 from reliquary.core.prefs import load_prefs
 from reliquary.gui.about import show_about_dialog
 from reliquary.gui.analysis_actions import AnalysisActionsMixin
+from reliquary.gui.analyst_actions import AnalystActionsMixin
 from reliquary.gui.clipboard_actions import ClipboardActionsMixin
 from reliquary.gui.filters_actions import FiltersActionsMixin
 from reliquary.gui.hotkeys import HotkeysMixin
+from reliquary.gui.i18n import set_ui_lang
 from reliquary.gui.layout import LayoutMixin
 from reliquary.gui.prefs_actions import PrefsMixin
 from reliquary.gui.result_panels import ResultPanelsMixin
@@ -33,6 +35,7 @@ from reliquary.gui.theme import (
     apply_appearance,
     apply_global_fonts,
     ctk_font,
+    set_high_contrast,
 )
 
 ctk.set_default_color_theme("dark-blue")
@@ -48,6 +51,7 @@ _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
 
 class ExtractorApp(
     AnalysisActionsMixin,
+    AnalystActionsMixin,
     ClipboardActionsMixin,
     FiltersActionsMixin,
     ResultPanelsMixin,
@@ -60,6 +64,9 @@ class ExtractorApp(
     def __init__(self) -> None:
         super().__init__()
         self._prefs = load_prefs()
+        set_ui_lang(str(self._prefs.get("ui_lang") or "ru"))
+        if bool(self._prefs.get("high_contrast")):
+            set_high_contrast(True)
         appearance = str(self._prefs.get("appearance_mode") or "dark")
         apply_appearance(appearance)
         self._appearance_mode = appearance
@@ -376,6 +383,22 @@ class ExtractorApp(
             label="Копировать defanged",
             command=lambda: self._copy_one(defang_value(ioc.value)),
         )
+        menu.add_separator()
+        menu.add_command(
+            label="В allowlist",
+            command=lambda: self._allowlist_host_from_ioc(ioc),
+        )
+        menu.add_command(
+            label="Override вердикта…",
+            command=self._override_verdict,
+        )
+        if self.result and any(
+            "encrypted_archive" in a.risk_flags for a in (self.result.attachments or [])
+        ):
+            menu.add_command(
+                label="Заметка: encrypted archive",
+                command=self._copy_encrypted_archive_note,
+            )
         try:
             menu.tk_popup(x_root, y_root)
         finally:

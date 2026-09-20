@@ -47,7 +47,48 @@ class AnalysisActionsMixin:
 
     def cancel_batch(self) -> None:
         self._cancel_batch = True
-        self._set_status("Отмена пакетной обработки…")
+        self._set_status("Отмена…")
+
+    def analyze_text_area(self) -> None:
+        if self._placeholder_active:
+            messagebox.showinfo(__app_name__, "Вставьте исходник письма (RFC822) слева")
+            return
+        text = self.input_box.get("1.0", "end").strip()
+        if not text:
+            messagebox.showinfo(__app_name__, "Вставьте исходник письма (RFC822) слева")
+            return
+        self._cancel_batch = False
+        self._sync_job_row(busy=True)
+        self._set_status("Разбор письма…")
+        threading.Thread(target=self._run_text, args=(text,), daemon=True).start()
+
+    def _run_text(self, text: str) -> None:
+        try:
+            if self._cancel_batch:
+                self.after(0, lambda: self._sync_job_row(busy=False))
+                self.after(0, lambda: self._set_status("Отменено"))
+                return
+            result = analyze_text(text, options=self._analysis_options())
+            if self._cancel_batch:
+                self.after(0, lambda: self._sync_job_row(busy=False))
+                self.after(0, lambda: self._set_status("Отменено"))
+                return
+
+            def _ok() -> None:
+                self._sync_job_row(busy=False)
+                self._apply_result(result, preload_text=False)
+
+            self.after(0, _ok)
+        except Exception as exc:  # noqa: BLE001
+            append_error_log("text analysis failed", exc=exc)
+            msg = str(exc)
+
+            def _fail() -> None:
+                self._sync_job_row(busy=False)
+                messagebox.showerror("Ошибка", msg)
+                self._set_status("Ошибка разбора")
+
+            self.after(0, _fail)
 
     def retry_failed(self) -> None:
         if not self._failed_paths:
@@ -253,24 +294,3 @@ class AnalysisActionsMixin:
         self._refresh_views()
         if result.errors:
             self._set_status(f"Замечания: {len(result.errors)} — вкладка «Ошибки»")
-
-    def analyze_text_area(self) -> None:
-        if self._placeholder_active:
-            messagebox.showinfo(__app_name__, "Вставьте исходник письма (RFC822) слева")
-            return
-        text = self.input_box.get("1.0", "end").strip()
-        if not text:
-            messagebox.showinfo(__app_name__, "Вставьте исходник письма (RFC822) слева")
-            return
-        self._set_status("Разбор письма…")
-        threading.Thread(target=self._run_text, args=(text,), daemon=True).start()
-
-    def _run_text(self, text: str) -> None:
-        try:
-            result = analyze_text(text, options=self._analysis_options())
-            self.after(0, lambda: self._apply_result(result, preload_text=False))
-        except Exception as exc:  # noqa: BLE001
-            append_error_log("text analysis failed", exc=exc)
-            msg = str(exc)
-            self.after(0, lambda m=msg: messagebox.showerror("Ошибка", m))
-            self.after(0, lambda: self._set_status("Ошибка разбора"))

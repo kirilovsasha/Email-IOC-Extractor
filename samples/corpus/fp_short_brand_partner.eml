@@ -1,0 +1,14 @@
+From: partner@vtb-partner.example
+To: analyst@example.com
+Subject: Contract update from VTB partner desk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx; spf=pass; dkim=pass; dmarc=pass
+
+Hello,
+
+Please review the attached schedule for next week.
+No action needed on passwords or invoices.
+
+Regards,
+Partner desk
