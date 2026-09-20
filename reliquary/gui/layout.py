@@ -6,6 +6,11 @@ import customtkinter as ctk
 
 from reliquary import __app_name__, __version__
 from reliquary.gui.export_actions import EXPORT_CHOICES
+from reliquary.gui.filters_actions import (
+    FOCUS_FILTERS,
+    HIDE_NOISE_FILTERS,
+    TYPE_FILTER_TIPS,
+)
 from reliquary.gui.ioc_table import IocTable
 from reliquary.gui.theme import (
     BTN_H,
@@ -23,38 +28,6 @@ _PLACEHOLDER = (
 )
 
 _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
-
-_HIDE_NOISE_FILTERS = (
-    (
-        "SafeLinks",
-        "hide_rewriter",
-        "Скрыть обёртки SafeLinks / Proofpoint — обычно шум, смотрите развёрнутый URL",
-    ),
-    (
-        "allowlist",
-        "hide_allowlisted",
-        "Скрыть известный шум: Microsoft/Google CDN, SafeLinks и т.п.",
-    ),
-    (
-        "локальные IP",
-        "hide_private",
-        "Скрыть частные адреса (10.x, 192.168.x, CGNAT…)",
-    ),
-)
-_FOCUS_FILTERS = (
-    (
-        "к разбору",
-        "actionable_only",
-        "Только полезные доказательства: без прокси, allowlist, локальных IP и «голых» имён",
-    ),
-)
-
-_TYPE_FILTER_TIPS = {
-    "Сеть": "IP, домены, URL, адреса email, мессенджеры — главное для фишинга",
-    "Хеши и CVE": "MD5/SHA вложений и CVE",
-    "Хост": "Имена вложений, пути, UNC — реже нужно в почтовом triage",
-    "Крипто": "Bitcoin / Monero в теле письма",
-}
 
 
 class LayoutMixin:
@@ -219,7 +192,7 @@ class LayoutMixin:
             "к разбору",
             self.actionable_only,
             self._on_filter_change,
-            tip=_FOCUS_FILTERS[0][2],
+            tip=FOCUS_FILTERS[0][2],
             width=92,
             compact=True,
             primary=True,
@@ -292,7 +265,7 @@ class LayoutMixin:
                 name,
                 var,
                 self._on_filter_change,
-                tip=_TYPE_FILTER_TIPS.get(name, ""),
+                tip=TYPE_FILTER_TIPS.get(name, ""),
                 width=62,
                 compact=True,
             ).pack(side="left", padx=(0, 4))
@@ -318,7 +291,7 @@ class LayoutMixin:
         noise_row = ctk.CTkFrame(noise_block, fg_color="transparent")
         noise_row.pack(anchor="w")
         self._hide_shell = noise_block
-        for text, attr, tip in _HIDE_NOISE_FILTERS:
+        for text, attr, tip in HIDE_NOISE_FILTERS:
             FilterChip(
                 noise_row,
                 text,

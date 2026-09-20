@@ -27,3 +27,5 @@ reliquary_error.log
 ioc_extractor_error.log
 .venv/
 venv/
+.coverage
+htmlcov/

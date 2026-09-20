@@ -107,7 +107,11 @@ def test_run_post_export_hook_writes(tmp_path: Path) -> None:
         f"Path(r'{marker.as_posix()}').write_text(sys.argv[-1], encoding='utf-8')\n",
         encoding="utf-8",
     )
-    msg = run_post_export_hook([sys.executable, str(script)], export)
+    msg = run_post_export_hook(
+        [sys.executable, str(script)],
+        export,
+        allow_external=True,
+    )
     assert msg and msg.startswith("hook ok")
     assert marker.is_file()
     assert export.name in marker.read_text(encoding="utf-8")

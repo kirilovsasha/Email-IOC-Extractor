@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.5.0
+
+### Security / hardening
+- Org profile zip: zip-slip–safe extract (`UnsafeZipError`); temp profiles cleaned in CLI/GUI
+- Post-export hook: block downloader/shell patterns; prefer scripts under app dir; prefs `post_export_hook_allow_external` / `disable_post_export_hook`; env `RELIQUARY_DISABLE_EXPORT_HOOK`
+- Prefs load coerces types (scale, workers, booleans, enums)
+- Docs: `SECURITY.md`, `LICENSE`, `docs/SIGNING.md`
+
+### Packaging / CI
+- Full EXE: auto-bundle `rarfile`/`pyzbar` when installed; `RELIQUARY_FULL=1` / `build_exe.bat --full`
+- Frozen `--cli` mode for headless smoke; CI tag `v*` pushes build Release
+- Single version source: `reliquary/__init__.py` → `version_info.txt` + `pyproject.toml`
+- Coverage gate on `reliquary/core` (≥60%); Python 3.13 in matrix
+- App icon `build/app.ico`; `build/build.sh --full` + SHA256
+
+### Product / DX
+- GUI: `filters_actions` mixin; unified `defang`/`refang` in `core/defang.py`
+- CLI `--verbose` (error log note); soft-rotate error log at ~2MB
+- JSON Schema: `docs/schema_report_v1.json`; `CONTRIBUTING.md`
+
 ## 2.4.0
 
 ### Detection / verdict

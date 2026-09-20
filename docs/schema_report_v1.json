@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.soc/reliquary/report.schema.v1.json",
+  "title": "Email IOC Extractor report",
+  "description": "JSON export schema_version = 1 (reliquary.core.models.SCHEMA_VERSION)",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "app_version": { "type": "string" },
+        "overrides_loaded": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "verdict": {
+      "type": ["object", "null"],
+      "properties": {
+        "level": { "type": "string", "enum": ["benign", "unknown", "suspicious", "malicious"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "summary": { "type": "string" },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "breakdown": { "type": "array" }
+      }
+    },
+    "iocs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "value"],
+        "properties": {
+          "type": { "type": "string" },
+          "value": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "context": { "type": "string" },
+          "source_file": { "type": "string" }
+        }
+      }
+    },
+    "errors": { "type": "array", "items": { "type": "string" } },
+    "batch": { "type": "array" },
+    "filters_applied": { "type": "object" }
+  },
+  "additionalProperties": true
+}

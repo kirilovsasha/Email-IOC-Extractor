@@ -38,7 +38,10 @@ def test_org_profile_zip(tmp_path: Path) -> None:
     profile = load_org_profile(zpath)
     assert profile is not None
     assert profile.verdict_path is not None
+    assert profile._tmpdir is not None
+    tmp = profile._tmpdir
     profile.cleanup()
+    assert not tmp.exists()
 
 
 def test_org_profile_m365_preset() -> None:

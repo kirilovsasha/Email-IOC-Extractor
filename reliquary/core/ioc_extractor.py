@@ -7,6 +7,7 @@ import ipaddress
 import re
 from urllib.parse import unquote, urlparse
 
+from reliquary.core.defang import refang as defang
 from reliquary.core.models import Ioc, IocType
 
 # Conservative patterns — prioritize precision for SOC triage.
@@ -191,53 +192,6 @@ REWRITER_DOMAIN_SUFFIXES = (
     "mimecast.com",
     "linkprotect.cudasvc.com",
 )
-
-
-def defang(text: str) -> str:
-    """Normalize common SOC defanging so extractors still match."""
-    out = text
-    # Ordered: longer / more specific first
-    replacements = (
-        ("hxxps[://]", "https://"),
-        ("hxxp[://]", "http://"),
-        ("hxxps://", "https://"),
-        ("hxxp://", "http://"),
-        ("https[://]", "https://"),
-        ("http[://]", "http://"),
-        ("[://]", "://"),
-        ("[:]", ":"),
-        ("[.]", "."),
-        ("(.)", "."),
-        ("{.}", "."),
-        ("[dot]", "."),
-        ("(dot)", "."),
-        ("{dot}", "."),
-        ("[@]", "@"),
-        ("[at]", "@"),
-        ("(at)", "@"),
-        ("hxxp[:]//", "http://"),
-        ("hxxps[:]//", "https://"),
-        ("\\.", "."),
-    )
-    for old, new in replacements:
-        out = out.replace(old, new)
-        out = out.replace(old.upper(), new)
-        # Mixed-case variants for common tokens
-        if old.lower() != old:
-            continue
-        out = re.sub(re.escape(old), new, out, flags=re.IGNORECASE)
-    # "evil dot com" / "evil DOT com" spaced form (limited)
-    out = re.sub(
-        r"(?i)\b([a-z0-9\-]+)\s+dot\s+([a-z0-9\-]+)\s+dot\s+([a-z]{2,24})\b",
-        r"\1.\2.\3",
-        out,
-    )
-    out = re.sub(
-        r"(?i)\b([a-z0-9\-]+)\s+dot\s+([a-z]{2,24})\b",
-        r"\1.\2",
-        out,
-    )
-    return out
 
 
 def normalize_url_key(url: str) -> str:

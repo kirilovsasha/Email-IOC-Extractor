@@ -29,7 +29,15 @@ class AnalysisActionsMixin:
             max_workers=int(self._prefs.get("max_workers") or 0),
             skip_broken=bool(self._prefs.get("skip_broken", True)),
         )
+        old = getattr(self, "_org_profile", None)
+        if old is not None:
+            try:
+                old.cleanup()
+            except Exception:  # noqa: BLE001
+                pass
+            self._org_profile = None
         profile = load_org_profile(opts.profile_dir)
+        self._org_profile = profile
         if profile is not None:
             opts = opts.with_profile(profile)
             self._handoff_by_level = {

@@ -2,9 +2,13 @@
 
 Build:
   pyinstaller build/reliquary.spec
+
+Full (RAR/QR): install extras first, or set RELIQUARY_FULL=1 after pip install '.[rar,qr]'.
+  Hiddenimports for rarfile/pyzbar are added automatically when importable.
 """
 
 # -*- mode: python ; coding: utf-8 -*-
+import os
 import sys
 from pathlib import Path
 
@@ -16,13 +20,51 @@ ROOT = Path(SPECPATH).resolve().parent
 ctk_datas, ctk_binaries, ctk_hidden = collect_all("customtkinter")
 
 _version = str(ROOT / "build" / "version_info.txt") if sys.platform == "win32" else None
+_icon = ROOT / "build" / "app.ico"
+_icon_path = str(_icon) if _icon.is_file() else None
+
+_extra_hidden: list[str] = []
+_extra_datas = []
+_extra_binaries = []
+
+_want_full = os.environ.get("RELIQUARY_FULL", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+
+def _try_collect(mod: str) -> bool:
+    global _extra_datas, _extra_binaries, _extra_hidden
+    try:
+        __import__(mod)
+    except ImportError:
+        return False
+    try:
+        d, b, h = collect_all(mod)
+        _extra_datas += d
+        _extra_binaries += b
+        _extra_hidden += h
+    except Exception:
+        _extra_hidden.append(mod)
+    return True
+
+
+# Auto-bundle optional extras when present in the build env (Lite = not installed).
+_ = _want_full  # documented env; importability is the real gate
+if _try_collect("rarfile"):
+    _extra_hidden.append("rarfile")
+if _try_collect("pyzbar"):
+    _extra_hidden.extend(["pyzbar", "pyzbar.pyzbar"])
 
 a = Analysis(
     [str(ROOT / "run_reliquary.py")],
     pathex=[],
-    binaries=ctk_binaries,
-    datas=ctk_datas,
+    binaries=ctk_binaries + _extra_binaries,
+    datas=ctk_datas + _extra_datas,
     hiddenimports=ctk_hidden
+    + _extra_hidden
     + [
         "extract_msg",
         "olefile",
@@ -44,6 +86,7 @@ a = Analysis(
         "reliquary.gui.export_actions",
         "reliquary.gui.analysis_actions",
         "reliquary.gui.clipboard_actions",
+        "reliquary.gui.filters_actions",
         "reliquary.gui.layout",
         "reliquary.cli",
         "reliquary.core.office_extract",
@@ -59,9 +102,8 @@ a = Analysis(
         "reliquary.core.content_signals",
         "reliquary.core.analysis_options",
         "reliquary.core.org_profile",
+        "reliquary.core.export_hook",
     ],
-    # Optional extras (rarfile / pyzbar) are NOT bundled in the lite EXE.
-    # For a full build: pip install '.[rar,qr]' then add them to hiddenimports.
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -94,6 +136,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=_icon_path,
     version=_version,
 )

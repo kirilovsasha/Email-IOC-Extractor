@@ -2,9 +2,8 @@ name: tests
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
   pull_request:
-  release:
-    types: [published]
 
 jobs:
   pytest:
@@ -12,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +23,12 @@ jobs:
           python -m pip install -U pip
           pip install -r requirements-dev.txt
           pip install -e ".[dev]"
+      - name: Version sync check
+        run: |
+          python build/sync_version_info.py
+          git diff --exit-code -- pyproject.toml build/version_info.txt || (
+            echo "Run: python build/sync_version_info.py" && exit 1
+          )
       - name: Ruff
         run: python -m ruff check reliquary
       - name: Mypy (core + helpers)
@@ -52,11 +57,17 @@ jobs:
           reliquary/core/ioc_extractor.py
           reliquary/core/header_analyzer.py
           reliquary/core/attachment_inspector.py
+          reliquary/core/defang.py
           reliquary/gui/export_actions.py
           reliquary/gui/tabs.py
           reliquary/gui/windowing.py
-      - name: Test
-        run: python -m pytest -q
+          reliquary/gui/filters_actions.py
+      - name: Test + coverage (core)
+        run: >
+          python -m pytest -q
+          --cov=reliquary/core
+          --cov-report=term-missing:skip-covered
+          --cov-fail-under=60
       - name: Corpus metrics
         run: python scripts/corpus_metrics.py
 
@@ -81,7 +92,7 @@ jobs:
         run: |
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
-      - name: Smoke CLI + EXE
+      - name: Smoke CLI + frozen --cli
         shell: cmd
         env:
           PYTHONUTF8: "1"
@@ -99,6 +110,12 @@ jobs:
           for %%A in (dist\EmailIOCExtractor.exe) do echo EXE OK size=%%~zA
           for %%A in (dist\EmailIOCExtractor.exe) do if %%~zA LSS 1048576 (
             echo EXE too small
+            exit /b 1
+          )
+          dist\EmailIOCExtractor.exe --cli samples\corpus\benign_hr_notice.eml --json dist\smoke_report.json --quiet-verdict
+          if errorlevel 1 exit /b 1
+          if not exist dist\smoke_report.json (
+            echo frozen CLI smoke failed: no JSON
             exit /b 1
           )
       - name: SHA256
@@ -120,7 +137,7 @@ jobs:
   release:
     runs-on: windows-latest
     needs: pytest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
@@ -136,6 +153,14 @@ jobs:
           pip install -e .
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
+      - name: Frozen CLI smoke
+        shell: cmd
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          dist\EmailIOCExtractor.exe --cli samples\corpus\benign_hr_notice.eml --json dist\smoke_report.json --quiet-verdict
+          if errorlevel 1 exit /b 1
+          if not exist dist\smoke_report.json exit /b 1
       - name: SHA256
         shell: pwsh
         run: |
@@ -163,7 +188,8 @@ jobs:
           body = "\n".join(out) + "\n\n## Artifacts\n\n"
           body += "- `EmailIOCExtractor.exe` — **Lite** build (no RAR/QR extras bundled)\n"
           body += f"- SHA256: `{digest}`\n"
-          body += "- **Full** (RAR/QR): source install `pip install -e \".[rar,qr]\"`\n"
+          body += "- **Full** (RAR/QR): `build_exe.bat --full` / `RELIQUARY_FULL=1` after `pip install -e \".[rar,qr]\"`\n"
+          body += "- Unsigned by default — see `docs/SIGNING.md` (verify SHA256 before deploy)\n"
           Path("release_notes.md").write_text(body, encoding="utf-8")
           PY
       - name: Create GitHub Release

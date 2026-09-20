@@ -2,6 +2,10 @@
 
 Imported at app start. Blocks common outbound helpers if somehow called.
 Must run AFTER third-party imports so class patching is safe.
+
+Scope: **process-local** Python socket / urllib. Does not constrain:
+- subprocesses started by ``post_export_hook`` (those are validated separately)
+- native DLLs that open sockets outside the Python socket module
 """
 
 from __future__ import annotations

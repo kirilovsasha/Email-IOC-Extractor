@@ -56,9 +56,15 @@ def run_export(
         raise ValueError(f"Неизвестный формат экспорта: {kind}")
 
     hook = post_export_hook
+    prefs = load_prefs()
     if hook is None:
-        hook = str(load_prefs().get("post_export_hook") or "")
-    run_post_export_hook(hook, written)
+        hook = str(prefs.get("post_export_hook") or "")
+    run_post_export_hook(
+        hook,
+        written,
+        allow_external=bool(prefs.get("post_export_hook_allow_external")),
+        disabled=bool(prefs.get("disable_post_export_hook")),
+    )
     return written
 
 

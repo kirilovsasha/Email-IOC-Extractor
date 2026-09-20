@@ -23,6 +23,10 @@ _PROFILE_FILES = (
 )
 
 
+class UnsafeZipError(ValueError):
+    """Raised when a profile zip contains path-traversal or absolute members."""
+
+
 @dataclass
 class OrgProfile:
     root: Path
@@ -38,6 +42,12 @@ class OrgProfile:
             shutil.rmtree(self._tmpdir, ignore_errors=True)
             self._tmpdir = None
 
+    def __enter__(self) -> OrgProfile:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.cleanup()
+
 
 def default_profile_dir() -> Path:
     return app_dir() / "org_profile"
@@ -46,6 +56,40 @@ def default_profile_dir() -> Path:
 def _pick(root: Path, name: str) -> Path | None:
     p = root / name
     return p if p.is_file() else None
+
+
+def _is_unsafe_zip_member(name: str) -> bool:
+    """Reject absolute paths, drive letters, and ``..`` traversal."""
+    raw = name.replace("\\", "/")
+    if not raw or raw.endswith("/"):
+        # Directories alone are fine; files checked below when extracted
+        pass
+    if raw.startswith("/") or raw.startswith("//"):
+        return True
+    if len(raw) >= 2 and raw[1] == ":":
+        return True
+    parts = [p for p in raw.split("/") if p and p != "."]
+    return any(p == ".." for p in parts)
+
+
+def safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
+    """Extract zip members under ``dest`` only (zip-slip safe)."""
+    dest = dest.resolve()
+    for info in zf.infolist():
+        name = info.filename
+        if _is_unsafe_zip_member(name):
+            raise UnsafeZipError(f"unsafe zip member: {name!r}")
+        target = (dest / name).resolve()
+        try:
+            target.relative_to(dest)
+        except ValueError as exc:
+            raise UnsafeZipError(f"unsafe zip member: {name!r}") from exc
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info, "r") as src, target.open("wb") as out:
+            shutil.copyfileobj(src, out)
 
 
 def load_org_profile(path: str | Path | None = None) -> OrgProfile | None:
@@ -64,8 +108,12 @@ def load_org_profile(path: str | Path | None = None) -> OrgProfile | None:
     root = target
     if target.is_file() and target.suffix.lower() == ".zip":
         tmpdir = Path(tempfile.mkdtemp(prefix="reliquary_profile_"))
-        with zipfile.ZipFile(target, "r") as zf:
-            zf.extractall(tmpdir)
+        try:
+            with zipfile.ZipFile(target, "r") as zf:
+                safe_extract_zip(zf, tmpdir)
+        except (UnsafeZipError, zipfile.BadZipFile, OSError):
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            raise
         # If zip has a single top folder, use it
         children = [c for c in tmpdir.iterdir() if not c.name.startswith(".")]
         if len(children) == 1 and children[0].is_dir():

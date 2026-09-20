@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync build/version_info.txt from reliquary.__version__ / pyproject."""
+"""Sync build/version_info.txt and pyproject.toml version from reliquary.__version__."""
 
 from __future__ import annotations
 
@@ -51,6 +51,24 @@ VSVersionInfo(
 """
 
 
+def _sync_pyproject(version: str) -> None:
+    path = ROOT / "pyproject.toml"
+    text = path.read_text(encoding="utf-8")
+    updated, n = re.subn(
+        r'(?m)^(version\s*=\s*)"[^"]*"',
+        rf'\1"{version}"',
+        text,
+        count=1,
+    )
+    if n != 1:
+        raise SystemExit(f"Could not update version in {path}")
+    if updated != text:
+        path.write_text(updated, encoding="utf-8")
+        print(f"Updated {path} ({version})")
+    else:
+        print(f"pyproject.toml already at {version}")
+
+
 def main() -> None:
     parts = [int(p) for p in re.split(r"[^\d]+", __version__) if p.isdigit()]
     while len(parts) < 3:
@@ -62,6 +80,7 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"Wrote {out} ({__version__})")
+    _sync_pyproject(__version__)
 
 
 if __name__ == "__main__":

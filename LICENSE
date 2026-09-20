@@ -1,0 +1,14 @@
+# Internal Use License
+
+Copyright (c) SOC Tools contributors.
+
+This software is an internal SOC / security-operations tool ("Email IOC Extractor" /
+ReliQuary). Permission is granted to use, copy, and modify it within your
+organization for lawful defensive security operations.
+
+Redistribution outside your organization, sublicensing, or commercial sale of the
+software itself requires prior written permission from the copyright holders.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.

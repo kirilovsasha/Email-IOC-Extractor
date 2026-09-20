@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Entry point for Email IOC Extractor GUI and PyInstaller."""
+"""Entry point for Email IOC Extractor GUI and PyInstaller.
+
+Frozen EXE:
+  EmailIOCExtractor.exe                  → GUI
+  EmailIOCExtractor.exe --cli …          → same CLI as ``reliquary``
+"""
 
 from __future__ import annotations
 
@@ -47,6 +52,14 @@ def _show_fatal(message: str) -> None:
 
 
 def main() -> None:
+    argv = sys.argv[1:]
+    # Headless CLI mode (CI smoke / automation). Windowed EXE still returns exit codes
+    # and can write --json/--csv files even without an attached console.
+    if argv and argv[0] == "--cli":
+        from reliquary.cli import main as cli_main
+
+        raise SystemExit(cli_main(argv[1:]))
+
     try:
         from reliquary.gui.app import run
 

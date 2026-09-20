@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.4.0
+**Mail. Extract. Decide.** · v2.5.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
@@ -193,7 +193,8 @@ Mitigations не применяются при auth fail/softfail/none, HIGH-а�
 см. [`org_profile.example/README.md`](org_profile.example/README.md).
 
 CLI: `--allowlist` · `--verdict` · `--handoff-template` · `--profile` · `--post-export-hook`  
-Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`, `brands_path`, `post_export_hook`, …
+Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`, `brands_path`,
+`post_export_hook`, `post_export_hook_allow_external`, `disable_post_export_hook`, …
 
 ### ✏️ Плейсхолдеры handoff
 
@@ -266,12 +267,14 @@ Linux/macOS: `bash build/build.sh`.
 | | |
 |--|--|
 | 📦 Артефакт | `dist/EmailIOCExtractor.exe` (Lite, без консоли, без UPX) + `.sha256` |
-| 🏷️ Версия | `reliquary/__init__.py` → `build/version_info.txt` |
-| ✍️ Подпись | `build/sign_exe.ps1` (опционально) |
+| 🏷️ Версия | `reliquary/__init__.py` → `build/version_info.txt` + `pyproject.toml` |
+| ✍️ Подпись | `build/sign_exe.ps1` / [`docs/SIGNING.md`](docs/SIGNING.md) (опционально) |
 | 📜 Лог | `email_ioc_extractor_error.log` |
+| 🧊 Smoke | `EmailIOCExtractor.exe --cli sample.eml --json out.json` |
 
-CI: pytest Windows + Ubuntu, **Python 3.10–3.12**; push в `main` → EXE + smoke + SHA256;
+CI: pytest Windows + Ubuntu, **Python 3.10–3.13**; push в `main` → EXE + frozen `--cli` smoke + SHA256;
 тег `v*` → GitHub Release с changelog и хешем. История: [`CHANGELOG.md`](CHANGELOG.md).
+Безопасность: [`SECURITY.md`](SECURITY.md). Схема JSON: [`docs/schema_report_v1.json`](docs/schema_report_v1.json).
 
 ---
 
@@ -297,4 +300,4 @@ run_gui.bat              # Windows: запуск GUI
 
 ## 📄 Лицензия
 
-Внутренний инструмент SOC.
+Внутренний инструмент SOC — см. [`LICENSE`](LICENSE). Контрибут: [`CONTRIBUTING.md`](CONTRIBUTING.md).

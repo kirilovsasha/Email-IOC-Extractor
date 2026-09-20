@@ -270,6 +270,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="В stdout печатать только список IOC (JSON-массив)",
     )
+    exp.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Доп. запись в error log (путь, число IOC, вердикт)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -287,150 +292,192 @@ def main(argv: list[str] | None = None) -> int:
     opts.skip_broken = not args.no_skip_broken
 
     profile = load_org_profile(opts.profile_dir)
-    handoff_by_level = None
-    if profile is not None:
-        opts = opts.with_profile(profile)
-        handoff_by_level = {
-            k: str(v) for k, v in (profile.handoff_by_level or {}).items()
-        } or None
-
-    handoff_template_path = opts.handoff_template_path
-    batch_results = None
-
     try:
-        if args.text:
-            result = analyze_text(args.text, options=opts)
-        else:
-            inputs = _resolve_inputs(args)
-            if not inputs:
-                print(
-                    "Нет писем (.eml / .msg) для разбора.",
-                    file=sys.stderr,
-                )
-                return 2
-            for raw in [args.path, *(args.files or [])]:
-                if not raw:
-                    continue
-                rp = Path(raw)
-                if rp.is_file() and not is_supported(rp):
-                    print(
-                        f"Пропуск (не письмо): {rp.name} — только .eml / .msg",
-                        file=sys.stderr,
-                    )
-            if len(inputs) == 1:
-                result = analyze_file(inputs[0], options=opts)
-                batch_results = [result]
+        handoff_by_level = None
+        if profile is not None:
+            opts = opts.with_profile(profile)
+            handoff_by_level = {
+                k: str(v) for k, v in (profile.handoff_by_level or {}).items()
+            } or None
+
+        handoff_template_path = opts.handoff_template_path
+        batch_results = None
+
+        try:
+            if args.text:
+                result = analyze_text(args.text, options=opts)
             else:
-
-                def _progress(done: int, total: int, name: str, eta: float | None) -> None:
-                    eta_s = ""
-                    if eta is not None:
-                        eta_s = f" ETA {int(eta)}с"
+                inputs = _resolve_inputs(args)
+                if not inputs:
                     print(
-                        f"\r[{done}/{total}] {name}{eta_s}   ",
-                        end="",
+                        "Нет писем (.eml / .msg) для разбора.",
                         file=sys.stderr,
-                        flush=True,
                     )
+                    return 2
+                for raw in [args.path, *(args.files or [])]:
+                    if not raw:
+                        continue
+                    rp = Path(raw)
+                    if rp.is_file() and not is_supported(rp):
+                        print(
+                            f"Пропуск (не письмо): {rp.name} — только .eml / .msg",
+                            file=sys.stderr,
+                        )
+                if len(inputs) == 1:
+                    result = analyze_file(inputs[0], options=opts)
+                    batch_results = [result]
+                else:
 
-                outcome = run_batch(
-                    inputs,
-                    max_workers=args.workers,
-                    skip_broken=not args.no_skip_broken,
-                    on_progress=_progress,
-                    options=opts,
+                    def _progress(
+                        done: int, total: int, name: str, eta: float | None
+                    ) -> None:
+                        eta_s = ""
+                        if eta is not None:
+                            eta_s = f" ETA {int(eta)}с"
+                        print(
+                            f"\r[{done}/{total}] {name}{eta_s}   ",
+                            end="",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+
+                    outcome = run_batch(
+                        inputs,
+                        max_workers=args.workers,
+                        skip_broken=not args.no_skip_broken,
+                        on_progress=_progress,
+                        options=opts,
+                    )
+                    print(file=sys.stderr)
+                    if outcome.result is None:
+                        for err in outcome.errors:
+                            print(err, file=sys.stderr)
+                        return 1
+                    result = outcome.result
+                    batch_results = outcome.batch_results
+                    if outcome.failed:
+                        print(
+                            f"Пропущено битых: {len(outcome.failed)}",
+                            file=sys.stderr,
+                        )
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        except OSError as exc:
+            print(f"Ошибка ввода: {exc}", file=sys.stderr)
+            return 1
+
+        filtered = filters.filtered_result(result)
+        filt_meta = filters.serializable()
+
+        hook = str(getattr(args, "post_export_hook", "") or "")
+        hook_disabled = bool(prefs.get("disable_post_export_hook"))
+        hook_external = bool(prefs.get("post_export_hook_allow_external"))
+        if args.csv_out:
+            export_csv(filtered, args.csv_out)
+            print(f"CSV → {args.csv_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.csv_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if args.batch_csv_out:
+            export_batch_csv(result, args.batch_csv_out, batch_results=batch_results)
+            print(f"Batch CSV → {args.batch_csv_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.batch_csv_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if args.json_out:
+            export_report_json(
+                filtered,
+                args.json_out,
+                filters_applied=filt_meta,
+                batch_results=batch_results,
+            )
+            print(f"JSON → {args.json_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.json_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if args.handoff_out:
+            export_handoff(
+                filtered,
+                args.handoff_out,
+                iocs=filtered.iocs,
+                template_path=handoff_template_path,
+                handoff_by_level=handoff_by_level,
+            )
+            print(f"Handoff → {args.handoff_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.handoff_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+
+        if result.meta and result.meta.overrides_loaded:
+            ov = ", ".join(
+                f"{k}={Path(v).name}" for k, v in result.meta.overrides_loaded.items()
+            )
+            print(f"[{__app_name__}] overrides: {ov}", file=sys.stderr)
+        print(f"[{__app_name__}] v{__version__}", file=sys.stderr)
+
+        if getattr(args, "verbose", False):
+            from reliquary.core.error_log import append_error_log
+
+            append_error_log(
+                f"cli verbose: path={args.path!r} iocs={len(filtered.iocs)} "
+                f"verdict={result.verdict.level.value if result.verdict else None}"
+            )
+
+        if not args.quiet_verdict:
+            _print_verdict(result)
+        _print_ioc_summary(filtered)
+
+        exported = any(
+            (
+                args.csv_out,
+                args.json_out,
+                args.batch_csv_out,
+                args.handoff_out,
+                args.iocs_only,
+            )
+        )
+        if args.iocs_only:
+            print(
+                json.dumps(
+                    [i.to_dict() for i in filtered.iocs], ensure_ascii=False, indent=2
                 )
-                print(file=sys.stderr)
-                if outcome.result is None:
-                    for err in outcome.errors:
-                        print(err, file=sys.stderr)
-                    return 1
-                result = outcome.result
-                batch_results = outcome.batch_results
-                if outcome.failed:
-                    print(
-                        f"Пропущено битых: {len(outcome.failed)}",
-                        file=sys.stderr,
-                    )
-    except FileNotFoundError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    except OSError as exc:
-        print(f"Ошибка ввода: {exc}", file=sys.stderr)
-        return 1
+            )
+        elif args.stdout_json or not exported:
+            if args.stdout_json:
+                print(json.dumps(filtered.to_dict(), ensure_ascii=False, indent=2))
+            else:
+                payload = {
+                    "verdict": result.verdict.to_dict() if result.verdict else None,
+                    "iocs": [i.to_dict() for i in filtered.iocs],
+                    "errors": list(result.errors),
+                }
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
 
-    filtered = filters.filtered_result(result)
-    filt_meta = filters.serializable()
-
-    hook = str(getattr(args, "post_export_hook", "") or "")
-    if args.csv_out:
-        export_csv(filtered, args.csv_out)
-        print(f"CSV → {args.csv_out}", file=sys.stderr)
-        msg = run_post_export_hook(hook, args.csv_out)
-        if msg:
-            print(f"  {msg}", file=sys.stderr)
-    if args.batch_csv_out:
-        export_batch_csv(result, args.batch_csv_out, batch_results=batch_results)
-        print(f"Batch CSV → {args.batch_csv_out}", file=sys.stderr)
-        msg = run_post_export_hook(hook, args.batch_csv_out)
-        if msg:
-            print(f"  {msg}", file=sys.stderr)
-    if args.json_out:
-        export_report_json(
-            filtered,
-            args.json_out,
-            filters_applied=filt_meta,
-            batch_results=batch_results,
-        )
-        print(f"JSON → {args.json_out}", file=sys.stderr)
-        msg = run_post_export_hook(hook, args.json_out)
-        if msg:
-            print(f"  {msg}", file=sys.stderr)
-    if args.handoff_out:
-        export_handoff(
-            filtered,
-            args.handoff_out,
-            iocs=filtered.iocs,
-            template_path=handoff_template_path,
-            handoff_by_level=handoff_by_level,
-        )
-        print(f"Handoff → {args.handoff_out}", file=sys.stderr)
-        msg = run_post_export_hook(hook, args.handoff_out)
-        if msg:
-            print(f"  {msg}", file=sys.stderr)
-
-    if result.meta and result.meta.overrides_loaded:
-        ov = ", ".join(f"{k}={Path(v).name}" for k, v in result.meta.overrides_loaded.items())
-        print(f"[{__app_name__}] overrides: {ov}", file=sys.stderr)
-    print(f"[{__app_name__}] v{__version__}", file=sys.stderr)
-
-    if not args.quiet_verdict:
-        _print_verdict(result)
-    _print_ioc_summary(filtered)
-
-    exported = any(
-        (
-            args.csv_out,
-            args.json_out,
-            args.batch_csv_out,
-            args.handoff_out,
-            args.iocs_only,
-        )
-    )
-    if args.iocs_only:
-        print(json.dumps([i.to_dict() for i in filtered.iocs], ensure_ascii=False, indent=2))
-    elif args.stdout_json or not exported:
-        if args.stdout_json:
-            print(json.dumps(filtered.to_dict(), ensure_ascii=False, indent=2))
-        else:
-            payload = {
-                "verdict": result.verdict.to_dict() if result.verdict else None,
-                "iocs": [i.to_dict() for i in filtered.iocs],
-                "errors": list(result.errors),
-            }
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-
-    return 0
+        return 0
+    finally:
+        if profile is not None:
+            profile.cleanup()
 
 
 if __name__ == "__main__":

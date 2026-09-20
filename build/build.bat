@@ -47,6 +47,10 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo [3/4] PyInstaller...
+if /I "%~1"=="--full" (
+  set "RELIQUARY_FULL=1"
+  echo RELIQUARY_FULL=1
+)
 "%PY%" -m PyInstaller build\reliquary.spec --noconfirm
 if errorlevel 1 (
   echo [ERROR] PyInstaller failed
