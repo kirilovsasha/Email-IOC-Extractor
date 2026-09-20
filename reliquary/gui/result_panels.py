@@ -1,4 +1,4 @@
-"""Result tab fillers â mixin for ExtractorApp (keeps app.py thinner)."""
+"""Result tab fillers — mixin for ExtractorApp (keeps app.py thinner)."""
 
 from __future__ import annotations
 
@@ -48,31 +48,31 @@ class ResultPanelsMixin:
             return
         self._put(
             self.batch_box,
-            f"â¸ Ð¡Ð²Ð¾Ð´ÐºÐ° Ð¿Ð°ÐºÐµÑÐ°  ({len(rows)})  â ÐºÐ»Ð¸Ðº Ð¿Ð¾ Ð¸Ð¼ÐµÐ½Ð¸ â IOC; "
-            f"Â«diffÂ» â ÑÑÐ°Ð²Ð½ÐµÐ½Ð¸Ðµ Ñ peer ÐºÐ°Ð¼Ð¿Ð°Ð½Ð¸Ð¸\n\n",
+            f"▸ Сводка пакета  ({len(rows)})  — клик по имени → IOC; "
+            f"«diff» → сравнение с peer кампании\n\n",
             "section",
         )
         self._put(
             self.batch_box,
-            f"  {'Ð¤Ð°Ð¹Ð»':<36} {'ÐÐµÑÐ´Ð¸ÐºÑ':<12} {'Score':>5}  Top reason\n",
+            f"  {'Файл':<36} {'Вердикт':<12} {'Score':>5}  Top reason\n",
             "muted",
         )
-        self._put(self.batch_box, "  " + "â" * 72 + "\n", "muted")
+        self._put(self.batch_box, "  " + "─" * 72 + "\n", "muted")
         widget = self._tk(self.batch_box)
         for idx, row in enumerate(rows):
             name = Path(row.path).name
             tag = f"batchrow_{idx}"
             self._batch_row_tags[tag] = name
-            level = (row.verdict_level or "â").upper()
+            level = (row.verdict_level or "—").upper()
             color = {
                 "MALICIOUS": "danger",
                 "SUSPICIOUS": "warn",
                 "UNKNOWN": "info",
                 "BENIGN": "ok",
             }.get(level, "muted")
-            score = f"{row.verdict_score}" if row.verdict_score is not None else "â"
-            reason = (row.top_reason or "â")[:48]
-            display = name if len(name) <= 34 else name[:31] + "â¦"
+            score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
+            reason = (row.top_reason or "—")[:48]
+            display = name if len(name) <= 34 else name[:31] + "…"
             self._put(self.batch_box, f"  {display:<36} ", "ioc_click", tag, color)
             self._put(self.batch_box, f"{level:<12} ", color)
             self._put(self.batch_box, f"{score:>5}  ", "value")
@@ -82,8 +82,8 @@ class ResultPanelsMixin:
                 more = len(row.campaign_peers) - 4
                 self._put(
                     self.batch_box,
-                    f"      ÐÐ°Ð¼Ð¿Ð°Ð½Ð¸Ñ  +{peers}"
-                    + (f" â¦+{more}" if more > 0 else "")
+                    f"      Кампания  +{peers}"
+                    + (f" …+{more}" if more > 0 else "")
                     + "\n",
                     "warn",
                 )
@@ -103,7 +103,7 @@ class ResultPanelsMixin:
             if row.errors:
                 self._put(
                     self.batch_box,
-                    f"      ÐÑÐ¸Ð±ÐºÐ¸   {'; '.join(row.errors[:2])}\n",
+                    f"      Ошибки   {'; '.join(row.errors[:2])}\n",
                     "danger",
                 )
         self._put(self.batch_box, "\n")
@@ -158,7 +158,7 @@ class ResultPanelsMixin:
         left = find_batch_peer(batch, filename=left_name)
         right = find_batch_peer(batch, filename=right_name)
         if left is None or right is None:
-            self._set_status(f"Diff: Ð½ÐµÑ Ð´Ð°Ð½Ð½ÑÑ Ð´Ð»Ñ {left_name} / {right_name}")
+            self._set_status(f"Diff: нет данных для {left_name} / {right_name}")
             return
         delta = diff_results(left, right)
         if hasattr(self, "_batch_tree_scroll"):
@@ -174,10 +174,10 @@ class ResultPanelsMixin:
         self._put(self.batch_box, delta.to_text(), "value")
         self._put(
             self.batch_box,
-            "\n  (Ð¿Ð¾Ð²ÑÐ¾ÑÐ½ÑÐ¹ ÑÐ°Ð·Ð±Ð¾Ñ Ð¿Ð°ÐºÐµÑÐ° Ð²Ð¾ÑÑÑÐ°Ð½Ð¾Ð²Ð¸Ñ ÑÐ²Ð¾Ð´ÐºÑ)\n",
+            "\n  (повторный разбор пакета восстановит сводку)\n",
             "muted",
         )
-        self._set_status(f"Diff: {left_name} â {right_name}")
+        self._set_status(f"Diff: {left_name} ↔ {right_name}")
 
     def _on_batch_row_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]
         widget = self._tk(self.batch_box)
@@ -194,21 +194,21 @@ class ResultPanelsMixin:
                     self._tab_var.set(label)
                     self._tab_seg.set(label)
                     self._show_tab_frame("ioc")
-                self._set_status(f"Ð¤Ð¾ÐºÑÑ IOC: {name}")
+                self._set_status(f"Фокус IOC: {name}")
                 return
 
     def _fill_iocs(self, result: AnalysisResult, filtered) -> None:
         if not filtered:
             self.ioc_table.clear()
-            msg = "ÐÐ¾ÐºÐ°Ð·Ð°ÑÐµÐ»ÑÑÑÐ²Ð° Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½Ñ"
+            msg = "Доказательства не найдены"
             if result.errors:
-                msg += f"  Â·  {len(result.errors)} Ð·Ð°Ð¼ÐµÑÐ°Ð½Ð¸Ð¹ â Ð²ÐºÐ»Ð°Ð´ÐºÐ° Â«ÐÑÐ¸Ð±ÐºÐ¸Â»"
+                msg += f"  ·  {len(result.errors)} замечаний → вкладка «Ошибки»"
             self.ioc_empty_label.configure(text=msg)
             return
 
         note = ""
         if result.errors:
-            note = f"{len(result.errors)} Ð·Ð°Ð¼ÐµÑÐ°Ð½Ð¸Ð¹ â Ð²ÐºÐ»Ð°Ð´ÐºÐ° Â«ÐÑÐ¸Ð±ÐºÐ¸Â»"
+            note = f"{len(result.errors)} замечаний → вкладка «Ошибки»"
         self.ioc_empty_label.configure(text=note)
         show_file = bool(result.file_rows and len(result.file_rows) > 1) or (
             len(self._batch_results) > 1
@@ -218,38 +218,38 @@ class ResultPanelsMixin:
     def _fill_urls(self, result: AnalysisResult) -> None:
         self._clear_box(self.url_box)
         if not result.url_rewrites:
-            self._put(self.url_box, "URL Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½Ñ\n", "empty")
+            self._put(self.url_box, "URL не найдены\n", "empty")
             return
 
         changed = sum(1 for u in result.url_rewrites if u.changed)
         self._put(
             self.url_box,
-            f"â¸ Rewrite  ({len(result.url_rewrites)}, ÑÐ°Ð·Ð²ÑÑÐ½ÑÑÐ¾ {changed})\n",
+            f"▸ Rewrite  ({len(result.url_rewrites)}, развёрнуто {changed})\n",
             "section",
         )
         for u in result.url_rewrites:
             status_tag = "ok" if u.changed else "muted"
-            status = "ÑÐ°Ð·Ð²ÑÑÐ½ÑÑ" if u.changed else "ÐºÐ°Ðº ÐµÑÑÑ"
+            status = "развёрнут" if u.changed else "как есть"
             self._put(self.url_box, f"  {u.rewriter}  ", "info")
             self._put(self.url_box, f"{status}\n", status_tag)
             self._put(self.url_box, "      ", "label")
             self._put(self.url_box, f"{u.original}\n", "muted" if u.changed else "value")
             if u.changed:
-                self._put(self.url_box, "   â  ", "label")
+                self._put(self.url_box, "   →  ", "label")
                 self._put(self.url_box, f"{u.unwrapped}\n", "value")
             self._put(self.url_box, "\n")
 
     def _fill_attachments(self, result: AnalysisResult) -> None:
         self._clear_box(self.att_box)
         if not result.attachments:
-            self._put(self.att_box, "ÐÐ»Ð¾Ð¶ÐµÐ½Ð¸Ð¹ Ð½ÐµÑ\n", "empty")
+            self._put(self.att_box, "Вложений нет\n", "empty")
             return
 
         risky = sum(1 for a in result.attachments if a.risk_flags)
         self._put(
             self.att_box,
-            f"â¸ ÐÐ»Ð¾Ð¶ÐµÐ½Ð¸Ñ  ({len(result.attachments)}"
-            + (f", ÑÐ»Ð°Ð³Ð¸: {risky}" if risky else "")
+            f"▸ Вложения  ({len(result.attachments)}"
+            + (f", флаги: {risky}" if risky else "")
             + ")\n\n",
             "section",
         )
@@ -258,19 +258,19 @@ class ResultPanelsMixin:
             self._put(self.att_box, f"  {a.filename}\n", name_tag)
             self._put(
                 self.att_box,
-                f"      {a.size} B Â· {a.mime_guess}\n",
+                f"      {a.size} B · {a.mime_guess}\n",
                 "muted",
             )
             self._put(self.att_box, f"      SHA256  {a.sha256}\n", "value")
             if a.risk_flags:
-                self._put(self.att_box, f"      ÑÐ»Ð°Ð³Ð¸   {', '.join(a.risk_flags)}\n", "warn")
+                self._put(self.att_box, f"      флаги   {', '.join(a.risk_flags)}\n", "warn")
             if a.ole_streams:
                 preview = ", ".join(a.ole_streams[:10])
                 more = len(a.ole_streams) - 10
                 self._put(
                     self.att_box,
                     f"      OLE     {preview}"
-                    + (f" â¦+{more}" if more > 0 else "")
+                    + (f" …+{more}" if more > 0 else "")
                     + "\n",
                     "info",
                 )
@@ -284,8 +284,8 @@ class ResultPanelsMixin:
                     more = len(members) - 12
                     self._put(
                         self.att_box,
-                        f"      Ð°ÑÑÐ¸Ð²   {preview}"
-                        + (f" â¦+{more}" if more > 0 else "")
+                        f"      архив   {preview}"
+                        + (f" …+{more}" if more > 0 else "")
                         + "\n",
                         "meta",
                     )
@@ -296,11 +296,11 @@ class ResultPanelsMixin:
                         "danger",
                     )
             for note in a.notes[:5]:
-                self._put(self.att_box, f"      â {note}\n", "muted")
+                self._put(self.att_box, f"      — {note}\n", "muted")
             self._put(self.att_box, "\n")
 
     def _fill_mail_tab(self, result: AnalysisResult) -> None:
-        """Verdict + identity + headers â only meaningful for email."""
+        """Verdict + identity + headers — only meaningful for email."""
         self._clear_box(self.mail_box)
         v = result.verdict
         mid = result.mail_identity
@@ -312,16 +312,16 @@ class ResultPanelsMixin:
                 "unknown": "info",
                 "benign": "ok",
             }.get(v.level.value, "info")
-            self._put(self.mail_box, "â¸ ÐÐµÑÐ´Ð¸ÐºÑ  ", "section")
+            self._put(self.mail_box, "▸ Вердикт  ", "section")
             self._put(
                 self.mail_box,
-                f"{v.level.value.upper()} Â· score {v.score}\n",
+                f"{v.level.value.upper()} · score {v.score}\n",
                 color_tag,
                 "hero",
             )
             self._put(self.mail_box, f"  {v.summary}\n\n", "value")
             if v.breakdown:
-                self._put(self.mail_box, "  Ð Ð°Ð·Ð±Ð¾Ñ score\n", "label")
+                self._put(self.mail_box, "  Разбор score\n", "label")
                 for b in v.breakdown:
                     if b.points == 0:
                         continue
@@ -331,28 +331,28 @@ class ResultPanelsMixin:
                         self._put(self.mail_box, f"    +{b.points:>3}  ", "warn")
                     self._put(self.mail_box, f"[{b.category}] ", "info")
                     self._put(self.mail_box, f"{b.reason}\n", "muted")
-                self._put(self.mail_box, f"    ââââ  Ð¸ÑÐ¾Ð³Ð¾ {v.score}/100\n\n", "value")
+                self._put(self.mail_box, f"    ────  итого {v.score}/100\n\n", "value")
             elif v.reasons:
-                self._put(self.mail_box, "  ÐÑÐ¸ÑÐ¸Ð½Ñ\n", "label")
+                self._put(self.mail_box, "  Причины\n", "label")
                 for r in v.reasons[:8]:
-                    self._put(self.mail_box, f"    â¢ {r}\n", "muted")
+                    self._put(self.mail_box, f"    • {r}\n", "muted")
             self._put(self.mail_box, "\n")
 
         if mid:
-            self._put(self.mail_box, "â¸ ÐÐ´ÐµÐ½ÑÐ¸ÑÐ½Ð¾ÑÑÑ\n", "section")
+            self._put(self.mail_box, "▸ Идентичность\n", "section")
             self._put(self.mail_box, "  From         ", "label")
-            self._put(self.mail_box, f"{mid.from_header or 'â'}\n", "value")
+            self._put(self.mail_box, f"{mid.from_header or '—'}\n", "value")
             if mid.subject:
                 self._put(self.mail_box, "  Subject      ", "label")
                 self._put(self.mail_box, f"{mid.subject}\n", "value")
             self._put(self.mail_box, "  Return-Path  ", "label")
-            self._put(self.mail_box, f"{mid.return_path or 'â'}\n", "muted")
+            self._put(self.mail_box, f"{mid.return_path or '—'}\n", "muted")
             self._put(self.mail_box, "  Message-ID   ", "label")
-            self._put(self.mail_box, f"{mid.message_id or 'â'}\n", "meta")
+            self._put(self.mail_box, f"{mid.message_id or '—'}\n", "meta")
             self._put(self.mail_box, "  Auth         ", "label")
             self._put(
                 self.mail_box,
-                f"SPF={mid.spf or 'â'}  DKIM={mid.dkim or 'â'}  DMARC={mid.dmarc or 'â'}\n",
+                f"SPF={mid.spf or '—'}  DKIM={mid.dkim or '—'}  DMARC={mid.dmarc or '—'}\n",
                 "info",
             )
             self._put(self.mail_box, "  Hops         ", "label")
@@ -360,7 +360,7 @@ class ResultPanelsMixin:
             self._put(self.mail_box, "\n")
             self._put(
                 self.mail_box,
-                "  ÐÐ½Ð¾Ð¿ÐºÐ¸ ÑÐ²ÐµÑÑÑ: From / Msg-ID / Auth\n\n",
+                "  Кнопки сверху: From / Msg-ID / Auth\n\n",
                 "muted",
             )
 
@@ -370,7 +370,7 @@ class ResultPanelsMixin:
             if r.kind == "email" and (r.message_id or r.subject or r.sender)
         ]
         if result.source_kind == "batch" and len(mail_rows) > 1:
-            self._put(self.mail_box, f"â¸ ÐÐ¸ÑÑÐ¼Ð° Ð² Ð¿Ð°ÐºÐµÑÐµ  ({len(mail_rows)})\n", "section")
+            self._put(self.mail_box, f"▸ Письма в пакете  ({len(mail_rows)})\n", "section")
             for r in mail_rows:
                 self._put(self.mail_box, f"  {Path(r.path).name}\n", "value")
                 if r.sender:
@@ -390,7 +390,7 @@ class ResultPanelsMixin:
                 self._put(self.mail_box, "\n")
             self._put(
                 self.mail_box,
-                "  ÐÐ¾Ð»Ð½ÑÐ¹ ÑÐ°Ð·Ð±Ð¾Ñ Ð·Ð°Ð³Ð¾Ð»Ð¾Ð²ÐºÐ¾Ð² â Ñ Ð¿ÐµÑÐ²Ð¾Ð³Ð¾ Ð¿Ð¸ÑÑÐ¼Ð°; Ð´ÐµÑÐ°Ð»Ð¸ Ð¿Ð¾ ÑÐ°Ð¹Ð»Ð°Ð¼ Ð²Ð¾ Ð²ÐºÐ»Ð°Ð´ÐºÐµ Â«ÐÐ°ÐºÐµÑÂ».\n\n",
+                "  Полный разбор заголовков — у первого письма; детали по файлам во вкладке «Пакет».\n\n",
                 "muted",
             )
 
@@ -400,8 +400,8 @@ class ResultPanelsMixin:
             ]
             self._put(
                 self.mail_box,
-                f"â¸ Findings  ({len(result.headers)}"
-                + (f", Ð·Ð°Ð¼ÐµÑÐ°Ð½Ð¸Ð¹: {len(alerts)}" if alerts else "")
+                f"▸ Findings  ({len(result.headers)}"
+                + (f", замечаний: {len(alerts)}" if alerts else "")
                 + ")\n",
                 "section",
             )
@@ -415,14 +415,14 @@ class ResultPanelsMixin:
         elif not mid and not v and not result.headers:
             self._put(
                 self.mail_box,
-                "ÐÐµÑ Ð´Ð°Ð½Ð½ÑÑ Ð²ÐµÑÐ´Ð¸ÐºÑÐ°.\n"
-                "ÐÑÐºÑÐ¾Ð¹ÑÐµ .eml / .msg â Ð·Ð´ÐµÑÑ Ð¿Ð¾ÑÐ²ÑÑÑÑ score, Ð¿ÑÐ¸ÑÐ¸Ð½Ñ Ð¸ ÑÐ°Ð·Ð±Ð¾Ñ.\n",
+                "Нет данных вердикта.\n"
+                "Откройте .eml / .msg — здесь появятся score, причины и разбор.\n",
                 "empty",
             )
             return
 
         if result.raw_headers:
-            self._put(self.mail_box, "â¸ Ð¡ÑÑÑÐµ Ð·Ð°Ð³Ð¾Ð»Ð¾Ð²ÐºÐ¸\n", "section")
+            self._put(self.mail_box, "▸ Сырые заголовки\n", "section")
             for name, value in result.raw_headers.items():
                 self._put(self.mail_box, f"  {name}: ", "label")
                 self._put(self.mail_box, f"{value}\n", "value")
@@ -440,8 +440,8 @@ class ResultPanelsMixin:
     def _fill_errors(self, result: AnalysisResult) -> None:
         self._clear_box(self.err_box)
         if not result.errors:
-            self._put(self.err_box, "ÐÑÐ¸Ð±Ð¾Ðº Ð½ÐµÑ\n", "ok")
+            self._put(self.err_box, "Ошибок нет\n", "ok")
             return
-        self._put(self.err_box, f"â¸ ÐÑÐ¸Ð±ÐºÐ¸ / Ð·Ð°Ð¼ÐµÑÐ°Ð½Ð¸Ñ  ({len(result.errors)})\n", "section")
+        self._put(self.err_box, f"▸ Ошибки / замечания  ({len(result.errors)})\n", "section")
         for err in result.errors:
             self._put(self.err_box, f"  ! {err}\n", "danger")
