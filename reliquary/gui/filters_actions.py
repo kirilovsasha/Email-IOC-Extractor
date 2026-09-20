@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from reliquary.core.filter_state import FilterState
 from reliquary.core.models import AnalysisResult
 
@@ -40,6 +43,24 @@ TYPE_FILTER_TIPS = {
 
 class FiltersActionsMixin:
     """Requires ExtractorApp filter BooleanVars and chrome widgets."""
+
+    # Declared for mypy: provided by ExtractorApp / LayoutMixin / PrefsMixin.
+    result: AnalysisResult | None
+    cat_vars: dict[str, Any]
+    hide_rewriter: Any
+    hide_allowlisted: Any
+    hide_private: Any
+    actionable_only: Any
+    full_ioc_types: Any
+    _filters_open: Any
+    _filt_toggle: Any
+    _filt_hint: Any
+    _filters_panel: Any
+    _search_var: Any
+    _focus_source_file: str
+    _persist_prefs: Callable[[], None]
+    _refresh_views: Callable[..., None]
+    _update_focus_hint: Callable[[], None]
 
     def _on_filter_change(self) -> None:
         self._persist_prefs()
