@@ -5,12 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from reliquary.core.campaign import export_campaign_handoff
 from reliquary.core.export_hook import run_post_export_hook
 from reliquary.core.exporters import (
     export_batch_csv,
     export_cef,
     export_csv,
     export_ecs_json,
+    export_misp_csv,
+    export_opencti_json,
     export_report_json,
     export_stix_lite,
 )
@@ -18,11 +21,29 @@ from reliquary.core.handoff import export_handoff
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.prefs import load_prefs
 
-EXPORT_CHOICES = ("JSON", "CSV", "Batch CSV", "Handoff", "ECS", "CEF", "STIX")
+EXPORT_CHOICES = (
+    "JSON",
+    "CSV",
+    "Batch CSV",
+    "Handoff",
+    "Кампания",
+    "ECS",
+    "CEF",
+    "STIX",
+    "MISP",
+    "OpenCTI",
+)
 
 
 def normalize_export_kind(kind: str) -> str:
-    return kind.strip().lower().replace(" ", "_")
+    raw = kind.strip().lower().replace(" ", "_")
+    aliases = {
+        "кампания": "campaign",
+        "campaign_handoff": "campaign",
+        "opencti": "opencti",
+        "misp_csv": "misp",
+    }
+    return aliases.get(raw, raw)
 
 
 def run_export(
@@ -52,6 +73,8 @@ def run_export(
             template_path=handoff_template_path,
             handoff_by_level=handoff_by_level,
         )
+    elif kind_n == "campaign":
+        written = export_campaign_handoff(batch_results or [result], out)
     elif kind_n == "json":
         written = export_report_json(
             result,
@@ -65,6 +88,10 @@ def run_export(
         written = export_cef(result, out)
     elif kind_n == "stix":
         written = export_stix_lite(result, out)
+    elif kind_n == "misp":
+        written = export_misp_csv(result, out)
+    elif kind_n == "opencti":
+        written = export_opencti_json(result, out)
     else:
         raise ValueError(f"Неизвестный формат экспорта: {kind}")
 
@@ -88,7 +115,10 @@ def default_export_filename(kind: str) -> str:
         "batch_csv": "mail_batch_triage.csv",
         "json": "verdict_report.json",
         "handoff": "mail_handoff.txt",
+        "campaign": "campaign_handoff.txt",
         "ecs": "mail_ecs.json",
         "cef": "mail_siem.cef",
         "stix": "mail_stix_bundle.json",
+        "misp": "mail_misp_attributes.csv",
+        "opencti": "mail_opencti.json",
     }.get(kind_n, "export.bin")

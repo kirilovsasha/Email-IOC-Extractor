@@ -48,7 +48,18 @@ _APPEARANCE_OK = frozenset({"dark", "light", "system"})
 _DENSITY_OK = frozenset({"compact", "normal", "comfortable"})
 _COPY_OK = frozenset({"type|value", "value", "csv", "defanged", "defanged|type"})
 _EXPORT_OK = frozenset(
-    {"JSON", "CSV", "Batch CSV", "Handoff", "ECS", "CEF", "STIX"}
+    {
+        "JSON",
+        "CSV",
+        "Batch CSV",
+        "Handoff",
+        "Кампания",
+        "ECS",
+        "CEF",
+        "STIX",
+        "MISP",
+        "OpenCTI",
+    }
 )
 
 

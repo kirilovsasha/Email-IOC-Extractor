@@ -48,6 +48,8 @@ DANGEROUS_EXTENSIONS = {
     ".reg",
     ".scf",
     ".chm",
+    ".one",
+    ".onepkg",
 }
 
 ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".gz", ".tar", ".cab", ".iso"}
@@ -393,6 +395,18 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
     if ext in DANGEROUS_EXTENSIONS:
         flags.append("dangerous_extension")
         notes.append(f"Исполняемое/опасное расширение: {ext}")
+
+    if ext in {".iso", ".img"}:
+        flags.append("iso_image")
+        notes.append("Образ диска ISO/IMG — часто доставляет LNK/malware")
+
+    if ext == ".lnk":
+        flags.append("shortcut_lnk")
+        notes.append("Ярлык Windows (.lnk) — проверьте цель в песочнице")
+
+    if ext in {".one", ".onepkg"} or lower.endswith(".one.tmp"):
+        flags.append("onenote_attachment")
+        notes.append("OneNote-вложение — возможен встроенный фишинговый контент")
 
     if ext in ARCHIVE_EXTENSIONS:
         flags.append("archive")

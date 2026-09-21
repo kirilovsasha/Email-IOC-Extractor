@@ -138,91 +138,110 @@ def _decode_proxysg(url: str) -> str | None:
     return _path_embedded_url(url)
 
 
-def unwrap_url(url: str) -> UrlRewriteResult:
-    """Attempt to unwrap a single URL. Never contacts the network."""
+def _unwrap_once(url: str) -> tuple[str, str]:
+    """Single-hop unwrap. Returns (candidate_or_original, rewriter_name)."""
     original = url.rstrip(".,;:!?)")
     lower = original.lower()
-    unwrapped = original
-    rewriter = "none"
-
     try:
         if "urldefense" in lower and "/v2/url" in lower:
             candidate = _decode_proofpoint_v2(original)
             if candidate:
-                unwrapped, rewriter = candidate, "proofpoint_v2"
+                return candidate, "proofpoint_v2"
         elif "urldefense" in lower and "/v3/" in lower:
             candidate = _decode_proofpoint_v3(original)
             if candidate:
-                unwrapped, rewriter = candidate, "proofpoint_v3"
+                return candidate, "proofpoint_v3"
         elif "safelinks.protection.outlook.com" in lower:
             candidate = _param_url(original, ("url", "u"))
             if candidate:
-                unwrapped, rewriter = candidate, "microsoft_safelinks"
+                return candidate, "microsoft_safelinks"
         elif "linkprotect.cudasvc.com" in lower:
             candidate = _param_url(original, ("a", "url"))
             if candidate:
-                unwrapped, rewriter = candidate, "barracuda"
+                return candidate, "barracuda"
         elif "mimecast.com" in lower:
             candidate = _param_url(original, ("url", "u", "target"))
             if candidate:
-                unwrapped, rewriter = candidate, "mimecast"
+                return candidate, "mimecast"
         elif "fireeye.com" in lower:
             candidate = _param_url(original, ("url", "u"))
             if candidate:
-                unwrapped, rewriter = candidate, "fireeye"
+                return candidate, "fireeye"
         elif "secure-web.cisco.com" in lower or "url.trendmicro.com" in lower:
             candidate = _param_url(original, ("url", "u", "dest", "target", "link"))
             if candidate:
-                unwrapped, rewriter = candidate, "cisco_umbrella"
+                return candidate, "cisco_umbrella"
         elif "google." in lower and "/url?" in lower:
             candidate = _param_url(original, ("q", "url", "u"))
             if candidate and candidate.startswith("http"):
-                unwrapped, rewriter = candidate, "google_redirect"
+                return candidate, "google_redirect"
         elif "protection.office.com" in lower or "aka.ms" in lower:
             candidate = _param_url(original, ("url", "u", "link"))
             if candidate:
-                unwrapped, rewriter = candidate, "defender_atp"
+                return candidate, "defender_atp"
         elif _is_proxysg(lower, original):
             candidate = _decode_proxysg(original)
             if candidate:
-                unwrapped, rewriter = candidate, "proxysg"
+                return candidate, "proxysg"
         elif "kaspersky" in lower or "klclick" in lower:
             candidate = _param_url(original, ("url", "u", "target", "link", "redir"))
             if not candidate:
                 candidate = _path_embedded_url(original)
             if candidate:
-                unwrapped, rewriter = candidate, "kaspersky"
+                return candidate, "kaspersky"
         elif "drweb" in lower:
             candidate = _param_url(original, ("url", "u", "target", "link"))
             if not candidate:
                 candidate = _path_embedded_url(original)
             if candidate:
-                unwrapped, rewriter = candidate, "drweb"
+                return candidate, "drweb"
         else:
-            # Generic redirectors: ?url=, ?dest=, ?redirect=, ?r=, ?target=
             candidate = _param_url(
                 original,
                 ("url", "u", "dest", "destination", "redirect", "r", "target", "link"),
             )
             host = (urlparse(original).hostname or "").lower()
             if candidate and candidate.startswith("http") and host and host not in candidate:
-                unwrapped, rewriter = candidate, "generic_redirect"
+                return candidate, "generic_redirect"
     except (ValueError, KeyError, IndexError, TypeError, re.error):
-        # Keep original on any parse failure — offline safety first.
-        return UrlRewriteResult(
-            original=original, unwrapped=original, rewriter="parse_error", changed=False
-        )
+        return original, "parse_error"
+    return original, "none"
+
+
+def unwrap_url(url: str, *, max_hops: int = 5) -> UrlRewriteResult:
+    """Unwrap rewriter wrappers, including nested chains (offline)."""
+    original = url.rstrip(".,;:!?)")
+    current = original
+    chain: list[str] = []
+    last_rewriter = "none"
+
+    for _ in range(max(1, max_hops)):
+        nxt, rewriter = _unwrap_once(current)
+        if rewriter in ("none", "parse_error") or nxt == current:
+            if rewriter == "parse_error" and not chain:
+                return UrlRewriteResult(
+                    original=original,
+                    unwrapped=original,
+                    rewriter="parse_error",
+                    changed=False,
+                    chain=[],
+                )
+            break
+        chain.append(rewriter)
+        last_rewriter = rewriter
+        current = nxt.rstrip(".,;:!?)")
 
     return UrlRewriteResult(
         original=original,
-        unwrapped=unwrapped,
-        rewriter=rewriter,
-        changed=unwrapped != original,
+        unwrapped=current,
+        rewriter=last_rewriter if chain else "none",
+        changed=current != original,
+        chain=chain,
     )
 
 
 def find_and_unwrap(text: str) -> list[UrlRewriteResult]:
-    """Find URLs in text and unwrap rewriter wrappers."""
+    """Find URLs in text and unwrap rewriter wrappers (with nested chains)."""
     if not text:
         return []
     results: list[UrlRewriteResult] = []

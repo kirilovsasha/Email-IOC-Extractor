@@ -44,4 +44,4 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 
 ## Schema
 
-JSON reports include top-level `schema_version` (currently `1`). Bump only on breaking shape changes — see `reliquary.core.models.SCHEMA_VERSION`.
+JSON reports include top-level `schema_version` (currently `2`). Bump only on breaking shape changes — see `reliquary.core.models.SCHEMA_VERSION` and `docs/schema_report_v2.json`.

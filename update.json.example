@@ -1,1 +1,1 @@
-{"latest":"2.7.0","notes":"RU-only UI, SIEM export, ProxySG/Kaspersky unwrap"}
+{"latest":"2.8.0","notes":"BEC scoring, nested unwrap, schema v2, MISP/OpenCTI, campaign handoff"}

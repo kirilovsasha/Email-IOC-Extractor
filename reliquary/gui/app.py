@@ -387,7 +387,7 @@ class ExtractorApp(
             command=lambda: self._allowlist_host_from_ioc(ioc),
         )
         menu.add_command(
-            label="Override вердикта…",
+            label="Сменить вердикт…",
             command=self._override_verdict,
         )
         if self.result and any(

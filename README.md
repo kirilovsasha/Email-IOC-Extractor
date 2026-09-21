@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.7.0
+**Mail. Extract. Decide.** · v2.8.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
@@ -9,7 +9,7 @@ URL rewrite, IOC как доказательства и **вердикт**
 
 📡 Сеть не используется. Пакет Python — `reliquary`; продукт — **Email IOC Extractor**.
 
-📦 Экспорт: JSON (`schema_version`) · CSV · Batch CSV · Handoff · ECS · CEF · STIX.
+📦 Экспорт: JSON (`schema_version` **2**) · CSV · Batch CSV · Handoff · Кампания · ECS · CEF · STIX · MISP · OpenCTI.
 
 | 🖥️ GUI | ⌨️ CLI | 📁 Batch | 🎫 Handoff | 🧩 Org profile | 🏗️ EXE |
 
@@ -115,6 +115,9 @@ reliquary mail.eml --json report.json
 reliquary mail.eml --ecs report.ecs.json
 reliquary mail.eml --cef report.cef
 reliquary mail.eml --stix report.stix.json
+reliquary mail.eml --misp attrs.csv
+reliquary mail.eml --opencti opencti.json
+reliquary ./inbox --campaign-handoff campaign.txt
 
 # папка / пакет
 reliquary ./inbox --json report.json --batch-csv triage.csv --workers 4
@@ -138,7 +141,8 @@ reliquary mail.eml --json out.json --post-export-hook "python scripts/my_hook.py
 Снять фильтры: `--no-actionable`, `--no-hide-rewriter`, `--no-hide-allowlisted`, `--no-hide-private`.  
 Полный отчёт в stdout: `--stdout-json`. Только IOC-массив: `--iocs-only`.
 
-JSON содержит top-level **`schema_version`** (сейчас `1`) — см. [`docs/TUNING.md`](docs/TUNING.md).
+JSON содержит top-level **`schema_version`** (сейчас `2`) — см. [`docs/TUNING.md`](docs/TUNING.md)
+и [`docs/schema_report_v2.json`](docs/schema_report_v2.json).
 
 ---
 

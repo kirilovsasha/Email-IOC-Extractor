@@ -55,6 +55,7 @@ class VerdictConfig:
     weight_urgency: int = 15
     weight_links_and_attachments: int = 10
     weight_credential_harvest: int = 14
+    weight_bec_payment: int = 20
     weight_href_mismatch: int = 18
     weight_hidden_text: int = 10
     weight_html_form: int = 8
@@ -62,6 +63,9 @@ class VerdictConfig:
     weight_qr_present: int = 8
     weight_lookalike: int = 22
     weight_idn: int = 12
+    weight_attachment_iso: int = 18
+    weight_attachment_lnk: int = 16
+    weight_attachment_onenote: int = 14
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -70,7 +74,7 @@ class VerdictConfig:
     cap_headers: int = 45
     cap_attachments: int = 40
     cap_urls: int = 30
-    cap_content: int = 35
+    cap_content: int = 40
     cap_lookalike: int = 30
     # Max absolute mitigation (floor on how much score can be reduced)
     cap_mitigation: int = 25
@@ -223,15 +227,18 @@ def _score_attachments(
         "qr_url",
         "archive_dangerous_member",
         "encrypted_archive",
+        "iso_image",
+        "shortcut_lnk",
+        "onenote_attachment",
     }
-    # Unique flags across all attachments (cap stacking)
     seen_flags: set[str] = set()
     soft_noted = False
     for att in result.attachments:
         hit = high_flags.intersection(att.risk_flags) - seen_flags
         if hit:
             seen_flags |= hit
-            if "encrypted_archive" in hit:
+            rest = set(hit)
+            if "encrypted_archive" in rest:
                 parts.append(
                     ScoreContribution(
                         "attachments",
@@ -239,23 +246,43 @@ def _score_attachments(
                         f"Шифрованный архив «{att.filename}» — содержимое не извлечено офлайн",
                     )
                 )
-                rest = hit - {"encrypted_archive"}
-                if rest:
-                    pts = cfg.weight_attachment_flag * min(2, len(rest))
-                    parts.append(
-                        ScoreContribution(
-                            "attachments",
-                            pts,
-                            f"Вложение «{att.filename}»: {', '.join(sorted(rest))}",
-                        )
+                rest.discard("encrypted_archive")
+            if "iso_image" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_attachment_iso,
+                        f"ISO/IMG-образ «{att.filename}»",
                     )
-            else:
-                pts = cfg.weight_attachment_flag * min(2, len(hit))
+                )
+                rest.discard("iso_image")
+                rest.discard("dangerous_extension")
+            if "shortcut_lnk" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_attachment_lnk,
+                        f"Ярлык LNK «{att.filename}»",
+                    )
+                )
+                rest.discard("shortcut_lnk")
+                rest.discard("dangerous_extension")
+            if "onenote_attachment" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_attachment_onenote,
+                        f"OneNote-вложение «{att.filename}»",
+                    )
+                )
+                rest.discard("onenote_attachment")
+            if rest:
+                pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
                     ScoreContribution(
                         "attachments",
                         pts,
-                        f"Вложение «{att.filename}»: {', '.join(sorted(hit))}",
+                        f"Вложение «{att.filename}»: {', '.join(sorted(rest))}",
                     )
                 )
         elif (
@@ -278,11 +305,18 @@ def _score_urls(
 ) -> tuple[int, list[ScoreContribution]]:
     parts: list[ScoreContribution] = []
     if any(u.changed for u in result.url_rewrites):
+        nested = sum(1 for u in result.url_rewrites if len(u.chain) > 1)
+        detail = "Обнаружены URL rewrite (SafeLinks/Proofpoint/…) — развёрнуты локально"
+        if nested:
+            detail = (
+                f"Вложенные URL-цепочки unwrap ({nested}) — "
+                "SafeLinks/ProxySG/… развёрнуты локально"
+            )
         parts.append(
             ScoreContribution(
                 "urls",
-                cfg.weight_url_rewrite,
-                "Обнаружены URL rewrite (SafeLinks/Proofpoint/…) — развёрнуты локально",
+                cfg.weight_url_rewrite + (3 if nested else 0),
+                detail,
             )
         )
 
@@ -358,6 +392,7 @@ def _score_content(
 
     weight_map = {
         "weight_credential_harvest": cfg.weight_credential_harvest,
+        "weight_bec_payment": cfg.weight_bec_payment,
         "weight_href_mismatch": cfg.weight_href_mismatch,
         "weight_hidden_text": cfg.weight_hidden_text,
         "weight_html_form": cfg.weight_html_form,
@@ -480,12 +515,16 @@ def _score_mitigations(
         "archive_dangerous_member",
         "encrypted_archive",
         "mime_mismatch",
+        "iso_image",
+        "shortcut_lnk",
+        "onenote_attachment",
     }
     if any(high_att.intersection(a.risk_flags) for a in result.attachments):
         return 0, []
     bad_content = {
         "href_mismatch",
         "credential_harvest",
+        "bec_payment",
         "qr_only",
         "hidden_text",
     }

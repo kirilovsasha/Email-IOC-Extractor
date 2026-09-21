@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.8.0
+
+### Detection
+- BEC / платёжные маркеры (RU+EN): `bec_payment`, вес `weight_bec_payment`
+- Вложенные URL-цепочки unwrap (SafeLinks→ProxySG→…) + поле `chain`
+- Href≠label после полного unwrap
+- Флаги вложений: `iso_image`, `shortcut_lnk`, `onenote_attachment` + веса
+- Баннер QR для Lite / без pyzbar
+
+### Product / RU
+- Русские подписи вердикта в GUI; override принимает RU и EN коды
+- «В тикет» / «Сменить вердикт» / «сравнить с peer»
+- Пакетный handoff кампаний (`--campaign-handoff`, GUI «Кампания»)
+- Крупнее hero-шрифт вердикта
+
+### Integrations
+- `schema_version: 2` — `unwrap_chains`, `campaign`, `analyst_override`
+- Экспорт MISP CSV и OpenCTI lite JSON
+- Опциональная Authenticode-подпись в release CI (`SIGNING_PFX_*` secrets)
+
+### Quality
+- Corpus: BEC RU, nested unwrap, ISO; property-тесты unwrap
+- Coverage / mypy без регресса
+
 ## 2.7.0
 
 ### Product / RU-only

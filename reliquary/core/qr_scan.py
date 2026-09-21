@@ -76,3 +76,19 @@ def _dedup(items: list[str]) -> list[str]:
         seen.add(key)
         out.append(it)
     return out
+
+
+def qr_decoder_available() -> bool:
+    """True if at least one optional QR backend can be imported."""
+    try:
+        from pyzbar.pyzbar import decode as _z  # noqa: F401
+
+        return True
+    except ImportError:
+        pass
+    try:
+        import zxingcpp  # noqa: F401
+
+        return True
+    except ImportError:
+        return False

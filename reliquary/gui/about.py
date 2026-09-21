@@ -8,6 +8,7 @@ from tkinter import messagebox
 from reliquary import __app_name__, __log_name__, __tagline__, __version__
 from reliquary.core.models import AnalysisResult
 from reliquary.core.paths import app_dir
+from reliquary.core.qr_scan import qr_decoder_available
 from reliquary.core.update_check import check_update_manifest
 from reliquary.gui.i18n import t
 
@@ -34,6 +35,11 @@ def show_about_dialog(
     runbook_line = (
         f"\nRunbook: {runbook}" if runbook.is_file() else "\nRunbook: docs/ANALYST_RU.md"
     )
+    qr_line = (
+        "\nQR: декодер доступен"
+        if qr_decoder_available()
+        else f"\n{t('qr_lite')}"
+    )
     messagebox.showinfo(
         f"{t('about_title')} — {__app_name__}",
         f"{__app_name__} v{__version__}\n"
@@ -43,11 +49,11 @@ def show_about_dialog(
         "1. Откройте письмо или папку\n"
         "2. Вердикт — score / разбор / причины\n"
         "3. Вложения · URL · IOC\n"
-        "4. Экспорт JSON / CSV / ECS / CEF / STIX / Handoff\n"
-        "5. ПКМ по IOC → allowlist / override\n\n"
+        "4. Экспорт JSON / CSV / ECS / CEF / STIX / MISP / OpenCTI / тикет\n"
+        "5. ПКМ по IOC → allowlist / сменить вердикт\n\n"
         f"Журнал: {__log_name__}\n"
-        "Ctrl+O · Ctrl+H handoff · Ctrl+E экспорт · Ctrl+L тема · Ctrl+D плотность\n"
+        "Ctrl+O · Ctrl+H тикет · Ctrl+E экспорт · Ctrl+L тема · Ctrl+D плотность\n"
         f"Тема: {appearance_mode} · IOC: {ioc_density}"
-        f"{overrides}{update_line}{runbook_line}\n\n"
+        f"{overrides}{update_line}{runbook_line}{qr_line}\n\n"
         f"Каталог:\n{root}",
     )

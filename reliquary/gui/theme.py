@@ -107,7 +107,7 @@ FONT = {
     "panel": 14,
     "section": 15,
     "title": 16,
-    "hero": 18,
+    "hero": 22,
 }
 
 FONT_UI = "Segoe UI"

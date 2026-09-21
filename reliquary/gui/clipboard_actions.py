@@ -85,7 +85,7 @@ class ClipboardActionsMixin:
         )
         self.clipboard_clear()
         self.clipboard_append(text)
-        self._set_status("Handoff скопирован в буфер")
+        self._set_status("Текст для тикета скопирован в буфер")
 
     def _format_iocs_for_clipboard(self, iocs: list[Ioc]) -> str:
         fmt = self._copy_format.get()
@@ -139,6 +139,9 @@ class ClipboardActionsMixin:
             "ecs": [("ECS JSON", "*.json")],
             "cef": [("CEF", "*.cef"), ("Text", "*.txt")],
             "stix": [("STIX JSON", "*.json")],
+            "misp": [("MISP CSV", "*.csv")],
+            "opencti": [("OpenCTI JSON", "*.json")],
+            "campaign": [("Text", "*.txt")],
         }.get(kind_n, [("All", "*.*")])
 
         path = filedialog.asksaveasfilename(

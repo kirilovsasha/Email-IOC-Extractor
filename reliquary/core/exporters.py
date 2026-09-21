@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from reliquary.core.models import AnalysisResult, Ioc, IocType
+from reliquary.core.models import SCHEMA_VERSION, AnalysisResult, Ioc, IocType
 
 
 def filter_iocs(
@@ -463,3 +463,94 @@ def _stix_pattern(ioc_type: str, value: str) -> str | None:
         "sha256": f"[file:hashes.'SHA-256' = '{esc}']",
     }
     return mapping.get(ioc_type)
+
+
+_MISP_TYPE = {
+    "url": "url",
+    "domain": "domain",
+    "ipv4": "ip-dst",
+    "ipv6": "ip-dst",
+    "email": "email-src",
+    "md5": "md5",
+    "sha1": "sha1",
+    "sha256": "sha256",
+    "filename": "filename",
+}
+
+
+def export_misp_csv(result: AnalysisResult, path: str | Path) -> Path:
+    """MISP-compatible attribute CSV (category,type,value,comment,to_ids)."""
+    out = Path(path)
+    fieldnames = ["category", "type", "value", "comment", "to_ids"]
+    level, score, summary = _verdict_fields(result)
+    with out.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "category": "External analysis",
+                "type": "comment",
+                "value": f"verdict={level} score={score} {summary}"[:500],
+                "comment": Path(result.source_path).name,
+                "to_ids": "0",
+            }
+        )
+        for ioc in result.iocs:
+            mtype = _MISP_TYPE.get(ioc.ioc_type.value)
+            if not mtype:
+                continue
+            category = "Network activity"
+            if mtype in ("md5", "sha1", "sha256", "filename"):
+                category = "Payload delivery"
+            if mtype.startswith("email"):
+                category = "Payload delivery"
+            writer.writerow(
+                {
+                    "category": category,
+                    "type": mtype,
+                    "value": ioc.value,
+                    "comment": "|".join(ioc.tags[:6]),
+                    "to_ids": "1",
+                }
+            )
+    return out
+
+
+def export_opencti_json(result: AnalysisResult, path: str | Path) -> Path:
+    """Minimal OpenCTI-oriented observables bundle (offline file)."""
+    out = Path(path)
+    level, score, summary = _verdict_fields(result)
+    observables: list[dict] = []
+    for ioc in result.iocs:
+        t = ioc.ioc_type.value
+        obs: dict = {
+            "type": t,
+            "value": ioc.value,
+            "x_opencti_score": score,
+            "x_opencti_description": ioc.context or summary,
+            "labels": [level or "unknown", *list(ioc.tags)[:8]],
+        }
+        if t == "url":
+            obs["entity_type"] = "Url"
+        elif t == "domain":
+            obs["entity_type"] = "Domain-Name"
+        elif t in ("ipv4", "ipv6"):
+            obs["entity_type"] = "IPv4-Addr" if t == "ipv4" else "IPv6-Addr"
+        elif t in ("md5", "sha1", "sha256"):
+            obs["entity_type"] = "StixFile"
+            obs["hashes"] = {t.upper(): ioc.value}
+        elif t == "email":
+            obs["entity_type"] = "Email-Addr"
+        else:
+            obs["entity_type"] = "Text"
+        observables.append(obs)
+    payload = {
+        "type": "opencti-bundle-lite",
+        "spec_version": "1",
+        "x_reliquary_schema": SCHEMA_VERSION,
+        "verdict": {"level": level, "score": score, "summary": summary},
+        "source_path": result.source_path,
+        "objects": observables,
+    }
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
