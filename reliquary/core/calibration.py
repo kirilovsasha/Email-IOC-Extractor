@@ -58,6 +58,12 @@ def segment_for(result) -> str:
         return "html_smuggling"
     if "cab_archive" in att_flags or "cab_contains_lnk" in att_flags:
         return "cab"
+    if "office_hyperlink" in att_flags:
+        return "office_link"
+    if "script_attachment" in att_flags or "script_url" in att_flags:
+        return "script_att"
+    if "cloud_lure" in signals:
+        return "cloud_lure"
     if "tnef_attachment" in att_flags:
         return "tnef"
     if "iso_contains_lnk" in att_flags or (

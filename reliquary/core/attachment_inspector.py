@@ -58,9 +58,17 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".
 NESTED_MAIL_EXT = {".eml", ".msg"}
 WEB_PAYLOAD_EXT = {".html", ".htm", ".shtml", ".mht", ".mhtml", ".svg"}
 PDF_EXT = {".pdf"}
+SCRIPT_EXT = {".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".hta", ".ps1", ".bat", ".cmd"}
+DISK_IMAGE_EXT = {".vhd", ".vhdx", ".wim", ".esd"}
 DOUBLE_EXT_RE = re.compile(
     r"\.(?:pdf|docx?|xlsx?|pptx?|txt|jpg|png|gif)\.(?:exe|scr|bat|cmd|js|vbs|ps1|jar)$",
     re.IGNORECASE,
+)
+SCRIPT_URL_RE = re.compile(
+    r"(?i)(https?://[^\s\"'<>]+|\\\\[a-z0-9._-]+\\[^\s\"'<>]+|"
+    r"powershell|wscript|cscript|mshta|cmd\.exe|/c\s+curl|/c\s+wget|"
+    r"CreateObject\s*\(\s*[\"']WScript\.Shell|"
+    r"ActiveXObject\s*\(|\beval\s*\(|\bFromBase64String\b)"
 )
 
 _PDF_JS_RE = re.compile(rb"/(?:JavaScript|JS|OpenAction|AA|Launch)\b")
@@ -458,6 +466,88 @@ def _inventory_iso(data: bytes) -> tuple[list[str], list[str], list[str]]:
     return entries, flags, notes
 
 
+def _inventory_disk_image(data: bytes, *, ext: str) -> tuple[list[str], list[str], list[str]]:
+    """Best-effort VHD/VHDX/WIM name scrape (offline heuristics, no mount)."""
+    label = ext.lstrip(".").upper() or "DISK"
+    flags: list[str] = ["disk_image"]
+    notes: list[str] = [f"{label} — эвристический listing имён (без монтирования)"]
+    head = data[: min(len(data), 2 * 1024 * 1024)]
+    found: list[str] = []
+    for m in re.finditer(
+        rb"([A-Za-z0-9_\-\.]{3,80}\.(?:EXE|DLL|LNK|JS|VBS|BAT|CMD|PS1|HTA|SCR|HTML?|HTM|ZIP|RAR|ISO|IMG|PDF)(?:;1)?)",
+        head,
+        flags=re.IGNORECASE,
+    ):
+        try:
+            name = m.group(1).decode("ascii", errors="ignore").split(";")[0]
+        except UnicodeError:
+            continue
+        if name and name not in found:
+            found.append(name)
+    try:
+        wide = head.decode("utf-16-le", errors="ignore")
+        for wm in re.finditer(
+            r"([A-Za-z0-9_\-\.]{3,80}\.(?:exe|dll|lnk|js|vbs|bat|cmd|ps1|hta|scr|html?|htm|zip|rar|iso|img|pdf))",
+            wide,
+            flags=re.IGNORECASE,
+        ):
+            name = wm.group(1)
+            if name and name not in found:
+                found.append(name)
+    except UnicodeError:
+        pass
+    entries = found[:MAX_ARCHIVE_ENTRIES]
+    if entries:
+        notes.append(f"Имена в {label} (эвристика): {len(entries)}")
+    else:
+        notes.append(f"{label}: имена членов не извлечены — разберите в песочнице")
+    dangerous = [n for n in entries if Path(n.lower()).suffix in DANGEROUS_EXTENSIONS]
+    if dangerous:
+        flags.append("archive_dangerous_member")
+        notes.append("Опасные члены: " + ", ".join(dangerous[:8]))
+    if any(n.lower().endswith(".lnk") for n in entries):
+        flags.append("iso_contains_lnk")
+        notes.append(f"{label} содержит .lnk")
+    return entries, flags, notes
+
+
+def _scan_script_payload(filename: str, data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Scan HTA/JS/VBS/WSF/PS1/BAT for URLs and classic living-off-the-land markers."""
+    flags: list[str] = ["script_attachment"]
+    notes: list[str] = [f"Скрипт-вложение «{Path(filename).name}» — разбор офлайн"]
+    entries: list[str] = []
+    # Decode as text (UTF-8 / CP1251 / latin-1 fallback)
+    text = ""
+    for enc in ("utf-8", "utf-16-le", "cp1251", "latin-1"):
+        try:
+            text = data[: min(len(data), 512 * 1024)].decode(enc)
+            break
+        except UnicodeError:
+            continue
+    if not text:
+        notes.append("Скрипт: не удалось декодировать текст")
+        return entries, flags, notes
+    hits = SCRIPT_URL_RE.findall(text)
+    urls = [h for h in hits if isinstance(h, str) and h.lower().startswith(("http://", "https://", "\\\\"))]
+    if not urls:
+        # findall with one group returns strings; without may return tuples — normalize
+        for h in hits:
+            s = h if isinstance(h, str) else (h[0] if h else "")
+            if s.lower().startswith(("http://", "https://", "\\\\")):
+                urls.append(s)
+    for u in urls[:20]:
+        entries.append(f"SCRIPT→ {u[:180]}")
+    if urls:
+        flags.append("script_url")
+        notes.append(f"URL/UNC в скрипте: {len(urls)}")
+    if any(
+        x in text.lower()
+        for x in ("powershell", "wscript", "mshta", "frombase64string", "createobject")
+    ):
+        notes.append("Маркеры WSH/PowerShell/LOLBin в теле скрипта")
+    return entries, flags, notes
+
+
 def extract_nested_mail_from_archive(
     data: bytes, *, container_name: str = "archive"
 ) -> tuple[list["AttachmentInfo"], list[str]]:
@@ -730,6 +820,26 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
             if f not in flags:
                 flags.append(f)
         notes.extend(inotes)
+
+    if ext in DISK_IMAGE_EXT:
+        flags.append("disk_image")
+        notes.append(f"Образ {ext} — часто доставляет LNK/malware (VHD/WIM)")
+        entries, dflags, dnotes = _inventory_disk_image(data, ext=ext)
+        archive_entries = entries + archive_entries
+        for f in dflags:
+            if f not in flags:
+                flags.append(f)
+        notes.extend(dnotes)
+
+    if ext in SCRIPT_EXT or (
+        ext in DANGEROUS_EXTENSIONS and ext in {".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".hta", ".ps1", ".bat", ".cmd"}
+    ):
+        s_entries, sflags, snotes = _scan_script_payload(filename, data)
+        archive_entries = s_entries + archive_entries
+        for f in sflags:
+            if f not in flags:
+                flags.append(f)
+        notes.extend(snotes)
 
     if ext == ".lnk":
         flags.append("shortcut_lnk")

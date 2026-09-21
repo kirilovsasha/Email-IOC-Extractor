@@ -17,12 +17,43 @@ def _parse_ver(text: str) -> tuple[int, ...]:
     return tuple(parts[:4])
 
 
+def detect_runtime_channel() -> str:
+    """Return ``lite`` / ``full`` / ``partial`` from installed optional deps (offline)."""
+    rar_mod = False
+    try:
+        import rarfile  # noqa: F401
+
+        rar_mod = True
+    except ImportError:
+        pass
+    qr_ok = False
+    try:
+        from reliquary.core.qr_scan import qr_decoder_available
+
+        qr_ok = qr_decoder_available()
+    except (ImportError, AttributeError):
+        qr_ok = False
+    unrar_ok = False
+    if rar_mod:
+        try:
+            from reliquary.core.self_check import _unrar_tool_available
+
+            unrar_ok, _ = _unrar_tool_available()
+        except (ImportError, AttributeError, TypeError):
+            unrar_ok = False
+    if rar_mod and qr_ok and unrar_ok:
+        return "full"
+    if not rar_mod and not qr_ok:
+        return "lite"
+    return "partial"
+
+
 def check_update_manifest(path: str | Path | None = None) -> str | None:
     """Return a short RU status message if ``update.json`` exists next to the app.
 
     Manifest shape::
         {
-          "latest": "2.13.0",
+          "latest": "2.14.0",
           "channel": "lite"|"full",
           "sha256": "optional hex of EmailIOCExtractor.exe",
           "notes": "optional"
@@ -41,7 +72,7 @@ def check_update_manifest(path: str | Path | None = None) -> str | None:
     if not latest:
         return None
     channel = str(data.get("channel") or data.get("edition") or "").strip().lower()
-    chan_ru = {"lite": "Lite", "full": "Full"}.get(channel, channel)
+    chan_ru = {"lite": "Lite", "full": "Full", "partial": "частичная"}.get(channel, channel)
     notes = str(data.get("notes") or "").strip()
     expected_sha = str(data.get("sha256") or data.get("sha256_lite") or "").strip().lower()
 
@@ -58,6 +89,18 @@ def check_update_manifest(path: str | Path | None = None) -> str | None:
         if chan_ru:
             msg += f" · канал {chan_ru}"
         lines.append(msg)
+
+    if channel in {"lite", "full"}:
+        runtime = detect_runtime_channel()
+        if channel == "full" and runtime != "full":
+            lines.append(
+                f"⚠ Манифест Full, фактически {runtime} "
+                "(нет rarfile/pyzbar/UnRAR — см. self-check)"
+            )
+        elif channel == "lite" and runtime == "full":
+            lines.append("Манифест Lite, фактически Full-сборка (rar+QR+UnRAR)")
+        elif channel == "lite" and runtime == "partial":
+            lines.append("⚠ Манифест Lite, фактически частичная сборка")
 
     if expected_sha and len(expected_sha) == 64:
         root = app_dir()

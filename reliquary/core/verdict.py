@@ -84,6 +84,12 @@ class VerdictConfig:
     weight_tnef: int = 10
     weight_iso_lnk: int = 18
     weight_allowlisted_from: int = -10
+    weight_office_hyperlink: int = 12
+    weight_nested_archive: int = 14
+    weight_archive_double_extension: int = 16
+    weight_script_attachment: int = 20
+    weight_disk_image: int = 16
+    weight_cloud_lure: int = 14
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -303,6 +309,7 @@ def _score_attachments(
         "archive_dangerous_member",
         "encrypted_archive",
         "iso_image",
+        "disk_image",
         "shortcut_lnk",
         "lnk_dangerous",
         "lnk_http_target",
@@ -316,6 +323,13 @@ def _score_attachments(
         "unrar_missing",
         "archive_nested_email",
         "zip_bomb_suspect",
+        "tnef_attachment",
+        "iso_contains_lnk",
+        "office_hyperlink",
+        "nested_archive",
+        "archive_double_extension",
+        "script_attachment",
+        "script_url",
     }
     seen_flags: set[str] = set()
     soft_noted = False
@@ -333,15 +347,19 @@ def _score_attachments(
                     )
                 )
                 rest.discard("encrypted_archive")
-            if "iso_image" in rest:
+            if "iso_image" in rest or "disk_image" in rest:
                 parts.append(
                     ScoreContribution(
                         "attachments",
-                        cfg.weight_attachment_iso,
-                        f"ISO/IMG-образ «{att.filename}»",
+                        cfg.weight_attachment_iso
+                        if "iso_image" in rest
+                        else cfg.weight_disk_image,
+                        f"Образ диска «{att.filename}»"
+                        + (" (ISO/IMG)" if "iso_image" in rest else " (VHD/WIM)"),
                     )
                 )
                 rest.discard("iso_image")
+                rest.discard("disk_image")
                 rest.discard("dangerous_extension")
             if "lnk_dangerous" in rest or "lnk_http_target" in rest:
                 parts.append(
@@ -468,6 +486,45 @@ def _score_attachments(
                     )
                 )
                 rest.discard("iso_contains_lnk")
+            if "office_hyperlink" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_hyperlink,
+                        f"OOXML-гиперссылки в «{att.filename}»",
+                    )
+                )
+                rest.discard("office_hyperlink")
+            if "nested_archive" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_nested_archive,
+                        f"Вложенный архив внутри «{att.filename}»",
+                    )
+                )
+                rest.discard("nested_archive")
+            if "archive_double_extension" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_archive_double_extension,
+                        f"Двойное расширение члена архива «{att.filename}»",
+                    )
+                )
+                rest.discard("archive_double_extension")
+            if "script_attachment" in rest or "script_url" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_script_attachment,
+                        f"Скрипт-вложение «{att.filename}»"
+                        + (" с URL" if "script_url" in rest else ""),
+                    )
+                )
+                rest.discard("script_attachment")
+                rest.discard("script_url")
+                rest.discard("dangerous_extension")
             if rest:
                 pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
@@ -482,11 +539,14 @@ def _score_attachments(
             or "office_macro_capable" in att.risk_flags
             or "html_attachment" in att.risk_flags
             or "mht_attachment" in att.risk_flags
+            or "svg_attachment" in att.risk_flags
         ):
             soft_noted = True
             pts = (
                 cfg.weight_html_attachment
-                if {"html_attachment", "mht_attachment"}.intersection(att.risk_flags)
+                if {"html_attachment", "mht_attachment", "svg_attachment"}.intersection(
+                    att.risk_flags
+                )
                 else cfg.weight_attachment_soft
             )
             parts.append(
@@ -604,6 +664,7 @@ def _score_content(
         "weight_archive_password": cfg.weight_archive_password,
         "weight_archive_password_match": cfg.weight_archive_password_match,
         "weight_oob_delivery": cfg.weight_oob_delivery,
+        "weight_cloud_lure": cfg.weight_cloud_lure,
     }
     for sig in signals:
         pts = weight_map.get(sig.weight_key, 8)
@@ -750,6 +811,12 @@ def _score_mitigations(
         "zip_bomb_suspect",
         "tnef_attachment",
         "iso_contains_lnk",
+        "office_hyperlink",
+        "nested_archive",
+        "archive_double_extension",
+        "script_attachment",
+        "script_url",
+        "disk_image",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
@@ -760,19 +827,34 @@ def _score_mitigations(
         "hidden_text",
         "archive_password_match",
         "oob_delivery",
+        "cloud_lure",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
+    # Display-name spoof must block allowlist-From mitigation
+    has_display_spoof = any(
+        c.category == "lookalike"
+        and ("Имя" in (c.reason or "") or "spoof" in (c.reason or "").lower() or "похож" in (c.reason or "").lower())
+        for c in (result.verdict.breakdown if result.verdict else []) or []
+    )
+    # Also detect from lookalike scan of From header when breakdown not yet filled
+    if not has_display_spoof and mid and mid.from_header:
+        try:
+            from reliquary.core.lookalike import check_display_name_spoof
+
+            has_display_spoof = bool(check_display_name_spoof(mid.from_header))
+        except (ImportError, TypeError, ValueError):
+            has_display_spoof = False
 
     parts: list[ScoreContribution] = []
 
     # Benign operational markers — apply unless clear attack surface
-    if not has_high_att and not has_bad_content:
+    if not has_high_att and not has_bad_content and not has_display_spoof:
         parts.extend(_benign_marker_parts(result, cfg))
 
     if mid is None:
         return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
 
-    if has_high_att or has_bad_content:
+    if has_high_att or has_bad_content or has_display_spoof:
         return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
 
     attack_headers = any(

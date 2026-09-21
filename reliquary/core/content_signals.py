@@ -66,6 +66,19 @@ OOB_DELIVERY_RE = re.compile(
     r")"
 )
 
+CLOUD_LURE_RE = re.compile(
+    r"(?i)("
+    r"https?://(?:disk\.yandex\.(?:ru|com)|yadi\.sk|yandex\.ru/disk|"
+    r"cloud\.mail\.ru|docs\.google\.com/(?:file|document|uc)|"
+    r"drive\.google\.com/(?:file|open)|dropbox\.com/s|"
+    r"1drv\.ms|onedrive\.live\.com)/[^\s<>\"')\]]*"
+    r"|"
+    r"(?:скача(?:йте|ть)|файл|документ|архив)\s+(?:на|в|по)\s+"
+    r"(?:яндекс\.?\s*диск|yandex\s*disk|mail\.ru\s*облак|google\s*drive|"
+    r"облак[еу]|диск[еу]\s+яндекс)"
+    r")"
+)
+
 
 @dataclass(frozen=True)
 class ContentSignal:
@@ -232,6 +245,16 @@ def analyze_content_signals(
                 "oob_delivery",
                 "Доставка вне канала: пароль/файл через Telegram/шортенер/облако",
                 "weight_oob_delivery",
+            )
+        )
+
+    cloud_hit = CLOUD_LURE_RE.search(blob)
+    if cloud_hit and not has_attachments:
+        signals.append(
+            ContentSignal(
+                "cloud_lure",
+                f"Файл только в облаке (без вложения): {cloud_hit.group(0)[:80]}",
+                "weight_cloud_lure",
             )
         )
 

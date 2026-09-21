@@ -226,6 +226,33 @@ def _unwrap_once(url: str) -> tuple[str, str]:
             )
         return False
 
+    def _match_bitrix(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        if "bitrix" in host or host.endswith(("bitrix24.ru", "bitrix24.com")):
+            return any(
+                x in low
+                for x in ("/redirect", "redirect=", "goto=", "url=", "link=", "/click/")
+            )
+        # On-prem Bitrix often under /bitrix/redirect.php
+        return "/bitrix/redirect" in low or "/bitrix/rk.php" in low
+
+    def _match_amocrm(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        if "amocrm" in host or host.endswith(("amo.tm", "amo.crm")):
+            return True
+        return "amocrm" in low and any(
+            x in low for x in ("redirect", "goto", "url=", "link=")
+        )
+
+    def _match_1c(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        # 1C:Enterprise HTTP services / published databases often carry ?url=
+        if any(x in host for x in ("1c.ru", "1c-bitrix", "1c.")):
+            return any(x in low for x in ("redirect", "url=", "goto=", "link="))
+        if "/hs/" in low or "/do/" in low:  # 1C HTTP service path patterns
+            return any(x in low for x in ("url=", "redirect", "goto="))
+        return "e1c://" in low or "e1cib/" in low
+
     def _decode_kaspersky(u: str) -> str | None:
         return _param_url(u, ("url", "u", "target", "link", "redir")) or _path_embedded_url(u)
 
@@ -291,6 +318,24 @@ def _unwrap_once(url: str) -> tuple[str, str]:
         ("vk_away", _match_vk, _decode_vk),
         ("ok_redir", _match_ok, _decode_ok),
         ("ru_gov_redir", _match_sber_gov, _decode_sber_gov),
+        (
+            "bitrix_redir",
+            _match_bitrix,
+            lambda u: _param_url(u, ("goto", "url", "u", "link", "redirect", "r"))
+            or _path_embedded_url(u),
+        ),
+        (
+            "amocrm_redir",
+            _match_amocrm,
+            lambda u: _param_url(u, ("url", "u", "link", "redirect", "goto", "target"))
+            or _path_embedded_url(u),
+        ),
+        (
+            "onec_redir",
+            _match_1c,
+            lambda u: _param_url(u, ("url", "u", "link", "redirect", "goto"))
+            or _path_embedded_url(u),
+        ),
         ("generic_redirect", lambda _u, _low: True, _decode_generic),
     ]
 

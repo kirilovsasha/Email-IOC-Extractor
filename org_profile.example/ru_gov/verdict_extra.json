@@ -1,0 +1,11 @@
+{
+  "_comment": "RU bank/gov fleet: сильнее display-spoof и cloud lure, мягче internal MX",
+  "weight_display_spoof": 28,
+  "weight_cloud_lure": 16,
+  "weight_oob_delivery": 18,
+  "weight_allowlisted_from": -12,
+  "weight_internal_relay": -10,
+  "weight_script_attachment": 22,
+  "threshold_malicious": 58,
+  "threshold_suspicious": 28
+}
