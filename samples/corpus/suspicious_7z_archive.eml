@@ -1,0 +1,27 @@
+Content-Type: multipart/mixed; boundary="===============7516346051857174222=="
+MIME-Version: 1.0
+From: arc@evil.top
+To: victim@company.local
+Subject: =?utf-8?b?0JDRgNGF0LjQsiA3eg==?=
+Message-ID: <sevenz_att@evil.top>
+Authentication-Results: mx; spf=fail; dkim=fail; dmarc=fail
+
+--===============7516346051857174222==
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+0JDRgNGF0LjQsiDQstC+INCy0LvQvtC20LXQvdC40Lgu
+
+--===============7516346051857174222==
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="docs.7z"
+
+N3q8ryccAARMIA9xkQAAAAAAAAAUAAAAAAAAAGTBP4gBABNyZWFkbWUudHh0cGF5bG9hZC5qcwDg
+AH4AcV0AAIEzB64Pz4CuDA/Ual595dffeE/G8XzVUpxooJogPHOT20uo74qH6uFUtBpbBjl0dWbP
+wTiA3M9TEXclj0G1WOm6mVs384OIfTTvJzIN0RjDliMHbJrmuKJ3sMukIvBT6KSn1M1GbNwtNeUb
+lbjUoAAAFwYYAQl5AAcLAQABISEBGAx/AAA=
+
+--===============7516346051857174222==--

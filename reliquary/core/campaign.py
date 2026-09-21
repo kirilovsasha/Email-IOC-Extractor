@@ -139,3 +139,55 @@ def export_campaign_handoff(
         )
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out
+
+
+def export_campaign_pack(
+    results: list[AnalysisResult],
+    path: str | Path,
+    *,
+    fmt: str = "ndjson",
+) -> Path:
+    """Offline SIEM pack for a folder of mails: NDJSON (default) or CEF lines.
+
+    One file beside the EXE / analyst share — no DB. Groups by campaign_key.
+    """
+    import json
+
+    from reliquary.core.exporters import export_cef
+
+    out = Path(path)
+    fmt_l = (fmt or "ndjson").strip().lower()
+    if fmt_l in ("cef", "siem") or out.suffix.lower() == ".cef":
+        # Concatenate per-mail CEF into one pack
+        chunks: list[str] = []
+        for r in results:
+            tmp = out.with_suffix(".tmp_cef")
+            export_cef(r, tmp)
+            chunks.append(tmp.read_text(encoding="utf-8").rstrip())
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        out.write_text("\n".join(chunks) + "\n", encoding="utf-8")
+        return out
+
+    # NDJSON: one object per mail + campaign index header as first line
+    campaigns = summarize_campaigns(results)
+    lines: list[str] = [
+        json.dumps(
+            {
+                "type": "campaign_pack_meta",
+                "schema": "reliquary.campaign_pack.v1",
+                "mail_count": len(results),
+                "campaigns": [c.to_dict() for c in campaigns],
+            },
+            ensure_ascii=False,
+        )
+    ]
+    for r in results:
+        payload = r.to_dict()
+        payload["type"] = "mail"
+        payload["campaign_key"] = campaign_key_for(r)
+        lines.append(json.dumps(payload, ensure_ascii=False, default=str))
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out

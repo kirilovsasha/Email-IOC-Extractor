@@ -34,8 +34,12 @@ def show_about_dialog(
     update = check_update_manifest()
     update_line = f"\n{update}" if update else ""
     runbook = root / "docs" / "ANALYST_RU.md"
+    if not runbook.is_file():
+        runbook = root / "ANALYST_RU.md"
     runbook_line = (
-        f"\nСправка: {runbook}" if runbook.is_file() else "\nСправка: docs/ANALYST_RU.md"
+        f"\nСправка: {runbook}"
+        if runbook.is_file()
+        else "\nСправка: docs/ANALYST_RU.md (положите рядом с EXE)"
     )
     self_check = format_self_check(
         profile_dir=profile_dir,

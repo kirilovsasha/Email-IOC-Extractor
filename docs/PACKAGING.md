@@ -20,14 +20,16 @@ build_exe.bat --full
 1. Проверить SHA256 (`docs/SIGNING.md`).
 2. Подписать Authenticode (`build/sign_exe.ps1` или секреты CI).
 3. Скопировать EXE + опционально `org_profile.zip` / prefs в защищённую папку.
-4. Для Full: положить `UnRAR.exe` рядом с EXE (иначе RAR inventory недоступен).
-5. Опционально — private winget-манифест на внутренний HTTPS URL подписанного EXE.
+4. Для Full: положить `UnRAR.exe` рядом с EXE (иначе RAR inventory недоступен —
+   self-check предупредит, вердикт поднимет `unrar_missing`).
+5. Опционально скопировать `docs/ANALYST_RU.md` рядом с EXE (или он уже внутри сборки).
+6. Опционально — private winget-манифест на внутренний HTTPS URL подписанного EXE.
 
 ### Эскиз winget-манифеста
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.11.0
+PackageVersion: 2.12.0
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -39,7 +41,7 @@ Installers:
 
 ## Офлайн-флаг версии
 
-Положите `update.json` рядом с EXE (`{"latest":"2.11.0","notes":"..."}`).
+Положите `update.json` рядом с EXE (`{"latest":"2.12.0","notes":"..."}`).
 Диалог «О программе» покажет статус — без сети.
 
 Предпочтительно один файл **`org_profile.zip`** рядом с EXE (подхватывается автоматически);

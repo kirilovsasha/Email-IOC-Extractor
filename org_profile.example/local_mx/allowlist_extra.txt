@@ -6,3 +6,7 @@ smtp.company.local
 *.corp.local
 owa.company.local
 autodiscover.company.local
+mail.corp.local
+mx.company.local
+relay.company.local
+smtp.company.local

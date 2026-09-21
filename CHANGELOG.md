@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.12.0
+
+### Детекция
+- Веса для уже эмитируемых флагов: CAB, LNK dangerous/http, PDF `/URI`, `unrar_missing`, nested archive, zip-bomb
+- Отдельный `weight_display_spoof` (Сбер/Госуслуги не растворяются в lookalike)
+- LNK-цель → IOC + флаги `lnk_dangerous` / `lnk_http_target`
+- OOXML-гиперссылки first-class (`office_hyperlink` + IOC tags)
+- RU unwrap: VK/OK away, расширенные Mail.ru/Yandex, gov/sber redirect hosts
+- Internal relay mitigation: corp.local / RU on-prem MX patterns
+
+### Продукт / EXE
+- Self-check: сверка SHA256 EXE, проверка `org_profile.zip`, громче `unrar_missing`
+- `ANALYST_RU.md` (+ schema v2) в datas PyInstaller; About ищет runbook рядом с EXE
+- Богаче дефолтный handoff: campaign, display-spoof, unwrap chains, attachment flags
+- `--campaign-pack` / GUI «Campaign pack» — offline NDJSON или CEF по пакету писем
+- Пресет `org_profile.example/ru_mail/`; усилен `local_mx`
+
+### Качество
+- Калибровка: сегменты display_spoof / shortener / messenger / html_smuggling / cab
+- Corpus: SVG, OneNote, 7z, RAR double-ext, shortener-only, VK away, PDF URI, local MX RU
+- Docs: README corpus/schema drift; TUNING + verdict_extra schema/example
+
 ## 2.11.0
 
 ### Детекция

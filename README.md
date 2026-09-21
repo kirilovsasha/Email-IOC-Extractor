@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.11.0
+**Mail. Extract. Decide.** · v2.12.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
@@ -225,7 +225,7 @@ Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`,
 
 ## 🧪 Корпус и тесты
 
-Golden corpus: `samples/corpus/` + `expected.json` (**~46** писем по всем уровням).
+Golden corpus: `samples/corpus/` + `expected.json` (**72** писем по всем уровням).
 
 ```bash
 pip install -r requirements-dev.txt
@@ -290,7 +290,7 @@ Linux/macOS: `bash build/build.sh`.
 
 CI: pytest Windows + Ubuntu, **Python 3.10–3.13**; push в `main` → EXE + frozen `--cli` smoke + SHA256;
 тег `v*` → GitHub Release с changelog и хешем. История: [`CHANGELOG.md`](CHANGELOG.md).
-Безопасность: [`SECURITY.md`](SECURITY.md). Схема JSON: [`docs/schema_report_v1.json`](docs/schema_report_v1.json).
+Безопасность: [`SECURITY.md`](SECURITY.md). Схема JSON: [`docs/schema_report_v2.json`](docs/schema_report_v2.json).
 
 ---
 

@@ -27,6 +27,14 @@ _extra_hidden: list[str] = []
 _extra_datas = []
 _extra_binaries = []
 
+# Analyst runbook for frozen EXE (About / fleet)
+_runbook = ROOT / "docs" / "ANALYST_RU.md"
+if _runbook.is_file():
+    _extra_datas.append((str(_runbook), "docs"))
+_schema = ROOT / "docs" / "schema_report_v2.json"
+if _schema.is_file():
+    _extra_datas.append((str(_schema), "docs"))
+
 _want_full = os.environ.get("RELIQUARY_FULL", "").strip().lower() in (
     "1",
     "true",

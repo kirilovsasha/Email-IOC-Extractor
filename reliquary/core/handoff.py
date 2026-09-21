@@ -27,6 +27,10 @@ _PLACEHOLDER_KEYS = (
     "auth",
     "iocs",
     "batch",
+    "chains",
+    "att_flags",
+    "campaign",
+    "spoof",
 )
 
 
@@ -105,6 +109,33 @@ def _handoff_values(
             top = f" · {row.top_reason}" if getattr(row, "top_reason", "") else ""
             batch_lines.append(f"  {name}: {level}{score}, IOC {row.ioc_count}{top}")
 
+    chain_lines: list[str] = []
+    for rw in (result.url_rewrites or [])[:8]:
+        if not rw.changed:
+            continue
+        hops = " → ".join(rw.chain) if rw.chain else rw.rewriter
+        chain_lines.append(f"  [{hops}] {rw.original[:80]} → {rw.unwrapped[:100]}")
+
+    flag_bits: list[str] = []
+    for att in (result.attachments or [])[:12]:
+        flags = [f for f in (att.risk_flags or []) if f not in {"archive", "zip_container", "image_attachment"}]
+        if flags:
+            flag_bits.append(f"  {att.filename}: {', '.join(flags[:8])}")
+
+    spoof_line = "—"
+    for reason in (v.reasons if v else []) or []:
+        if any(x in reason.lower() for x in ("похож", "spoof", "display")) or "Имя «" in reason:
+            spoof_line = reason
+            break
+
+    campaign = "—"
+    try:
+        from reliquary.core.pipeline import campaign_key_for
+
+        campaign = campaign_key_for(result) or "—"
+    except (ImportError, AttributeError, TypeError, ValueError):
+        campaign = getattr(result, "campaign_key", "") or "—"
+
     src = Path(result.source_path).name if result.source_path else "—"
     from_hdr = "—"
     subject = result.subject or "—"
@@ -138,6 +169,10 @@ def _handoff_values(
         "auth": auth,
         "iocs": "\n".join(ioc_lines) if ioc_lines else "  —",
         "batch": "\n".join(batch_lines) if batch_lines else "",
+        "chains": "\n".join(chain_lines) if chain_lines else "  —",
+        "att_flags": "\n".join(flag_bits) if flag_bits else "  —",
+        "campaign": campaign,
+        "spoof": spoof_line,
     }
 
 
@@ -163,6 +198,9 @@ def render_default_handoff(
         lines.append(f"Verdict: {values['verdict']} (score {values['score']}/100)")
         if values["summary"] and values["summary"] != "—":
             lines.append(f"Summary: {values['summary']}")
+        lines.append(f"Campaign: {values['campaign']}")
+        if values["spoof"] and values["spoof"] != "—":
+            lines.append(f"Display-spoof: {values['spoof']}")
         lines.append("Reasons:")
         lines.append(values["reasons"])
         lines.append("")
@@ -172,6 +210,14 @@ def render_default_handoff(
     lines.append(f"Message-ID: {values['msg_id']}")
     if values["auth"] != "—":
         lines.append(f"Auth: {values['auth']}")
+    if values["chains"] and values["chains"] != "  —":
+        lines.append("")
+        lines.append("URL unwrap chains:")
+        lines.append(values["chains"])
+    if values["att_flags"] and values["att_flags"] != "  —":
+        lines.append("")
+        lines.append("Attachment flags:")
+        lines.append(values["att_flags"])
     evidence = list(iocs if iocs is not None else result.iocs)
     if evidence:
         lines.append("")

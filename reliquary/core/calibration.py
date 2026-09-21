@@ -12,27 +12,62 @@ from reliquary.core.pipeline import analyze_file
 def segment_for(result) -> str:
     """Грубая сегментация для калибровки FP/FN без БД."""
     signals = set(result.content_signals or [])
+    reasons_l = " ".join(
+        (result.verdict.reasons if result.verdict else []) or []
+    ).lower()
     if "bec_payment" in signals:
         return "bec"
+    if any("display" in (r or "").lower() and "spoof" in (r or "").lower() for r in (
+        (result.verdict.reasons if result.verdict else []) or []
+    )) or "display_spoof" in reasons_l or "имя «" in reasons_l:
+        # display-name spoof reasons are RU: «Имя … похоже на …»
+        from_hdr = ""
+        if result.mail_identity and result.mail_identity.from_header:
+            from_hdr = result.mail_identity.from_header
+        elif result.sender:
+            from_hdr = result.sender
+        if from_hdr and ("<" in from_hdr or "@" in from_hdr):
+            # Prefer lookalike hits already scored; segment if reason mentions brand spoof
+            if any(
+                x in reasons_l
+                for x in ("похож", "spoof", "сбер", "госуслуг", "display")
+            ):
+                return "display_spoof"
+    att_flags = {
+        f
+        for a in (result.attachments or [])
+        for f in (a.risk_flags or [])
+    }
+    if "url_shortener" in signals:
+        return "shortener"
+    if "messenger_only" in signals:
+        return "messenger"
+    if "html_smuggling" in att_flags or "svg_script" in att_flags:
+        return "html_smuggling"
+    if "cab_archive" in att_flags or "cab_contains_lnk" in att_flags:
+        return "cab"
     if any(u.changed for u in (result.url_rewrites or [])):
         rewriters = {u.rewriter for u in result.url_rewrites if u.changed}
         if "microsoft_safelinks" in rewriters:
             return "safelinks"
-        if rewriters & {"mailru_away", "yandex_redir"}:
+        if rewriters & {"mailru_away", "yandex_redir", "vk_away", "ok_redir"}:
             return "ru_rewrite"
         return "rewrite"
     if any(
-        f in (a.risk_flags or [])
-        for a in (result.attachments or [])
+        f in att_flags
         for f in (
             "dangerous_extension",
             "macro_enabled_office",
             "encrypted_archive",
             "iso_image",
             "shortcut_lnk",
+            "lnk_dangerous",
             "html_smuggling",
             "pdf_javascript",
+            "pdf_uri_action",
             "html_attachment",
+            "onenote_attachment",
+            "unrar_missing",
         )
     ):
         return "attachment"
@@ -50,7 +85,7 @@ def segment_for(result) -> str:
     if "meeting" in subj or "приглашен" in subj or "calendar" in subj:
         return "calendar"
     reasons = (result.verdict.reasons if result.verdict else []) or []
-    if any("lookalike" in (r or "").lower() for r in reasons):
+    if any("lookalike" in (r or "").lower() or "похож" in (r or "").lower() for r in reasons):
         return "lookalike"
     return "other"
 
@@ -132,6 +167,27 @@ def calibrate_inbox(folder: str | Path) -> InboxCalibrationReport:
         )
     if bec_fn:
         hints.append(f"FN: bec→benign/unknown = {bec_fn} (см. weight_bec_payment)")
+    spoof_fn = by_seg.get("display_spoof", {}).get("benign", 0) + by_seg.get(
+        "display_spoof", {}
+    ).get("unknown", 0)
+    if spoof_fn:
+        hints.append(
+            f"FN: display_spoof→benign/unknown = {spoof_fn} (см. weight_display_spoof)"
+        )
+    shortener_fp = by_seg.get("shortener", {}).get("suspicious", 0) + by_seg.get(
+        "shortener", {}
+    ).get("malicious", 0)
+    if shortener_fp:
+        hints.append(
+            f"FP?: shortener→suspicious/malicious = {shortener_fp} (см. weight_url_shortener)"
+        )
+    smuggle_fn = by_seg.get("html_smuggling", {}).get("benign", 0) + by_seg.get(
+        "html_smuggling", {}
+    ).get("unknown", 0)
+    if smuggle_fn:
+        hints.append(
+            f"FN: html_smuggling→benign/unknown = {smuggle_fn} (см. weight_html_smuggling)"
+        )
     if hints:
         lines.append("")
         lines.extend(hints)

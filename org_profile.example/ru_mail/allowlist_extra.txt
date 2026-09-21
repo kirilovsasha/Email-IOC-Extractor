@@ -1,0 +1,12 @@
+# Типичный шум RU-стека (подстройте под свой MX)
+mail.ru
+imgsmail.ru
+list.ru
+bk.ru
+inbox.ru
+yandex.ru
+yandex.net
+ya.ru
+vk.com
+vk.ru
+ok.ru

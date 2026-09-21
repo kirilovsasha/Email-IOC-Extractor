@@ -9,9 +9,11 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 | Too many **benign → suspicious** (FP) | Raise `threshold_suspicious` (e.g. 35), add allowlist, raise `weight_dmarc_pass_aligned` magnitude (more negative), or raise `cap_mitigation` |
 | Missed phishing (**FN**, stays unknown) | Lower `threshold_suspicious` / `threshold_malicious`, raise `weight_href_mismatch`, `weight_lookalike`, `weight_credential_harvest` |
 | SafeLinks noise inflates score | Lower `weight_url_rewrite` (M365 preset uses 3) |
-| Brand spoof under-scored | Raise `weight_lookalike` / `weight_idn`; extend `brands.txt` |
+| Brand spoof under-scored | Raise `weight_display_spoof` (display-name) / `weight_lookalike` / `weight_idn`; extend `brands.txt` |
 | Auth fails dominate everything | Caps: `cap_headers` (default 45) — already limits stacking |
 | Mitigations hide real attacks | Mitigations auto-skip on HIGH headers / dangerous attachments / bad content signals; lower `cap_mitigation` if needed |
+| RAR without UnRAR under-scored | Ship `UnRAR.exe` beside Full EXE; raise `weight_unrar_missing` |
+| CAB / LNK / PDF URI soft | Raise `weight_cab_archive`, `weight_lnk_dangerous`, `weight_pdf_uri_action` |
 
 ## Score bands (defaults)
 
@@ -36,7 +38,11 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 | `weight_mailing_list` | −8 | List-Unsubscribe / List-Id / Precedence:bulk |
 | `cap_mitigation` | 30 | Max absolute reduction |
 
-HTML/PDF вложения: `weight_html_smuggling`, `weight_pdf_javascript`, `weight_html_attachment`.
+HTML/PDF вложения: `weight_html_smuggling`, `weight_pdf_javascript`, `weight_html_attachment`, `weight_pdf_uri_action`.
+LNK/CAB/RAR: `weight_attachment_lnk`, `weight_lnk_dangerous`, `weight_cab_archive`, `weight_unrar_missing`, `weight_archive_nested_email`, `weight_zip_bomb`.
+Display-spoof: `weight_display_spoof` (отдельно от `weight_lookalike`).
+
+Сегменты калибровки (2.12+): `display_spoof`, `shortener`, `messenger`, `html_smuggling`, `cab`, `ru_rewrite`, …
 
 ## Calibration loop
 

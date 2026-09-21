@@ -1,0 +1,11 @@
+{
+  "_comment": "RU mail stack: Mail.ru/Yandex rewrite noise down; display-spoof / shortener / messenger up",
+  "weight_url_rewrite": 3,
+  "weight_display_spoof": 28,
+  "weight_url_shortener": 12,
+  "weight_messenger_only": 16,
+  "weight_internal_relay": -10,
+  "weight_mailing_list": -10,
+  "threshold_suspicious": 30,
+  "cap_mitigation": 32
+}

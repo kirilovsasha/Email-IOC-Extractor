@@ -1,0 +1,25 @@
+Content-Type: multipart/mixed; boundary="===============4895432501003418799=="
+MIME-Version: 1.0
+From: phish@evil.top
+To: victim@company.local
+Subject: =?utf-8?b?0KHRh9GR0YIgU1ZH?=
+Message-ID: <svg_att@evil.top>
+Authentication-Results: mx; spf=fail; dkim=fail; dmarc=fail
+
+--===============4895432501003418799==
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+0J7RgtC60YDQvtC50YLQtSDRgdGF0LXQvNGDLg==
+
+--===============4895432501003418799==
+Content-Type: image/svg+xml
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="schema.svg"
+
+PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxzY3JpcHQ+YWxlcnQoMSk8
+L3NjcmlwdD48YSBocmVmPSJodHRwczovL2V2aWwudG9wL3AiPng8L2E+PC9zdmc+
+
+--===============4895432501003418799==--

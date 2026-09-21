@@ -1,7 +1,9 @@
-=== {{product}} — handoff ===
+=== {product} v{version} — handoff ===
 
 Verdict: {verdict} (score {score}/100)
 Summary: {summary}
+Campaign: {campaign}
+Display-spoof: {spoof}
 Reasons:
 {reasons}
 
@@ -10,6 +12,12 @@ From: {from}
 Subject: {subject}
 Message-ID: {msg_id}
 Auth: {auth}
+
+URL unwrap chains:
+{chains}
+
+Attachment flags:
+{att_flags}
 
 IOC evidence:
 {iocs}

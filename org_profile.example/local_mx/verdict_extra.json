@@ -1,8 +1,8 @@
 {
-  "_comment": "Внутренний MX: сильнее mitigation за internal relay; меньше FP на маркетинг",
-  "weight_internal_relay": -12,
+  "_comment": "Внутренний MX / RU on-prem: сильнее mitigation; меньше FP на маркетинг",
+  "weight_internal_relay": -14,
   "weight_dmarc_pass_aligned": -14,
   "weight_url_rewrite": 3,
-  "cap_mitigation": 30,
+  "cap_mitigation": 34,
   "threshold_suspicious": 32
 }

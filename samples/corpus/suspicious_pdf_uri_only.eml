@@ -1,0 +1,25 @@
+Content-Type: multipart/mixed; boundary="===============5070863519482643783=="
+MIME-Version: 1.0
+From: bill@evil.top
+To: finance@company.local
+Subject: =?utf-8?b?UERGINGB0YfRkdGC?=
+Message-ID: <pdf_uri@evil.top>
+Authentication-Results: mx; spf=fail; dkim=fail; dmarc=fail
+
+--===============5070863519482643783==
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+0KHRh9GR0YIgUERGLg==
+
+--===============5070863519482643783==
+Content-Type: application/pdf
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice.pdf"
+
+JVBERi0xLjQKMSAwIG9iajw8Pj4KL1VSSSAoaHR0cHM6Ly9ldmlsLnRvcC9wYXkpCnRyYWlsZXIK
+JSVFT0YK
+
+--===============5070863519482643783==--

@@ -273,6 +273,20 @@ def _lift_attachment_iocs(attachments: list[AttachmentInfo], iocs: list[Ioc]) ->
                     qi.context = qi.context or att.filename
                     iocs.append(qi)
                 continue
+            # LNK / Office hyperlink targets often land in archive_entries as raw paths/URLs
+            if entry.startswith(("http://", "https://", "file://", "\\\\")) or (
+                "lnk_target" in (att.risk_flags or [])
+                and (":\\" in entry or entry.lower().endswith((".exe", ".dll", ".js", ".vbs")))
+            ):
+                for qi in extract_iocs(entry, source="lnk" if "lnk" in (att.risk_flags or []) else "office"):
+                    tag = "lnk_target" if "lnk" in "".join(att.risk_flags or []) else "office_hyperlink"
+                    if tag not in qi.tags:
+                        qi.tags.append(tag)
+                    if "lnk_dangerous" in (att.risk_flags or []) and "lnk_dangerous" not in qi.tags:
+                        qi.tags.append("lnk_dangerous")
+                    qi.context = qi.context or att.filename
+                    iocs.append(qi)
+                continue
             base = Path(entry).name
             if not base or base.startswith("."):
                 continue
@@ -295,13 +309,27 @@ def _parse_office_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
     if suffix not in {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}:
         return "", []
     try:
-        from reliquary.core.office_extract import clean_extracted, extract_office_text
+        from reliquary.core.office_extract import (
+            clean_extracted,
+            extract_office_text,
+            extract_office_urls,
+        )
 
         text, errs = extract_office_text(att.data, suffix)
         text = clean_extracted(text or "")
-        if not text and not errs:
+        urls = extract_office_urls(att.data, suffix)
+        if urls:
+            if "office_hyperlink" not in att.risk_flags:
+                att.risk_flags.append("office_hyperlink")
+            for u in urls[:20]:
+                if u not in att.archive_entries:
+                    att.archive_entries.append(u)
+            att.notes.append(f"OOXML-гиперссылки: {len(urls)}")
+        if not text and not errs and not urls:
             return "", []
         header = f"Office-Att {att.filename}"
+        if urls and "URLs:" not in (text or ""):
+            text = (text or "") + "\nURLs:\n" + "\n".join(dict.fromkeys(urls))
         return f"{header}\n{text}", errs
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
         return "", [f"Office {att.filename}: {exc}"]

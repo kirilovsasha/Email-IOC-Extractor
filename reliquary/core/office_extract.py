@@ -268,6 +268,29 @@ def extract_office_text(data: bytes, suffix: str) -> tuple[str, list[str]]:
     return "", [f"office: неподдерживаемый суффикс {suffix}"]
 
 
+def extract_office_urls(data: bytes, suffix: str) -> list[str]:
+    """Return external hyperlinks from OOXML (rels + inline) for first-class IOC evidence."""
+    text, _errs = extract_office_text(data, suffix)
+    urls: list[str] = []
+    if not text:
+        return urls
+    capture = False
+    for line in text.splitlines():
+        if line.strip() == "URLs:":
+            capture = True
+            continue
+        if capture:
+            val = line.strip()
+            if not val:
+                continue
+            if val.startswith(("http://", "https://", "mailto:")):
+                urls.append(val)
+            elif "://" in val:
+                urls.append(val)
+    # Dedup preserve order
+    return list(dict.fromkeys(urls))
+
+
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
