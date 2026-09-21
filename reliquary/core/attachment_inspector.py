@@ -329,11 +329,18 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
     except ImportError:
         flags.append("archive_unlisted")
         notes.append("RAR: для полного inventory нужен rarfile+unrar; имена не извлечены")
-        # Heuristic: encrypted header bit often near start in RAR4
         if b"encrypted" in data[:4096].lower() or data[0x18:0x1A] == b"\x04\x00":
             flags.append("encrypted_archive")
             notes.append("Возможно зашифрованный RAR (эвристика)")
         return entries, flags, notes
+
+    # Tool binary may still be missing even if rarfile is installed
+    try:
+        tool = getattr(rarfile, "UNRAR_TOOL", None) or getattr(rarfile, "ALT_TOOL", None)
+        if tool:
+            notes.append(f"RAR tool: {tool}")
+    except (AttributeError, TypeError):
+        pass
 
     try:
         rf = rarfile.RarFile(io.BytesIO(data))
@@ -344,16 +351,106 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
         rf.close()
     except (OSError, RuntimeError, ValueError) as exc:
         flags.append("archive_unlisted")
+        err = str(exc).lower()
+        if "unrar" in err or "cannot find" in err or "tool" in err:
+            flags.append("unrar_missing")
+            notes.append("UnRAR.exe/tool не найден — inventory RAR недоступен")
         notes.append(f"RAR inventory ({type(exc).__name__}): {exc}")
         return entries, flags, notes
 
     entries = names[:MAX_ARCHIVE_ENTRIES]
     notes.append(f"Содержимое RAR: {len(names)} файл(ов)")
-    dangerous = [Path(n).name for n in names if Path(n).suffix.lower() in DANGEROUS_EXTENSIONS]
+    dangerous: list[str] = []
+    double_hits: list[str] = []
+    nested_mail: list[str] = []
+    for name in names:
+        base = Path(name).name
+        lower = base.lower()
+        if DOUBLE_EXT_RE.search(lower):
+            double_hits.append(base)
+        ext = Path(lower).suffix
+        if ext in DANGEROUS_EXTENSIONS:
+            dangerous.append(base)
+        if ext in NESTED_MAIL_EXT:
+            nested_mail.append(base)
+    if double_hits:
+        flags.append("archive_double_extension")
+        notes.append("Двойное расширение внутри RAR: " + ", ".join(double_hits[:8]))
     if dangerous:
         flags.append("archive_dangerous_member")
         notes.append("Опасные члены: " + ", ".join(dangerous[:8]))
+    if nested_mail:
+        flags.append("archive_nested_email")
+        notes.append("Вложенные письма в RAR: " + ", ".join(nested_mail[:8]))
     return entries, flags, notes
+
+
+def _inventory_cab(data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Lightweight CAB listing via filename string scrape (no full CAB parser)."""
+    entries: list[str] = []
+    flags: list[str] = ["archive", "cab_archive"]
+    notes: list[str] = ["CAB контейнер — офлайн listing по строкам имён"]
+    if data[:4] != b"MSCF":
+        notes.append("Сигнатура не MSCF — возможно не CAB")
+    # Filenames in CFFILE are often null-terminated ASCII near the start
+    sample = data[: min(len(data), 256 * 1024)]
+    found: list[str] = []
+    for m in re.finditer(rb"([\w.\- ]{3,80}\.(?:exe|dll|lnk|bat|cmd|js|vbs|ps1|dll|sys|msi|iso|img))", sample, re.I):
+        name = m.group(1).decode("ascii", errors="ignore").strip()
+        if name and name not in found:
+            found.append(name)
+    entries = found[:MAX_ARCHIVE_ENTRIES]
+    if entries:
+        notes.append(f"Имена в CAB (эвристика): {len(entries)}")
+    dangerous = [n for n in entries if Path(n.lower()).suffix in DANGEROUS_EXTENSIONS]
+    if dangerous:
+        flags.append("archive_dangerous_member")
+        notes.append("Опасные члены CAB: " + ", ".join(dangerous[:8]))
+    if any(n.lower().endswith(".lnk") for n in entries):
+        flags.append("cab_contains_lnk")
+        notes.append("CAB содержит .lnk")
+    return entries, flags, notes
+
+
+def _parse_lnk_target(data: bytes) -> tuple[list[str], list[str]]:
+    """Best-effort Shell Link target extraction (paths / URLs) without pywin32."""
+    flags: list[str] = []
+    notes: list[str] = []
+    if len(data) < 0x4C or data[:4] != b"L\x00\x00\x00":
+        notes.append("LNK: нестандартный заголовок")
+        return flags, notes
+    targets: list[str] = []
+    # ASCII paths / URLs
+    for m in re.finditer(
+        rb"(?i)((?:[A-Za-z]:\\|\\\\|https?://|file://)[^\x00\r\n]{4,240})",
+        data[: min(len(data), 64 * 1024)],
+    ):
+        try:
+            t = m.group(1).decode("ascii", errors="ignore").strip(" \t\"'")
+        except UnicodeError:
+            continue
+        if t and t not in targets:
+            targets.append(t)
+    # UTF-16LE paths
+    try:
+        wide = data[: min(len(data), 64 * 1024)].decode("utf-16-le", errors="ignore")
+        for m in re.finditer(
+            r"(?i)((?:[A-Za-z]:\\|\\\\|https?://|file://)[^\x00\r\n]{4,240})",
+            wide,
+        ):
+            t = m.group(1).strip(" \t\"'")
+            if t and t not in targets:
+                targets.append(t)
+    except UnicodeError:
+        pass
+    if targets:
+        flags.append("lnk_target")
+        notes.append("LNK цель: " + "; ".join(targets[:3]))
+        for t in targets[:5]:
+            notes.append(f"LNK→ {t}")
+    else:
+        notes.append("LNK: цель не извлечена (проверьте в песочнице)")
+    return flags, notes
 
 
 def _scan_pdf_payload(data: bytes) -> tuple[list[str], list[str]]:
@@ -460,6 +557,21 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
     if ext == ".lnk":
         flags.append("shortcut_lnk")
         notes.append("Ярлык Windows (.lnk) — проверьте цель в песочнице")
+        lflags, lnotes = _parse_lnk_target(data)
+        flags.extend(lflags)
+        notes.extend(lnotes)
+        for note in lnotes:
+            if note.startswith("LNK→ "):
+                archive_entries.append(note[5:])
+
+    if ext == ".cab" or data[:4] == b"MSCF":
+        flags.append("cab_archive")
+        entries, cflags, cnotes = _inventory_cab(data)
+        archive_entries = entries + archive_entries
+        for f in cflags:
+            if f not in flags:
+                flags.append(f)
+        notes.extend(cnotes)
 
     if ext in {".one", ".onepkg"} or lower.endswith(".one.tmp"):
         flags.append("onenote_attachment")
@@ -570,11 +682,16 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         flags.append("mime_mismatch")
         notes.append(f"Расширение {ext}, но MIME похож на executable ({mime})")
 
-    # Keep payload for nested email and HTML/SVG/MHT (pipeline re-parses).
+    # Keep payload for nested email, HTML/SVG/MHT, and Office OOXML text extract.
     if keep_bytes is None:
         need_keep = bool(
-            {"nested_email", "html_attachment", "mht_attachment", "svg_attachment"}
-            .intersection(flags)
+            {
+                "nested_email",
+                "html_attachment",
+                "mht_attachment",
+                "svg_attachment",
+            }.intersection(flags)
+            or ext in {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}
         )
     else:
         need_keep = keep_bytes

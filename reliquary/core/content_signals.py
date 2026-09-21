@@ -37,6 +37,16 @@ HIDDEN_STYLE_RE = re.compile(
     r"mso-hide\s*:\s*all)"
 )
 
+SHORTENER_RE = re.compile(
+    r"(?i)\bhttps?://(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|"
+    r"cutt\.ly|rebrand\.ly|clck\.ru|vk\.cc|u\.to)/[^\s<>\"')\]]+"
+)
+
+MESSENGER_URL_RE = re.compile(
+    r"(?i)\b(?:https?://)?(?:t\.me|telegram\.me|wa\.me|chat\.whatsapp\.com|"
+    r"discord\.gg)/[^\s<>\"')\]]+"
+)
+
 
 @dataclass(frozen=True)
 class ContentSignal:
@@ -175,6 +185,32 @@ def analyze_content_signals(
                 "bec_payment",
                 "Маркеры BEC / смены реквизитов / оплаты вне канала",
                 "weight_bec_payment",
+            )
+        )
+
+    short_hits = SHORTENER_RE.findall(blob)
+    if short_hits:
+        signals.append(
+            ContentSignal(
+                "url_shortener",
+                f"URL-шортенер: {short_hits[0][:80]}",
+                "weight_url_shortener",
+            )
+        )
+
+    msg_hits = MESSENGER_URL_RE.findall(blob)
+    http_urls = re.findall(r"(?i)\bhttps?://[^\s<>\"')\]]+", blob)
+    non_messenger = [
+        u
+        for u in http_urls
+        if not MESSENGER_URL_RE.search(u) and not SHORTENER_RE.search(u)
+    ]
+    if msg_hits and len(non_messenger) == 0 and not has_attachments:
+        signals.append(
+            ContentSignal(
+                "messenger_only",
+                f"Только messenger-ссылка (Telegram/WhatsApp/Discord): {msg_hits[0][:60]}",
+                "weight_messenger_only",
             )
         )
 

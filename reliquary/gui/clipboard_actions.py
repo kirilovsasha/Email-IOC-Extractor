@@ -87,6 +87,24 @@ class ClipboardActionsMixin:
         self.clipboard_append(text)
         self._set_status("Текст для тикета скопирован в буфер")
 
+    def copy_verdict_reasons(self) -> None:
+        """Скопировать причины вердикта (для тикета / калибровки)."""
+        if not self.result or not self.result.verdict:
+            self._set_status("Нет вердикта для копирования причин")
+            return
+        v = self.result.verdict
+        lines = [
+            f"Вердикт: {v.level.value}  score={v.score}",
+            v.summary,
+            "",
+            "Причины:",
+            *[f"• {r}" for r in v.reasons],
+        ]
+        text = "\n".join(lines)
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self._set_status(f"Причины вердикта скопированы ({len(v.reasons)})")
+
     def _format_iocs_for_clipboard(self, iocs: list[Ioc]) -> str:
         fmt = self._copy_format.get()
         if fmt == "value":

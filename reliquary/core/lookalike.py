@@ -35,6 +35,28 @@ DEFAULT_BRANDS: tuple[str, ...] = (
     "alfabank.ru",
     "yandex.ru",
     "mail.ru",
+    "gosuslugi.ru",
+)
+
+# Display-name → expected brand domains (RU SOC spoof surface).
+_BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("сбербанк", ("sberbank.ru", "sber.ru")),
+    ("сбер", ("sberbank.ru", "sber.ru")),
+    ("госуслуги", ("gosuslugi.ru",)),
+    ("gosuslugi", ("gosuslugi.ru",)),
+    ("microsoft", ("microsoft.com", "office.com", "outlook.com", "live.com")),
+    ("office 365", ("microsoft.com", "office.com", "outlook.com")),
+    ("outlook", ("outlook.com", "microsoft.com", "office.com", "live.com")),
+    ("google", ("google.com", "gmail.com")),
+    ("gmail", ("gmail.com", "google.com")),
+    ("apple", ("apple.com", "icloud.com")),
+    ("paypal", ("paypal.com",)),
+    ("яндекс", ("yandex.ru",)),
+    ("yandex", ("yandex.ru",)),
+    ("mail.ru", ("mail.ru",)),
+    ("тинькофф", ("tinkoff.ru",)),
+    ("втб", ("vtb.ru",)),
+    ("альфа", ("alfabank.ru",)),
 )
 
 # Common visual confusables → ASCII (subset; offline, no full Unicode confusables table).
@@ -166,7 +188,7 @@ def host_from_email_or_url(value: str) -> str:
         parsed = urlparse(value if "://" in value else f"//{value}")
         host = (parsed.hostname or "").lower()
         return host
-    except Exception:  # noqa: BLE001
+    except (UnicodeError, ValueError, TypeError, AttributeError):
         return value.lower()
 
 
@@ -253,6 +275,47 @@ def check_domain(
     return hits
 
 
+def parse_from_display_and_addr(from_header: str) -> tuple[str, str]:
+    """Return (display_name_lower, email_addr_lower) from a From header."""
+    raw = (from_header or "").strip()
+    if not raw:
+        return "", ""
+    # "Name" <user@domain> or Name <user@domain>
+    m = re.search(r'^"?([^"<]*)"?\s*<([^>]+)>', raw)
+    if m:
+        return m.group(1).strip().lower(), m.group(2).strip().lower()
+    if "@" in raw:
+        return "", raw.strip("<> ").lower()
+    return raw.lower(), ""
+
+
+def check_display_name_spoof(from_header: str) -> list[LookalikeHit]:
+    """Brand display name with mismatched From domain (classic spoof)."""
+    display, addr = parse_from_display_and_addr(from_header)
+    if not display or not addr or "@" not in addr:
+        return []
+    host = addr.rsplit("@", 1)[-1].lower()
+    reg = _registrable(host)
+    hits: list[LookalikeHit] = []
+    for label, brands in _BRAND_DISPLAY_NAMES:
+        if label not in display:
+            continue
+        # Allow brand domains and their subdomains
+        if any(reg == b or host.endswith("." + b) for b in brands):
+            continue
+        brand = brands[0]
+        hits.append(
+            LookalikeHit(
+                value=from_header[:120],
+                brand=brand,
+                kind="display_spoof",
+                detail=f"Имя «{display[:40]}» похоже на {brand}, но From: {addr}",
+            )
+        )
+        break
+    return hits
+
+
 def scan_lookalikes(
     *,
     from_addr: str = "",
@@ -262,7 +325,9 @@ def scan_lookalikes(
 ) -> list[LookalikeHit]:
     brands = brands or DEFAULT_BRANDS
     candidates: list[str] = []
+    out: list[LookalikeHit] = []
     if from_addr:
+        out.extend(check_display_name_spoof(from_addr))
         h = host_from_email_or_url(from_addr)
         if h:
             candidates.append(h)
@@ -272,7 +337,6 @@ def scan_lookalikes(
         candidates.append(h)
 
     seen: set[str] = set()
-    out: list[LookalikeHit] = []
     for host in candidates:
         key = host.lower()
         if key in seen:

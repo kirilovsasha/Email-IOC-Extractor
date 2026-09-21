@@ -77,6 +77,7 @@ class PrefsMixin:
         updates = {
             "last_dir": self._last_dir,
             "last_export_dir": self._last_export_dir,
+            "last_inbox_dir": str(self._prefs.get("last_inbox_dir") or ""),
             "copy_format": self._copy_format.get(),
             "export_choice": self._export_choice.get(),
             "ui_scale": self._ui_scale,

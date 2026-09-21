@@ -1,0 +1,9 @@
+From: "Портал Госуслуги" <alert@phish.gq>
+To: victim@company.local
+Subject: Госуслуги: подтвердите личность
+Message-ID: <spoof_gos@phish.gq>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+
+Войдите: https://bit.ly/gos-login-fake

@@ -287,6 +287,26 @@ def _lift_attachment_iocs(attachments: list[AttachmentInfo], iocs: list[Ioc]) ->
             )
 
 
+def _parse_office_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
+    """Extract text/URLs from OOXML attachments for IOC + content signals."""
+    if not att.data:
+        return "", []
+    suffix = Path(att.filename).suffix.lower()
+    if suffix not in {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}:
+        return "", []
+    try:
+        from reliquary.core.office_extract import clean_extracted, extract_office_text
+
+        text, errs = extract_office_text(att.data, suffix)
+        text = clean_extracted(text or "")
+        if not text and not errs:
+            return "", []
+        header = f"Office-Att {att.filename}"
+        return f"{header}\n{text}", errs
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
+        return "", [f"Office {att.filename}: {exc}"]
+
+
 def _parse_web_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
     """Extract text/HTML from .html/.htm/.mht/.svg attachment bytes for IOC + signals."""
     web_flags = {"html_attachment", "mht_attachment", "svg_attachment"}
@@ -449,6 +469,16 @@ def _enrich_parsed_result(
             blob += "\n" + web_text
             att.notes.append("HTML/SVG/MHT разобрано локально")
         result.errors.extend(web_errs)
+        office_text, office_errs = _parse_office_attachment(att)
+        if office_text:
+            blob += "\n" + office_text
+            if "office_text_extracted" not in att.risk_flags:
+                att.risk_flags.append("office_text_extracted")
+            att.notes.append("Текст Office извлечён офлайн")
+        result.errors.extend(office_errs)
+        for note in att.notes:
+            if note.startswith("LNK→ "):
+                blob += "\n" + note[5:]
         if (
             att.data is not None
             and (
@@ -456,6 +486,9 @@ def _enrich_parsed_result(
                 or {"html_attachment", "mht_attachment", "svg_attachment"}.intersection(
                     att.risk_flags or []
                 )
+                or "office_text_extracted" in (att.risk_flags or [])
+                or Path(att.filename).suffix.lower()
+                in {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}
             )
             and att.size > 2 * 1024 * 1024
         ):

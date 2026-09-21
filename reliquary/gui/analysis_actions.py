@@ -52,13 +52,15 @@ class AnalysisActionsMixin:
 
     def calibrate_inbox_folder(self) -> None:
         """Калибровка папки inbox → текстовый отчёт рядом с EXE (без БД)."""
+        initial = str(self._prefs.get("last_inbox_dir") or self._last_dir or "") or None
         folder = filedialog.askdirectory(
             title=f"{__app_name__} — папка inbox для калибровки",
-            initialdir=self._last_dir or None,
+            initialdir=initial,
         )
         if not folder:
             return
         self._last_dir = folder
+        self._prefs["last_inbox_dir"] = folder
         self._persist_prefs()
         self._sync_job_row(busy=True)
         self._set_status("Калибровка inbox…")

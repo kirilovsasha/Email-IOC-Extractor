@@ -13,6 +13,7 @@
 6. Пакет: таблица файлов; Ctrl+N/P — следующее письмо; peers → diff кампании.
 7. Ctrl+Shift+V — компактный режим (только вердикт, без панели исходника).
 8. **Калибр.** — отчёт FP/FN по папке inbox (без БД).
+9. Ctrl+R — копировать причины вердикта; вкладка «Ошибки» → [L] каталог журнала.
 
 ## Горячие клавиши
 
@@ -51,7 +52,7 @@ UI только на русском. Вердикт: безопасный / не
 
 - `allowlist_extra.txt`, `verdict_extra.json`, `org_profile/` или **`org_profile.zip`**
 - `ui_prefs.json` — prefs (`verdict_compact`, `high_contrast`, hook…)
-- `update.json` — локальный манифест версии (без сети): `{"latest":"2.10.0"}`
+- `update.json` — локальный манифест версии (без сети): `{"latest":"2.11.0"}`
 - схема весов: `docs/verdict_extra.schema.json`
 - при старте: self-check Lite/Full + наличиеждения `verdict_extra`
 

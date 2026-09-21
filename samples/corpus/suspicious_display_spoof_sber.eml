@@ -1,0 +1,9 @@
+From: "Сбербанк Онлайн" <noreply@evil-secure.top>
+To: victim@company.local
+Subject: Подтвердите вход в Сбербанк
+Message-ID: <spoof_sber@evil.top>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+
+Срочно подтвердите учётную запись: https://evil.top/sber

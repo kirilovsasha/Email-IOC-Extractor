@@ -54,7 +54,7 @@ def _decode_bytes(raw: bytes) -> str:
         import chardet
 
         encoding = (chardet.detect(raw).get("encoding") or "utf-8")
-    except Exception:
+    except (ImportError, LookupError, TypeError, ValueError, AttributeError):
         encoding = "utf-8"
     return raw.decode(encoding, errors="replace")
 
@@ -96,7 +96,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 try:
                     payload = part.get_payload(decode=True) or b""
                     attachments.append(inspect_bytes(filename, payload))
-                except Exception as exc:  # noqa: BLE001
+                except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as exc:
                     attachments.append(
                         AttachmentInfo(
                             filename=filename,
@@ -116,7 +116,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 payload = part.get_payload(decode=True) or b""
                 charset = part.get_content_charset() or "utf-8"
                 decoded = payload.decode(charset, errors="replace")
-            except Exception as exc:  # noqa: BLE001
+            except (LookupError, UnicodeError, TypeError, ValueError, AttributeError) as exc:
                 attachments.append(
                     AttachmentInfo(
                         filename=f"(inline:{ctype})",
@@ -190,7 +190,9 @@ def parse_eml(path: Path, data: bytes | None = None) -> ParsedDocument:
 
 
 def parse_msg(path: Path, data: bytes | None = None) -> ParsedDocument:
-    _ = data  # extract-msg needs a path on disk
+    """Parse .msg; ``data`` bytes are written to a temp file when path is missing/virtual."""
+    import tempfile
+
     try:
         import extract_msg
     except ImportError as exc:
@@ -202,73 +204,99 @@ def parse_msg(path: Path, data: bytes | None = None) -> ParsedDocument:
         )
 
     errors: list[str] = []
+    tmp_path: Path | None = None
+    open_path = path
     try:
-        msg_file = extract_msg.Message(str(path))
-    except Exception as exc:  # noqa: BLE001
-        return ParsedDocument(kind="email", path=str(path), text="", errors=[str(exc)])
+        if data is not None:
+            fd, name = tempfile.mkstemp(suffix=".msg", prefix="reliquary_msg_")
+            import os
 
-    body = msg_file.body or ""
-    html = getattr(msg_file, "htmlBody", None) or ""
-    if isinstance(html, bytes):
-        html = html.decode("utf-8", errors="replace")
-    text = body
-    if html:
-        text = (text + "\n" + _html_to_text(html)).strip()
+            os.close(fd)
+            tmp_path = Path(name)
+            tmp_path.write_bytes(data)
+            open_path = tmp_path
+        elif not path.exists():
+            return ParsedDocument(
+                kind="email", path=str(path), text="", errors=["MSG-файл не найден"]
+            )
+        try:
+            msg_file = extract_msg.Message(str(open_path))
+        except (OSError, ValueError, TypeError, RuntimeError) as exc:
+            return ParsedDocument(kind="email", path=str(path), text="", errors=[str(exc)])
+        except Exception as exc:  # noqa: BLE001
+            return ParsedDocument(kind="email", path=str(path), text="", errors=[str(exc)])
 
-    attachments: list[AttachmentInfo] = []
-    try:
-        for att in msg_file.attachments:
-            name = getattr(att, "longFilename", None) or getattr(att, "shortFilename", None) or "attachment"
-            adata = att.data or b""
-            attachments.append(inspect_bytes(str(name), adata))
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"Вложения MSG: {exc}")
+        body = msg_file.body or ""
+        html = getattr(msg_file, "htmlBody", None) or ""
+        if isinstance(html, bytes):
+            html = html.decode("utf-8", errors="replace")
+        text = body
+        if html:
+            text = (text + "\n" + _html_to_text(html)).strip()
 
-    eml_bytes = None
-    try:
-        eml_bytes = msg_file.asEmailMessage() if hasattr(msg_file, "asEmailMessage") else None
-    except Exception:
-        eml_bytes = None
+        attachments: list[AttachmentInfo] = []
+        try:
+            for att in msg_file.attachments:
+                name = (
+                    getattr(att, "longFilename", None)
+                    or getattr(att, "shortFilename", None)
+                    or "attachment"
+                )
+                adata = att.data or b""
+                attachments.append(inspect_bytes(str(name), adata))
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
+            errors.append(f"Вложения MSG: {exc}")
 
-    message: Message | None = None
-    if eml_bytes is not None:
-        message = eml_bytes
-    else:
-        synthetic = email.message.EmailMessage()
-        if msg_file.sender:
-            synthetic["From"] = str(msg_file.sender)
-        if msg_file.subject:
-            synthetic["Subject"] = str(msg_file.subject)
-        if msg_file.to:
-            synthetic["To"] = str(msg_file.to)
-        message = synthetic
+        message: Message | None = None
+        try:
+            eml_bytes = msg_file.asEmailMessage() if hasattr(msg_file, "asEmailMessage") else None
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError):
+            eml_bytes = None
+        if eml_bytes is not None:
+            message = eml_bytes
+        else:
+            synthetic = email.message.EmailMessage()
+            if msg_file.sender:
+                synthetic["From"] = str(msg_file.sender)
+            if msg_file.subject:
+                synthetic["Subject"] = str(msg_file.subject)
+            if msg_file.to:
+                synthetic["To"] = str(msg_file.to)
+            message = synthetic
 
-    subject = str(msg_file.subject or "")
-    sender = str(msg_file.sender or "")
-    recipients = [str(msg_file.to)] if msg_file.to else []
-    try:
-        msg_file.close()
-    except Exception:
-        pass
+        subject = str(msg_file.subject or "")
+        sender = str(msg_file.sender or "")
+        recipients = [str(msg_file.to)] if msg_file.to else []
+        try:
+            msg_file.close()
+        except (OSError, AttributeError, RuntimeError):
+            pass
 
-    text, clip_notes = _clip_text(text)
-    errors.extend(clip_notes)
-    html_s = html if isinstance(html, str) else ""
-    html_s, html_notes = _clip_text(html_s, MAX_HTML_CHARS)
-    errors.extend(html_notes)
+        text, clip_notes = _clip_text(text)
+        errors.extend(clip_notes)
+        html_s = html if isinstance(html, str) else ""
+        html_s, html_notes = _clip_text(html_s, MAX_HTML_CHARS)
+        errors.extend(html_notes)
 
-    return ParsedDocument(
-        kind="email",
-        path=str(path),
-        text=text,
-        html=html_s,
-        subject=subject,
-        sender=sender,
-        recipients=recipients,
-        message=message,
-        attachments=attachments,
-        errors=errors,
-    )
+        return ParsedDocument(
+            kind="email",
+            path=str(path),
+            text=text,
+            html=html_s,
+            subject=subject,
+            sender=sender,
+            recipients=recipients,
+            message=message,
+            attachments=attachments,
+            errors=errors,
+        )
+    finally:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
 
 
 

@@ -440,19 +440,71 @@ class ResultPanelsMixin:
 
         if mid and (mid.from_header or mid.message_id):
             self._put(self.mail_box, "\n", "muted")
-            self._put(self.mail_box, "  [F] Copy From   [M] Copy Message-ID\n", "info")
+            self._put(self.mail_box, "  [F] Копировать From   [M] Копировать Message-ID\n", "info")
             widget = self._tk(self.mail_box)
             if widget is not None:
                 widget.bind("<Key-f>", lambda _e: self._copy_from(), add="+")
                 widget.bind("<Key-F>", lambda _e: self._copy_from(), add="+")
                 widget.bind("<Key-m>", lambda _e: self._copy_message_id(), add="+")
                 widget.bind("<Key-M>", lambda _e: self._copy_message_id(), add="+")
+                widget.bind("<Key-r>", lambda _e: self.copy_verdict_reasons(), add="+")
+                widget.bind("<Key-R>", lambda _e: self.copy_verdict_reasons(), add="+")
 
     def _fill_errors(self, result: AnalysisResult) -> None:
+        from reliquary.core.error_log import error_log_path
+
         self._clear_box(self.err_box)
+        log_path = error_log_path()
+        self._put(self.err_box, "▸ Журнал приложения\n", "section")
+        self._put(self.err_box, f"  {log_path}\n", "meta")
+        self._put(
+            self.err_box,
+            "  [L] Открыть каталог журнала   [R] Копировать причины вердикта\n\n",
+            "info",
+        )
+        widget = self._tk(self.err_box)
+        if widget is not None:
+            widget.bind("<Key-l>", lambda _e: self._open_error_log_dir(), add="+")
+            widget.bind("<Key-L>", lambda _e: self._open_error_log_dir(), add="+")
+            widget.bind("<Key-r>", lambda _e: self.copy_verdict_reasons(), add="+")
+            widget.bind("<Key-R>", lambda _e: self.copy_verdict_reasons(), add="+")
+
         if not result.errors:
-            self._put(self.err_box, "Ошибок нет\n", "ok")
+            self._put(self.err_box, "Ошибок разбора нет\n", "ok")
             return
-        self._put(self.err_box, f"▸ Ошибки / замечания  ({len(result.errors)})\n", "section")
-        for err in result.errors:
-            self._put(self.err_box, f"  ! {err}\n", "danger")
+        # Group soft notes vs hard failures
+        hard = [e for e in result.errors if e.startswith("⚠") or "ошиб" in e.lower() or "fail" in e.lower()]
+        soft = [e for e in result.errors if e not in hard]
+        self._put(
+            self.err_box,
+            f"▸ Ошибки / замечания  ({len(result.errors)})\n",
+            "section",
+        )
+        if hard:
+            self._put(self.err_box, "  Сбои:\n", "danger")
+            for err in hard:
+                self._put(self.err_box, f"  ! {err}\n", "danger")
+        if soft:
+            self._put(self.err_box, "  Замечания:\n", "warn")
+            for err in soft:
+                self._put(self.err_box, f"  · {err}\n", "meta")
+
+    def _open_error_log_dir(self) -> None:
+        import os
+        import subprocess
+        import sys
+
+        from reliquary.core.error_log import error_log_path
+
+        path = error_log_path()
+        folder = path.parent
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(str(folder))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+            self._set_status(f"Каталог журнала: {folder}")
+        except (OSError, AttributeError) as exc:
+            self._set_status(f"Не удалось открыть каталог журнала: {exc}")
