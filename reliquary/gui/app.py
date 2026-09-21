@@ -214,7 +214,7 @@ class ExtractorApp(
             elif w < 1100:
                 self._header_meta.configure(text=f"v{__version__}  ·  .eml / .msg")
             else:
-                self._header_meta.configure(text=f"v{__version__}  ·  offline  ·  .eml / .msg")
+                self._header_meta.configure(text=f"v{__version__}  ·  офлайн  ·  .eml / .msg")
         except Exception:  # noqa: BLE001
             pass
 

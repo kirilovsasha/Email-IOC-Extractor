@@ -1,4 +1,4 @@
-"""v2.9: benign markers, thread keys, nested depth, verdict_extra schema, RU export."""
+"""v2.9: benign-маркеры, треды, nested depth, схема verdict_extra, экспорт Тикет."""
 
 from __future__ import annotations
 

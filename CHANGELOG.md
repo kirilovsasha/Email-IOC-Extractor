@@ -2,23 +2,23 @@
 
 ## 2.9.0
 
-### Detection / triage
-- Benign markers: автоответ / OOO, календарь/ICS, корпоративная подпись, ответ в треде (`In-Reply-To` / `References`)
+### Детекция / triage
+- Benign-маркеры: автоответ / OOO, календарь/ICS, корпоративная подпись, ответ в треде (`In-Reply-To` / `References`)
 - `MailIdentity`: `in_reply_to`, `references`, `auto_submitted`; `thread_root_id()`
-- Campaign key: `thread:<root>` (затем Msg-ID / вложения / subject)
+- Ключ кампании: `thread:<root>` (затем Msg-ID / вложения / subject)
 - Вложенные `.eml` до глубины 2; URL unwrap через registry
 - `cap_mitigation` по умолчанию 30; веса `weight_auto_reply` / `weight_calendar_invite` / `weight_corp_signature` / `weight_thread_reply`
 
-### Product / offline EXE
+### Продукт / один EXE
 - Компактный вердикт (Ctrl+Shift+V): скрыть исходник, фокус на вердикте; prefs `verdict_compact`
-- Навигация пакета Ctrl+N / Ctrl+P (+ peer-diff)
-- Экспорт «Тикет» вместо Handoff; About / пакет — RU
+- Навигация пакета Ctrl+N / Ctrl+P (+ сравнение с peer)
+- Экспорт «Тикет»; About / пакет — только RU
 - Калибровка inbox: сегменты FP/FN в `corpus_metrics.py --inbox` (без БД)
 - Схема `docs/verdict_extra.schema.json` + `validate_verdict_extra`
 - Деплой: **1 EXE** + опциональные конфиги рядом (`ui_prefs.json`, `verdict_extra.json`, org profile) — без базы данных
 
-### Quality
-- Corpus: auto-reply, thread reply, nested depth-2
+### Качество
+- Corpus: автоответ, ответ в треде, nested depth-2
 - Узкие `except` в hotkeys / layout resize / nested mail
 
 ## 2.8.0

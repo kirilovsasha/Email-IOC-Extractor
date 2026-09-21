@@ -33,7 +33,7 @@ def show_about_dialog(
     update_line = f"\n{update}" if update else ""
     runbook = root / "docs" / "ANALYST_RU.md"
     runbook_line = (
-        f"\nRunbook: {runbook}" if runbook.is_file() else "\nRunbook: docs/ANALYST_RU.md"
+        f"\nСправка: {runbook}" if runbook.is_file() else "\nСправка: docs/ANALYST_RU.md"
     )
     qr_line = (
         "\nQR: декодер доступен"

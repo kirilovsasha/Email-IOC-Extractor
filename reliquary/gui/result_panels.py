@@ -55,7 +55,7 @@ class ResultPanelsMixin:
         )
         self._put(
             self.batch_box,
-            f"  {'Файл':<36} {'Вердикт':<12} {'Score':>5}  Top reason\n",
+            f"  {'Файл':<36} {'Вердикт':<12} {'Score':>5}  Причина\n",
             "muted",
         )
         self._put(self.batch_box, "  " + "─" * 72 + "\n", "muted")
@@ -64,18 +64,19 @@ class ResultPanelsMixin:
             name = Path(row.path).name
             tag = f"batchrow_{idx}"
             self._batch_row_tags[tag] = name
-            level = (row.verdict_level or "—").upper()
+            level_ru = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
+            level_key = (row.verdict_level or "").lower()
             color = {
-                "MALICIOUS": "danger",
-                "SUSPICIOUS": "warn",
-                "UNKNOWN": "info",
-                "BENIGN": "ok",
-            }.get(level, "muted")
+                "malicious": "danger",
+                "suspicious": "warn",
+                "unknown": "info",
+                "benign": "ok",
+            }.get(level_key, "muted")
             score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
             reason = (row.top_reason or "—")[:48]
             display = name if len(name) <= 34 else name[:31] + "…"
             self._put(self.batch_box, f"  {display:<36} ", "ioc_click", tag, color)
-            self._put(self.batch_box, f"{level:<12} ", color)
+            self._put(self.batch_box, f"{level_ru:<12} ", color)
             self._put(self.batch_box, f"{score:>5}  ", "value")
             self._put(self.batch_box, f"{reason}\n", "meta")
             if row.campaign_peers:
@@ -94,13 +95,13 @@ class ResultPanelsMixin:
                 self._put(self.batch_box, "      ", "muted")
                 self._put(
                     self.batch_box,
-                    f"[diff vs {peer0}]\n",
+                    f"[сравнить с {peer0}]\n",
                     "info",
                     "diff_click",
                     dtag,
                 )
             if row.subject:
-                self._put(self.batch_box, f"      Subject  {row.subject[:120]}\n", "muted")
+                self._put(self.batch_box, f"      Тема  {row.subject[:120]}\n", "muted")
             if row.errors:
                 self._put(
                     self.batch_box,
