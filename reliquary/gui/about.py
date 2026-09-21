@@ -57,7 +57,7 @@ def show_about_dialog(
         "1. Откройте письмо или папку\n"
         "2. Вердикт — score / разбор / причины\n"
         "3. Вложения · URL · IOC\n"
-        "4. Экспорт JSON / CSV / ECS / CEF / STIX / MISP / OpenCTI / тикет\n"
+        "4. Экспорт: JSON · CSV · Batch CSV · Тикет\n"
         "5. ПКМ по IOC → allowlist / сменить вердикт\n"
         "6. «Калибр.» — отчёт FP/FN по папке inbox\n\n"
         f"Журнал: {__log_name__}\n"

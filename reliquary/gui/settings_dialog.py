@@ -156,23 +156,15 @@ def show_settings_dialog(
     ctk.CTkLabel(row_e, text="Формат", width=160, anchor="w", font=ctk_font("caption")).pack(
         side="left"
     )
+    from reliquary.gui.export_actions import EXPORT_CHOICES
+
     export_var = ctk.StringVar(value=str(data.get("export_choice") or "JSON"))
+    if export_var.get() not in EXPORT_CHOICES:
+        export_var.set("JSON")
     export_menu = ctk.CTkOptionMenu(
         row_e,
         variable=export_var,
-        values=[
-            "JSON",
-            "CSV",
-            "Batch CSV",
-            "Тикет",
-            "Кампания",
-            "Campaign pack",
-            "ECS",
-            "CEF",
-            "STIX",
-            "MISP",
-            "OpenCTI",
-        ],
+        values=list(EXPORT_CHOICES),
         width=180,
         font=ctk_font("caption"),
     )

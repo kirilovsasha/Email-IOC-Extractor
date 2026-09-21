@@ -26,13 +26,6 @@ EXPORT_CHOICES = (
     "CSV",
     "Batch CSV",
     "Тикет",
-    "Кампания",
-    "ECS",
-    "CEF",
-    "STIX",
-    "MISP",
-    "OpenCTI",
-    "Campaign pack",
 )
 
 

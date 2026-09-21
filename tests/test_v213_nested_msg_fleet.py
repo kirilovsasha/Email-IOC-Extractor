@@ -128,10 +128,13 @@ def test_update_manifest_channel_sha(tmp_path: Path, monkeypatch) -> None:
     assert "Full" in msg or "full" in msg.lower()
 
 
-def test_prefs_campaign_pack_and_sidecar_defaults() -> None:
-    from reliquary.core.prefs import _EXPORT_OK
+def test_prefs_export_ui_and_sidecar_defaults() -> None:
+    from reliquary.core.prefs import _EXPORT_OK, _EXPORT_LEGACY, _coerce_value
 
-    assert "Campaign pack" in _EXPORT_OK
+    assert _EXPORT_OK == frozenset({"JSON", "CSV", "Batch CSV", "Тикет"})
+    assert _coerce_value("export_choice", "Campaign pack", "JSON") == "Batch CSV"
+    assert _coerce_value("export_choice", "ECS", "JSON") == "JSON"
+    assert "Campaign pack" in _EXPORT_LEGACY
     assert "post_export_hook_json_sidecar" in _DEFAULTS
     assert _DEFAULTS["post_export_hook_json_sidecar"] is True
     assert "batch_sort_column" in _DEFAULTS

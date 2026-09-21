@@ -12,7 +12,7 @@ from reliquary.core.labels import parse_verdict_level, verdict_label_ru
 from reliquary.core.models import SCHEMA_VERSION
 from reliquary.core.pipeline import analyze_file
 from reliquary.core.url_rewrite import unwrap_url
-from reliquary.gui.export_actions import EXPORT_CHOICES, run_export
+from reliquary.gui.export_actions import run_export
 
 CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
@@ -84,8 +84,7 @@ def test_campaign_summary_and_export(tmp_path: Path) -> None:
 
 def test_misp_opencti_exports(tmp_path: Path) -> None:
     result = analyze_file(CORPUS / "malicious_exe_ip_url.eml")
-    assert "MISP" in EXPORT_CHOICES
-    assert "OpenCTI" in EXPORT_CHOICES
+    # SIEM/TIP formats stay available via run_export / CLI, not GUI menu
     misp = run_export("misp", result, tmp_path / "m.csv")
     assert "ip-dst" in misp.read_text(encoding="utf-8-sig") or "url" in misp.read_text(
         encoding="utf-8-sig"

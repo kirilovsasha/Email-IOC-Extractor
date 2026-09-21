@@ -38,9 +38,10 @@ def test_handoff_and_batch_export(tmp_path: Path):
     assert payload.get("schema_version") == SCHEMA_VERSION
 
     assert "Тикет" in EXPORT_CHOICES
-    assert "ECS" in EXPORT_CHOICES
-    assert "CEF" in EXPORT_CHOICES
-    assert "STIX" in EXPORT_CHOICES
+    assert "ECS" not in EXPORT_CHOICES
+    assert "CEF" not in EXPORT_CHOICES
+    assert "STIX" not in EXPORT_CHOICES
+    assert EXPORT_CHOICES == ("JSON", "CSV", "Batch CSV", "Тикет")
     assert default_export_filename("Batch CSV").endswith(".csv")
     assert default_export_filename("ECS").endswith(".json")
     assert default_export_filename("CEF").endswith(".cef")

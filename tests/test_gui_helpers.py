@@ -137,9 +137,11 @@ def test_i18n_ru_only():
     assert not hasattr(i18n, "set_ui_lang")
 
 
-def test_export_choices_include_siem():
+def test_export_choices_everyday_only():
     from reliquary.gui.export_actions import EXPORT_CHOICES, normalize_export_kind
 
+    assert EXPORT_CHOICES == ("JSON", "CSV", "Batch CSV", "Тикет")
     assert normalize_export_kind("Batch CSV") == "batch_csv"
-    for kind in ("ECS", "CEF", "STIX"):
-        assert kind in EXPORT_CHOICES
+    assert normalize_export_kind("Тикет") == "handoff"
+    for kind in ("ECS", "CEF", "STIX", "MISP", "OpenCTI", "Кампания"):
+        assert kind not in EXPORT_CHOICES

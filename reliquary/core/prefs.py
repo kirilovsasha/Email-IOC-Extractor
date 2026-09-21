@@ -55,22 +55,18 @@ _DEFAULTS: dict[str, Any] = {
 _APPEARANCE_OK = frozenset({"dark", "light", "system"})
 _DENSITY_OK = frozenset({"compact", "normal", "comfortable"})
 _COPY_OK = frozenset({"type|value", "value", "csv", "defanged", "defanged|type"})
-_EXPORT_OK = frozenset(
-    {
-        "JSON",
-        "CSV",
-        "Batch CSV",
-        "Тикет",
-        "Handoff",  # legacy prefs
-        "Кампания",
-        "ECS",
-        "CEF",
-        "STIX",
-        "MISP",
-        "OpenCTI",
-        "Campaign pack",
-    }
-)
+_EXPORT_OK = frozenset({"JSON", "CSV", "Batch CSV", "Тикет"})
+# Old prefs → nearest everyday format (SIEM/campaign still available via CLI).
+_EXPORT_LEGACY = {
+    "Handoff": "Тикет",
+    "Кампания": "Batch CSV",
+    "Campaign pack": "Batch CSV",
+    "ECS": "JSON",
+    "CEF": "JSON",
+    "STIX": "JSON",
+    "MISP": "CSV",
+    "OpenCTI": "JSON",
+}
 
 def prefs_path() -> Path:
     return app_dir() / _PREFS_NAME
@@ -89,8 +85,7 @@ def _coerce_value(key: str, value: Any, default: Any) -> Any:
         return s if s in _COPY_OK else default
     if key == "export_choice":
         s = str(value or default).strip()
-        if s == "Handoff":
-            s = "Тикет"
+        s = _EXPORT_LEGACY.get(s, s)
         return s if s in _EXPORT_OK else default
     if key == "ui_scale":
         try:
