@@ -88,6 +88,7 @@ class PrefsMixin:
             "full_ioc_types": bool(self.full_ioc_types.get()),
             "appearance_mode": self._appearance_mode,
             "ioc_density": self._ioc_density,
+            "verdict_compact": bool(getattr(self, "_verdict_compact", False)),
             "brands_path": self._brands_path or "",
             "profile_dir": self._profile_dir or "",
             "post_export_hook": str(self._prefs.get("post_export_hook") or ""),

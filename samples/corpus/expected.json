@@ -4,6 +4,11 @@
     "score_min": 0,
     "score_max": 9
   },
+  "benign_auto_reply.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
   "benign_calendar_invite.eml": {
     "level": "benign",
     "score_min": 0,
@@ -40,6 +45,11 @@
     ]
   },
   "benign_newsletter.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "benign_thread_reply.eml": {
     "level": "benign",
     "score_min": 0,
     "score_max": 9
@@ -273,6 +283,16 @@
     "level": "unknown",
     "score_min": 10,
     "score_max": 29
+  },
+  "suspicious_nested_depth2.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "evil.top",
+      "сроч",
+      "nested"
+    ]
   },
   "suspicious_nested_eml.eml": {
     "level": "malicious",

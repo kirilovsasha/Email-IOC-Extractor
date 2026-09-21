@@ -21,7 +21,7 @@ def check_update_manifest(path: str | Path | None = None) -> str | None:
     """Return a short status message if ``update.json`` exists next to the app.
 
     Manifest shape::
-        {"latest": "2.8.0", "notes": "optional"}
+        {"latest": "2.9.0", "notes": "optional"}
 
     Never contacts the network — an admin drops the file beside the EXE.
     """

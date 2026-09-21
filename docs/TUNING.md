@@ -29,7 +29,11 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 | `weight_dmarc_pass_aligned` | −12 | DMARC+DKIM pass, no misalignment |
 | `weight_auth_full_pass` | −6 | SPF+DKIM+DMARC (fallback) |
 | `weight_internal_relay` | −8 | Received hop looks like internal/trusted MX |
-| `cap_mitigation` | 25 | Max absolute reduction |
+| `weight_auto_reply` | −10 | Auto-Submitted / OOO subject |
+| `weight_calendar_invite` | −8 | ICS / meeting / приглашение |
+| `weight_corp_signature` | −5 | Корп. подпись / disclaimer |
+| `weight_thread_reply` | −4 | Re:/Отв: + In-Reply-To / References |
+| `cap_mitigation` | 30 | Max absolute reduction |
 
 ## Calibration loop
 
@@ -40,8 +44,12 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
    python scripts/corpus_metrics.py --inbox path/to/eml_folder
    ```
 
-3. Adjust one knob at a time; re-run metrics; commit `verdict_extra.json` / org profile with the change reason in handoff notes.
+   Вывод даёт распределение по **сегментам** (bec / safelinks / calendar / …) и подсказки FP/FN — без базы данных.
+
+3. Adjust one knob at a time; re-run metrics; commit `verdict_extra.json` / org profile.
+   Schema: [`docs/verdict_extra.schema.json`](verdict_extra.schema.json). Configs live **next to the EXE only**.
 
 ## Schema
 
 JSON reports include top-level `schema_version` (currently `2`). Bump only on breaking shape changes — see `reliquary.core.models.SCHEMA_VERSION` and `docs/schema_report_v2.json`.
+`mail_identity` additive fields in 2.9: `in_reply_to`, `references`, `auto_submitted`.

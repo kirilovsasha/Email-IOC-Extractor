@@ -49,7 +49,7 @@ class LayoutMixin:
 
         self._header_meta = ctk.CTkLabel(
             header,
-            text=f"v{__version__}  ·  offline  ·  .eml / .msg",
+            text=f"v{__version__}  ·  офлайн  ·  .eml / .msg",
             font=ctk_font("caption"),
             text_color=COLORS["muted"],
         )
@@ -581,7 +581,7 @@ class LayoutMixin:
         self.batch_tree.heading("file", text="Файл")
         self.batch_tree.heading("verdict", text="Вердикт")
         self.batch_tree.heading("score", text="Score")
-        self.batch_tree.heading("reason", text="Top reason")
+        self.batch_tree.heading("reason", text="Причина")
         self.batch_tree.heading("peers", text="Кампания")
         self.batch_tree.column("file", width=220, minwidth=100)
         self.batch_tree.column("verdict", width=100, minwidth=70)

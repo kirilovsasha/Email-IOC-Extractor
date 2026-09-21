@@ -116,6 +116,9 @@ class MailIdentity:
     subject: str = ""
     message_id: str = ""
     date: str = ""
+    in_reply_to: str = ""
+    references: str = ""
+    auto_submitted: str = ""
     spf: str = ""
     dkim: str = ""
     dmarc: str = ""
@@ -124,6 +127,19 @@ class MailIdentity:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def thread_root_id(self) -> str:
+        """Корневой Msg-ID треда: References → In-Reply-To → свой Message-ID."""
+        refs = (self.references or "").strip()
+        if refs:
+            # First token is usually the root of the thread
+            token = refs.split()[0].strip()
+            if token:
+                return token.lower()
+        irt = (self.in_reply_to or "").strip()
+        if irt:
+            return irt.split()[0].strip().lower()
+        return (self.message_id or "").strip().lower()
 
 
 @dataclass

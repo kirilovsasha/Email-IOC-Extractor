@@ -70,6 +70,10 @@ class VerdictConfig:
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
     weight_internal_relay: int = -8
+    weight_auto_reply: int = -10
+    weight_calendar_invite: int = -8
+    weight_corp_signature: int = -5
+    weight_thread_reply: int = -4
     # Per-category caps (evidence stacking without score explosion)
     cap_headers: int = 45
     cap_attachments: int = 40
@@ -77,7 +81,7 @@ class VerdictConfig:
     cap_content: int = 40
     cap_lookalike: int = 30
     # Max absolute mitigation (floor on how much score can be reduced)
-    cap_mitigation: int = 25
+    cap_mitigation: int = 30
 
 
 _CONFIG_KEYS = frozenset(f.name for f in fields(VerdictConfig))
@@ -108,6 +112,38 @@ def parse_verdict_overrides(data: dict) -> dict[str, int]:
     return out
 
 
+def validate_verdict_extra(data: dict) -> list[str]:
+    """Lightweight schema check for ``verdict_extra.json`` (no external jsonschema).
+
+    Returns human-readable warnings; empty list means OK. Unknown keys under
+    ``_`` prefix are ignored (comments). Integer fields must be in a sane range.
+    """
+    warnings: list[str] = []
+    if not isinstance(data, dict):
+        return ["корень должен быть объектом JSON"]
+    for key, raw in data.items():
+        if key.startswith("_"):
+            continue
+        if key not in _CONFIG_KEYS:
+            warnings.append(f"неизвестный ключ: {key}")
+            continue
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            warnings.append(f"{key}: ожидалось целое, получено {raw!r}")
+            continue
+        if key.startswith("threshold_"):
+            if not 0 <= val <= 100:
+                warnings.append(f"{key}: порог вне 0..100 ({val})")
+        elif key.startswith("cap_"):
+            if not 0 <= val <= 100:
+                warnings.append(f"{key}: cap вне 0..100 ({val})")
+        elif key.startswith("weight_"):
+            if not -50 <= val <= 100:
+                warnings.append(f"{key}: вес вне −50..100 ({val})")
+    return warnings
+
+
 def load_verdict_overrides(path: str | Path | None) -> dict[str, int]:
     if path is None:
         return {}
@@ -120,6 +156,8 @@ def load_verdict_overrides(path: str | Path | None) -> dict[str, int]:
         return {}
     if not isinstance(raw, dict):
         return {}
+    # Soft-validate; ignore bad keys via parse_verdict_overrides
+    _ = validate_verdict_extra(raw)
     return parse_verdict_overrides(raw)
 
 
@@ -498,12 +536,11 @@ def _score_mitigations(
     """Negative contributions when auth/path looks trusted (DMARC pass, internal MX).
 
     Skipped when strong attack signals are present so phishing with forged
-    'pass' auth (or brand spoof) is not under-scored.
+    'pass' auth (or brand spoof) is not under-scored. Benign markers
+    (auto-reply / calendar / signature) still apply unless high-risk attachments
+    or credential/BEC content are present.
     """
     mid = result.mail_identity
-    if mid is None:
-        return 0, []
-
     high_att = {
         "double_extension",
         "dangerous_extension",
@@ -519,8 +556,7 @@ def _score_mitigations(
         "shortcut_lnk",
         "onenote_attachment",
     }
-    if any(high_att.intersection(a.risk_flags) for a in result.attachments):
-        return 0, []
+    has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
         "href_mismatch",
         "credential_harvest",
@@ -528,8 +564,19 @@ def _score_mitigations(
         "qr_only",
         "hidden_text",
     }
-    if bad_content.intersection(result.content_signals or []):
-        return 0, []
+    has_bad_content = bool(bad_content.intersection(result.content_signals or []))
+
+    parts: list[ScoreContribution] = []
+
+    # Benign operational markers — apply unless clear attack surface
+    if not has_high_att and not has_bad_content:
+        parts.extend(_benign_marker_parts(result, cfg))
+
+    if mid is None:
+        return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
+
+    if has_high_att or has_bad_content:
+        return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
 
     attack_headers = any(
         h.severity in (Severity.HIGH, Severity.CRITICAL)
@@ -543,9 +590,8 @@ def _score_mitigations(
         for h in result.headers
     )
     if attack_headers or auth_impaired:
-        return 0, []
+        return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
 
-    parts: list[ScoreContribution] = []
     has_alignment_fail = any(h.name == "DKIM alignment" for h in result.headers)
 
     dmarc_ok = (mid.dmarc or "").lower() == "pass"
@@ -570,7 +616,6 @@ def _score_mitigations(
         )
 
     hop = mid.first_received or ""
-    # Only credit internal/trusted *origin* hops, not the local receiving MX.
     from_m = re.search(r"(?i)\bfrom\s+([^\s\(;]+)", hop)
     hop_from = from_m.group(1) if from_m else hop
     if hop_from and _INTERNAL_RELAY_RE.search(hop_from):
@@ -583,6 +628,73 @@ def _score_mitigations(
         )
 
     return _apply_mitigation_floor(parts, cfg.cap_mitigation)
+
+
+_AUTO_REPLY_SUBJ = re.compile(
+    r"(?i)^(auto[-\s]?reply|automatic reply|out of office|ооо|автоответ|"
+    r"не\s*у\s*компьютера|away from (?:the )?office)\b"
+)
+_CALENDAR_RE = re.compile(
+    r"(?i)(BEGIN:VCALENDAR|text/calendar|meeting request|meeting:|"
+    r"you are invited|calendar invite|приглашение|запрос на собрание|"
+    r"план[её]рк)"
+)
+_CORP_SIG_RE = re.compile(
+    r"(?i)(с уважением|best regards|kind regards|confidentiality notice|"
+    r"это сообщение и любые вложения|disclaimer|юридическ\w+\s+оговорк)"
+)
+
+
+def _benign_marker_parts(
+    result: AnalysisResult, cfg: VerdictConfig
+) -> list[ScoreContribution]:
+    parts: list[ScoreContribution] = []
+    mid = result.mail_identity
+    subj = (result.subject or (mid.subject if mid else "") or "").strip()
+    blob = f"{subj}\n{result.raw_text_preview or ''}\n{result.html_preview or ''}"
+
+    auto = ((mid.auto_submitted if mid else "") or "").lower()
+    if (auto and auto not in ("no", "")) or _AUTO_REPLY_SUBJ.search(subj):
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_auto_reply,
+                "Автоответ / Out-of-Office — смягчение score",
+            )
+        )
+    if _CALENDAR_RE.search(blob) or any(
+        (a.mime_guess or "").lower() == "text/calendar"
+        or a.filename.lower().endswith((".ics", ".ical"))
+        for a in result.attachments
+    ):
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_calendar_invite,
+                "Календарное приглашение / ICS — смягчение score",
+            )
+        )
+    if _CORP_SIG_RE.search(blob) and not any(
+        k in (result.content_signals or [])
+        for k in ("credential_harvest", "bec_payment", "href_mismatch")
+    ):
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_corp_signature,
+                "Похоже на корпоративную подпись / дисклеймер",
+            )
+        )
+    if mid and (mid.in_reply_to or mid.references):
+        if re.match(r"(?i)^(re|fw|fwd|отв|пересл)\s*:", subj):
+            parts.append(
+                ScoreContribution(
+                    "mitigation",
+                    cfg.weight_thread_reply,
+                    "Ответ в существующем треде (In-Reply-To / References)",
+                )
+            )
+    return parts
 
 
 def render_verdict(

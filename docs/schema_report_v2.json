@@ -45,6 +45,20 @@
         "overrides_loaded": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
+    "mail_identity": {
+      "type": ["object", "null"],
+      "properties": {
+        "from_header": { "type": "string" },
+        "subject": { "type": "string" },
+        "message_id": { "type": "string" },
+        "in_reply_to": { "type": "string" },
+        "references": { "type": "string" },
+        "auto_submitted": { "type": "string" },
+        "spf": { "type": "string" },
+        "dkim": { "type": "string" },
+        "dmarc": { "type": "string" }
+      }
+    },
     "verdict": {
       "type": ["object", "null"],
       "properties": {

@@ -27,7 +27,7 @@ SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 
 def test_product_name():
     assert __app_name__ == "Email IOC Extractor"
-    assert __version__ == "2.8.0"
+    assert __version__ == "2.9.0"
 
 
 def test_defang_and_extract():
@@ -305,7 +305,7 @@ def test_desired_result_tabs_verdict_first():
 
 def test_export_actions_json_csv(tmp_path: Path):
     assert "JSON" in EXPORT_CHOICES and "CSV" in EXPORT_CHOICES
-    assert "Handoff" in EXPORT_CHOICES
+    assert "Тикет" in EXPORT_CHOICES
     assert "Batch CSV" in EXPORT_CHOICES
     result = analyze_file(SAMPLES / "phishing_sample.eml")
     out = run_export("json", result, tmp_path / default_export_filename("json"))

@@ -36,6 +36,8 @@ _DEFAULTS: dict[str, Any] = {
     "appearance_mode": "dark",  # dark|light
     "ioc_density": "normal",  # compact|normal|comfortable
     "high_contrast": False,
+    # Компактный режим: скрыть левую панель исходника, фокус на вердикте
+    "verdict_compact": False,
     # Local command/script run after successful export; receives export path as argv
     "post_export_hook": "",
     # If true, allow hook executables outside the app directory (still blocked patterns apply)
@@ -52,7 +54,8 @@ _EXPORT_OK = frozenset(
         "JSON",
         "CSV",
         "Batch CSV",
-        "Handoff",
+        "Тикет",
+        "Handoff",  # legacy prefs
         "Кампания",
         "ECS",
         "CEF",
@@ -80,6 +83,8 @@ def _coerce_value(key: str, value: Any, default: Any) -> Any:
         return s if s in _COPY_OK else default
     if key == "export_choice":
         s = str(value or default).strip()
+        if s == "Handoff":
+            s = "Тикет"
         return s if s in _EXPORT_OK else default
     if key == "ui_scale":
         try:

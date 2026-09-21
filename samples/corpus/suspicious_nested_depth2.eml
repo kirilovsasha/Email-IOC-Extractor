@@ -1,0 +1,42 @@
+From: outer@relay.example
+To: user@company.local
+Subject: FW: nested depth
+Message-ID: <outer-depth@relay.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="OUTER"
+
+--OUTER
+Content-Type: text/plain; charset=utf-8
+
+Outer wrapper.
+--OUTER
+Content-Type: message/rfc822; name="mid.eml"
+Content-Disposition: attachment; filename="mid.eml"
+Content-Transfer-Encoding: 7bit
+
+From: mid@relay.example
+To: user@company.local
+Subject: mid layer
+Message-ID: <mid-depth@relay.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="MID"
+
+--MID
+Content-Type: text/plain; charset=utf-8
+
+Middle layer.
+--MID
+Content-Type: message/rfc822; name="inner.eml"
+Content-Disposition: attachment; filename="inner.eml"
+Content-Transfer-Encoding: 7bit
+
+From: inner@evil.top
+To: victim@company.local
+Subject: pay now deep
+Message-ID: <inner-depth@evil.top>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Pay https://evil.top/deep immediately
+--MID--
+--OUTER--

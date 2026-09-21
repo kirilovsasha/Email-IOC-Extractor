@@ -1,0 +1,14 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: user@company.local
+To: colleague@company.local
+Subject: Auto-Reply: Out of Office
+Message-ID: <benign_ooo@company.local>
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+Я сейчас не у компьютера. Вернусь 22 сентября.
+С уважением,
+Отдел продаж
+Confidentiality notice: это сообщение и любые вложения предназначены только адресату.

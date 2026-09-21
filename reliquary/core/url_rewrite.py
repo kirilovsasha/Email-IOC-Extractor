@@ -139,70 +139,95 @@ def _decode_proxysg(url: str) -> str | None:
 
 
 def _unwrap_once(url: str) -> tuple[str, str]:
-    """Single-hop unwrap. Returns (candidate_or_original, rewriter_name)."""
+    """Single-hop unwrap via rewriter registry. Returns (url, rewriter_name)."""
     original = url.rstrip(".,;:!?)")
     lower = original.lower()
+
+    def _match_proofpoint_v2(u: str, low: str) -> bool:
+        return "urldefense" in low and "/v2/url" in low
+
+    def _match_proofpoint_v3(u: str, low: str) -> bool:
+        return "urldefense" in low and "/v3/" in low
+
+    def _match_safelinks(u: str, low: str) -> bool:
+        return "safelinks.protection.outlook.com" in low
+
+    def _match_barracuda(u: str, low: str) -> bool:
+        return "linkprotect.cudasvc.com" in low
+
+    def _match_mimecast(u: str, low: str) -> bool:
+        return "mimecast.com" in low
+
+    def _match_fireeye(u: str, low: str) -> bool:
+        return "fireeye.com" in low
+
+    def _match_cisco(u: str, low: str) -> bool:
+        return "secure-web.cisco.com" in low or "url.trendmicro.com" in low
+
+    def _match_google(u: str, low: str) -> bool:
+        return "google." in low and "/url?" in low
+
+    def _match_defender(u: str, low: str) -> bool:
+        return "protection.office.com" in low or "aka.ms" in low
+
+    def _match_kaspersky(u: str, low: str) -> bool:
+        return "kaspersky" in low or "klclick" in low
+
+    def _match_drweb(u: str, low: str) -> bool:
+        return "drweb" in low
+
+    def _decode_kaspersky(u: str) -> str | None:
+        return _param_url(u, ("url", "u", "target", "link", "redir")) or _path_embedded_url(u)
+
+    def _decode_drweb(u: str) -> str | None:
+        return _param_url(u, ("url", "u", "target", "link")) or _path_embedded_url(u)
+
+    def _decode_google(u: str) -> str | None:
+        candidate = _param_url(u, ("q", "url", "u"))
+        if candidate and candidate.startswith("http"):
+            return candidate
+        return None
+
+    def _decode_generic(u: str) -> str | None:
+        candidate = _param_url(
+            u, ("url", "u", "dest", "destination", "redirect", "r", "target", "link")
+        )
+        host = (urlparse(u).hostname or "").lower()
+        if candidate and candidate.startswith("http") and host and host not in candidate:
+            return candidate
+        return None
+
+    # Ordered registry: (name, match(url, lower) -> bool, decode(url) -> str|None)
+    registry: list[tuple[str, object, object]] = [
+        ("proofpoint_v2", _match_proofpoint_v2, _decode_proofpoint_v2),
+        ("proofpoint_v3", _match_proofpoint_v3, _decode_proofpoint_v3),
+        ("microsoft_safelinks", _match_safelinks, lambda u: _param_url(u, ("url", "u"))),
+        ("barracuda", _match_barracuda, lambda u: _param_url(u, ("a", "url"))),
+        ("mimecast", _match_mimecast, lambda u: _param_url(u, ("url", "u", "target"))),
+        ("fireeye", _match_fireeye, lambda u: _param_url(u, ("url", "u"))),
+        (
+            "cisco_umbrella",
+            _match_cisco,
+            lambda u: _param_url(u, ("url", "u", "dest", "target", "link")),
+        ),
+        ("google_redirect", _match_google, _decode_google),
+        ("defender_atp", _match_defender, lambda u: _param_url(u, ("url", "u", "link"))),
+        ("proxysg", lambda u, low: _is_proxysg(low, u), _decode_proxysg),
+        ("kaspersky", _match_kaspersky, _decode_kaspersky),
+        ("drweb", _match_drweb, _decode_drweb),
+        ("generic_redirect", lambda _u, _low: True, _decode_generic),
+    ]
+
     try:
-        if "urldefense" in lower and "/v2/url" in lower:
-            candidate = _decode_proofpoint_v2(original)
+        for name, match, decode in registry:
+            if not match(original, lower):  # type: ignore[operator]
+                continue
+            candidate = decode(original)  # type: ignore[operator]
             if candidate:
-                return candidate, "proofpoint_v2"
-        elif "urldefense" in lower and "/v3/" in lower:
-            candidate = _decode_proofpoint_v3(original)
-            if candidate:
-                return candidate, "proofpoint_v3"
-        elif "safelinks.protection.outlook.com" in lower:
-            candidate = _param_url(original, ("url", "u"))
-            if candidate:
-                return candidate, "microsoft_safelinks"
-        elif "linkprotect.cudasvc.com" in lower:
-            candidate = _param_url(original, ("a", "url"))
-            if candidate:
-                return candidate, "barracuda"
-        elif "mimecast.com" in lower:
-            candidate = _param_url(original, ("url", "u", "target"))
-            if candidate:
-                return candidate, "mimecast"
-        elif "fireeye.com" in lower:
-            candidate = _param_url(original, ("url", "u"))
-            if candidate:
-                return candidate, "fireeye"
-        elif "secure-web.cisco.com" in lower or "url.trendmicro.com" in lower:
-            candidate = _param_url(original, ("url", "u", "dest", "target", "link"))
-            if candidate:
-                return candidate, "cisco_umbrella"
-        elif "google." in lower and "/url?" in lower:
-            candidate = _param_url(original, ("q", "url", "u"))
-            if candidate and candidate.startswith("http"):
-                return candidate, "google_redirect"
-        elif "protection.office.com" in lower or "aka.ms" in lower:
-            candidate = _param_url(original, ("url", "u", "link"))
-            if candidate:
-                return candidate, "defender_atp"
-        elif _is_proxysg(lower, original):
-            candidate = _decode_proxysg(original)
-            if candidate:
-                return candidate, "proxysg"
-        elif "kaspersky" in lower or "klclick" in lower:
-            candidate = _param_url(original, ("url", "u", "target", "link", "redir"))
-            if not candidate:
-                candidate = _path_embedded_url(original)
-            if candidate:
-                return candidate, "kaspersky"
-        elif "drweb" in lower:
-            candidate = _param_url(original, ("url", "u", "target", "link"))
-            if not candidate:
-                candidate = _path_embedded_url(original)
-            if candidate:
-                return candidate, "drweb"
-        else:
-            candidate = _param_url(
-                original,
-                ("url", "u", "dest", "destination", "redirect", "r", "target", "link"),
-            )
-            host = (urlparse(original).hostname or "").lower()
-            if candidate and candidate.startswith("http") and host and host not in candidate:
-                return candidate, "generic_redirect"
+                return candidate, name
+            if name != "generic_redirect":
+                # Named rewriter matched host but failed decode — stop (don't fall through)
+                break
     except (ValueError, KeyError, IndexError, TypeError, re.error):
         return original, "parse_error"
     return original, "none"

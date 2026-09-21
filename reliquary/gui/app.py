@@ -69,11 +69,12 @@ class ExtractorApp(
         apply_appearance(appearance)
         self._appearance_mode = appearance
         self._ioc_density = str(self._prefs.get("ioc_density") or "normal")
+        self._verdict_compact = bool(self._prefs.get("verdict_compact"))
         scale = float(self._prefs.get("ui_scale") or 1.0)
         try:
             # Widget scale only — window scaling drifts saved geometry off-screen.
             ctk.set_widget_scaling(scale)
-        except Exception:  # noqa: BLE001
+        except (AttributeError, ValueError, TypeError, tk.TclError):
             pass
         self._ui_scale = scale
 
@@ -153,6 +154,8 @@ class ExtractorApp(
         self._last_export_dir = str(self._prefs.get("last_export_dir") or "") or ""
 
         self._build()
+        if self._verdict_compact:
+            self._apply_verdict_compact()
         self._try_hook_drop()
         self._bind_global_hotkeys()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -211,18 +214,21 @@ class ExtractorApp(
             elif w < 1100:
                 self._header_meta.configure(text=f"v{__version__}  ·  .eml / .msg")
             else:
-                self._header_meta.configure(text=f"v{__version__}  ·  offline  ·  .eml / .msg")
+                self._header_meta.configure(text=f"v{__version__}  ·  офлайн  ·  .eml / .msg")
         except Exception:  # noqa: BLE001
             pass
 
         try:
-            if w < 1000:
+            if getattr(self, "_verdict_compact", False):
+                self._body.grid_columnconfigure(0, weight=0, minsize=0)
+                self._body.grid_columnconfigure(1, weight=1, minsize=320)
+            elif w < 1000:
                 self._body.grid_columnconfigure(0, weight=2, minsize=160)
                 self._body.grid_columnconfigure(1, weight=5, minsize=260)
             else:
                 self._body.grid_columnconfigure(0, weight=2, minsize=200)
                 self._body.grid_columnconfigure(1, weight=5, minsize=320)
-        except Exception:  # noqa: BLE001
+        except (AttributeError, tk.TclError):
             pass
 
         stack_filters = w < 1080

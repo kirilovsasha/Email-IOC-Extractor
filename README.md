@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.8.0
+**Mail. Extract. Decide.** · v2.9.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
@@ -8,10 +8,11 @@ URL rewrite, IOC как доказательства и **вердикт**
 (включая mitigations).
 
 📡 Сеть не используется. Пакет Python — `reliquary`; продукт — **Email IOC Extractor**.
+Деплой: **один EXE** + опциональные конфиги рядом (без БД).
 
-📦 Экспорт: JSON (`schema_version` **2**) · CSV · Batch CSV · Handoff · Кампания · ECS · CEF · STIX · MISP · OpenCTI.
+📦 Экспорт: JSON (`schema_version` **2**) · CSV · Batch CSV · Тикет · Кампания · ECS · CEF · STIX · MISP · OpenCTI.
 
-| 🖥️ GUI | ⌨️ CLI | 📁 Batch | 🎫 Handoff | 🧩 Org profile | 🏗️ EXE |
+| 🖥️ GUI | ⌨️ CLI | 📁 Batch | 🎫 Тикет | 🧩 Org profile | 🏗️ EXE |
 
 ---
 
@@ -63,9 +64,10 @@ pip install -e ".[rar,qr]"
 1. 📧 Откройте письмо (`.eml` / `.msg`), папку или вставьте RFC822 слева (Ctrl+Enter).
 2. ⚖️ Вкладка **Вердикт**: уровень, score, **разбор** (`+N` risk / `−N` mitigation), причины.
 3. 🔎 При шуме ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы** IOC.
-4. 🎫 **Handoff** (Ctrl+H) → тикет; либо JSON / CSV / Batch CSV (Ctrl+E).
-5. 📁 Пакет писем → вкладка **Пакет**: файл · вердикт · score · top reason · кампании;
-   клик **`[diff vs peer]`** — сравнение IOC/score с письмом той же кампании.
+4. 🎫 **Тикет** (Ctrl+H) → буфер для ITSM; либо JSON / CSV / Batch CSV (Ctrl+E).
+5. 📁 Пакет писем → вкладка **Пакет**: файл · вердикт · score · причина · кампании;
+   Ctrl+N/P — следующее письмо; клик **`[diff vs peer]`** — сравнение с peer кампании.
+6. Ctrl+Shift+V — компактный режим (только вердикт, без панели исходника).
 
 ---
 
@@ -77,8 +79,8 @@ pip install -e ".[rar,qr]"
 | ⚖️ | Вердикт | score · breakdown (+/−) · причины |
 | 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
 | 📁 | Пакет | сводка + кампании + diff peer |
-| 📋 | Буфер | Msg-ID · Handoff · копирование IOC |
-| 💾 | Экспорт | JSON / CSV / Batch CSV / Handoff |
+| 📋 | Буфер | Msg-ID · Тикет · копирование IOC |
+| 💾 | Экспорт | JSON / CSV / Batch CSV / Тикет |
 
 **Фильтры по умолчанию:** SafeLinks / CDN / локальные IP скрыты; «к разбору» включён;
 крипто и legacy host-IOC (registry / mutex / …) скрыты.
@@ -89,16 +91,18 @@ pip install -e ".[rar,qr]"
 |---------|----------|
 | Ctrl+O | 📂 Открыть письмо |
 | Ctrl+Enter | ▶ Разбор RFC822 из левой панели |
-| Ctrl+H | 🎫 Копировать Handoff |
+| Ctrl+H | 🎫 Копировать тикет |
 | Ctrl+E | 💾 Экспорт (выбранный формат) |
+| Ctrl+Shift+V | 📐 Компактный вердикт |
+| Ctrl+N / Ctrl+P | 📁 Следующее / предыдущее письмо пакета |
 | Ctrl+L | 🌓 Тема light / dark |
 | Ctrl+D | 📏 Плотность IOC (compact / normal / comfortable) |
 | Ctrl± | 🔍 Масштаб UI |
 | 1–6 | 📑 Вкладки результатов (Вердикт … Ошибки) |
 | Ctrl+F | 🔎 Поиск по IOC |
 
-Prefs: `ui_prefs.json` рядом с приложением
-(`appearance_mode`, `ioc_density`, пути overrides, `post_export_hook`, …).
+Prefs: `ui_prefs.json` рядом с EXE
+(`appearance_mode`, `ioc_density`, `verdict_compact`, пути overrides, …). Без БД.
 
 ---
 
@@ -176,12 +180,13 @@ Mitigations не применяются при auth fail/softfail/none, HIGH-а�
 | ⚠️ | suspicious | 30–59 |
 | 🛑 | malicious | ≥ 60 |
 
-Веса: `reliquary/core/verdict.py`. Override: `verdict_extra.json`.  
+Веса: `reliquary/core/verdict.py`. Override: `verdict_extra.json`
+(схема: [`docs/verdict_extra.schema.json`](docs/verdict_extra.schema.json)).  
 Калибровка FP/FN: [`docs/TUNING.md`](docs/TUNING.md).
 
 ---
 
-## 🧩 Overrides и org profile
+## 🧩 Конфиги рядом с EXE (без БД)
 
 Файлы рядом с exe / проектом (без пересборки) или через CLI / prefs:
 

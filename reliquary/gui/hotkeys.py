@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import tkinter as tk
+from pathlib import Path
+
 import customtkinter as ctk
 
 from reliquary.core.defang import defang_value
@@ -29,6 +32,12 @@ class HotkeysMixin:
         self.bind("<Control-L>", lambda _e: self._cycle_appearance())
         self.bind("<Control-d>", lambda _e: self._cycle_density())
         self.bind("<Control-D>", lambda _e: self._cycle_density())
+        self.bind("<Control-Shift-V>", lambda _e: self._toggle_verdict_compact())
+        self.bind("<Control-Shift-v>", lambda _e: self._toggle_verdict_compact())
+        self.bind("<Control-n>", lambda _e: self._batch_next_mail(1))
+        self.bind("<Control-N>", lambda _e: self._batch_next_mail(1))
+        self.bind("<Control-p>", lambda _e: self._batch_next_mail(-1))
+        self.bind("<Control-P>", lambda _e: self._batch_next_mail(-1))
         self.bind("<Control-plus>", lambda _e: self._bump_scale(1))
         self.bind("<Control-equal>", lambda _e: self._bump_scale(1))
         self.bind("<Control-minus>", lambda _e: self._bump_scale(-1))
@@ -58,11 +67,78 @@ class HotkeysMixin:
         self._persist_prefs()
         self._set_status(f"Плотность IOC: {self._ioc_density}")
 
+    def _toggle_verdict_compact(self) -> None:
+        self._verdict_compact = not bool(getattr(self, "_verdict_compact", False))
+        self._apply_verdict_compact()
+        self._persist_prefs()
+        mode = "вкл" if self._verdict_compact else "выкл"
+        self._set_status(f"Компактный вердикт: {mode} (Ctrl+Shift+V)")
+
+    def _apply_verdict_compact(self) -> None:
+        """Скрыть левую панель исходника — фокус на вердикте (1 EXE, prefs рядом)."""
+        left = getattr(self, "_left", None)
+        body = getattr(self, "_body", None)
+        if left is None or body is None:
+            return
+        try:
+            if self._verdict_compact:
+                left.grid_remove()
+                body.grid_columnconfigure(0, weight=0, minsize=0)
+                body.grid_columnconfigure(1, weight=1, minsize=320)
+                # Jump to verdict tab
+                self._hotkey_tab("mail")
+            else:
+                left.grid()
+                body.grid_columnconfigure(0, weight=2, minsize=200)
+                body.grid_columnconfigure(1, weight=5, minsize=320)
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _batch_next_mail(self, direction: int) -> str:
+        """Ctrl+N / Ctrl+P — следующее/предыдущее письмо пакета + peer-diff при наличии."""
+        batch = getattr(self, "_batch_results", None) or []
+        if len(batch) < 2:
+            self._set_status("Пакет: нужно ≥2 письма")
+            return "break"
+        paths = [r.source_path for r in batch]
+        current = getattr(self, "result", None)
+        cur_path = current.source_path if current else ""
+        try:
+            idx = paths.index(cur_path)
+        except ValueError:
+            idx = 0
+        nxt = (idx + direction) % len(paths)
+        target = batch[nxt]
+        # Reuse analysis result already in memory
+        self.result = target
+        self._focus_source_file = target.source_path
+        if hasattr(self, "_refresh_views"):
+            self._refresh_views(full=True)
+        name = Path(target.source_path).name
+        peers: list[str] = []
+        if target.file_rows:
+            for row in target.file_rows:
+                if Path(row.path).name == name:
+                    peers = list(row.campaign_peers or [])
+                    break
+        else:
+            for r in batch:
+                for row in r.file_rows or []:
+                    if Path(row.path).name == name and row.campaign_peers:
+                        peers = list(row.campaign_peers)
+                        break
+                if peers:
+                    break
+        if peers and hasattr(self, "_show_campaign_diff"):
+            self._show_campaign_diff(name, peers[0])
+        self._set_status(f"Пакет {nxt + 1}/{len(batch)}: {name}")
+        return "break"
+
     def _focus_search(self, _event: object = None) -> str:
         try:
             self.search_entry.focus_set()
             self.search_entry.select_range(0, "end")
-        except Exception:  # noqa: BLE001
+        except (AttributeError, tk.TclError):
             pass
         return "break"
 
@@ -81,7 +157,7 @@ class HotkeysMixin:
             if focus is not None and focus not in (self,):
                 if focus != self.ioc_table.tree:
                     return ""
-        except Exception:  # noqa: BLE001
+        except (AttributeError, tk.TclError):
             pass
         if not self.result:
             return "break"
@@ -113,15 +189,15 @@ class HotkeysMixin:
         self._ui_scale = _SCALE_STEPS[idx]
         try:
             ctk.set_widget_scaling(self._ui_scale)
-        except Exception:  # noqa: BLE001
+        except (AttributeError, ValueError, TypeError, tk.TclError):
             pass
         try:
             self.ioc_table.set_ui_scale(self._ui_scale)
-        except Exception:  # noqa: BLE001
+        except (AttributeError, tk.TclError):
             pass
         try:
             self._apply_panel_fonts()
-        except Exception:  # noqa: BLE001
+        except (AttributeError, tk.TclError):
             pass
         self._persist_prefs()
         self._set_status(f"Масштаб UI: {int(self._ui_scale * 100)}%")
