@@ -1,0 +1,9 @@
+From: notify@yandex.ru
+To: user@company.local
+Subject: Ссылка Яндекс
+Message-ID: <yandex_wrap@yandex.ru>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=none; dkim=none; dmarc=none
+
+Открыть: https://clck.yandex.ru/redir?url=https%3A%2F%2Fevil.top%2Fyandex

@@ -9,10 +9,12 @@ from tkinter import filedialog, messagebox
 from reliquary import __app_name__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, format_eta, run_batch
+from reliquary.core.calibration import calibrate_inbox
 from reliquary.core.error_log import append_error_log
 from reliquary.core.formats import collect_supported, tk_filetypes
 from reliquary.core.models import AnalysisResult
 from reliquary.core.org_profile import load_org_profile
+from reliquary.core.paths import app_dir
 from reliquary.core.pipeline import analyze_text
 
 
@@ -33,7 +35,7 @@ class AnalysisActionsMixin:
         if old is not None:
             try:
                 old.cleanup()
-            except Exception:  # noqa: BLE001
+            except (OSError, AttributeError, RuntimeError):
                 pass
             self._org_profile = None
         profile = load_org_profile(opts.profile_dir)
@@ -43,7 +45,62 @@ class AnalysisActionsMixin:
             self._handoff_by_level = {
                 k: str(v) for k, v in (profile.handoff_by_level or {}).items()
             } or None
+            # Remember resolved profile path for About / prefs
+            if not getattr(self, "_profile_dir", None):
+                self._profile_dir = str(profile.root)
         return opts
+
+    def calibrate_inbox_folder(self) -> None:
+        """Калибровка папки inbox → текстовый отчёт рядом с EXE (без БД)."""
+        folder = filedialog.askdirectory(
+            title=f"{__app_name__} — папка inbox для калибровки",
+            initialdir=self._last_dir or None,
+        )
+        if not folder:
+            return
+        self._last_dir = folder
+        self._persist_prefs()
+        self._sync_job_row(busy=True)
+        self._set_status("Калибровка inbox…")
+
+        def _run() -> None:
+            try:
+                report = calibrate_inbox(folder)
+                out = app_dir() / "calibration_inbox_report.txt"
+                out.write_text(report.to_text(), encoding="utf-8")
+
+                def _ok() -> None:
+                    self._sync_job_row(busy=False)
+                    # Show in errors / status
+                    if hasattr(self, "err_box"):
+                        self._clear_box(self.err_box)
+                        self._put(self.err_box, report.to_text(), "value")
+                        if "err" in getattr(self, "_tab_label_by_key", {}):
+                            label = self._tab_label_by_key["err"]
+                            self._tab_var.set(label)
+                            self._tab_seg.set(label)
+                            self._show_tab_frame("err")
+                    self._set_status(f"Калибровка: {out.name} ({report.scored}/{report.file_count})")
+                    messagebox.showinfo(
+                        __app_name__,
+                        f"Калибровка завершена.\n"
+                        f"Файлов: {report.file_count}, со score: {report.scored}\n"
+                        f"Отчёт: {out}",
+                    )
+
+                self.after(0, _ok)
+            except Exception as exc:  # noqa: BLE001
+                append_error_log("inbox calibration failed", exc=exc)
+                msg = str(exc)
+
+                def _fail() -> None:
+                    self._sync_job_row(busy=False)
+                    messagebox.showerror("Ошибка", msg)
+                    self._set_status("Ошибка калибровки")
+
+                self.after(0, _fail)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def cancel_batch(self) -> None:
         self._cancel_batch = True

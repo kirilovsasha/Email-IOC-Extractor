@@ -176,11 +176,37 @@ def _unwrap_once(url: str) -> tuple[str, str]:
     def _match_drweb(u: str, low: str) -> bool:
         return "drweb" in low
 
+    def _match_mailru(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        if host.endswith(("mail.ru", "imgsmail.ru")):
+            return "click" in low or "away" in low or "/cgi-bin/link" in low or "redir" in low
+        return "click.mail.ru" in low or "away.mail.ru" in low
+
+    def _match_yandex(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        if "clck.yandex." in host or host.startswith("away.yandex"):
+            return True
+        if "yandex." in host:
+            return any(x in low for x in ("/clck/", "/redir/", "away.yandex", "l.yandex"))
+        return False
+
     def _decode_kaspersky(u: str) -> str | None:
         return _param_url(u, ("url", "u", "target", "link", "redir")) or _path_embedded_url(u)
 
     def _decode_drweb(u: str) -> str | None:
         return _param_url(u, ("url", "u", "target", "link")) or _path_embedded_url(u)
+
+    def _decode_mailru(u: str) -> str | None:
+        return (
+            _param_url(u, ("url", "u", "target", "link", "redir", "goto"))
+            or _path_embedded_url(u)
+        )
+
+    def _decode_yandex(u: str) -> str | None:
+        return (
+            _param_url(u, ("url", "u", "target", "link", "redir", "dst"))
+            or _path_embedded_url(u)
+        )
 
     def _decode_google(u: str) -> str | None:
         candidate = _param_url(u, ("q", "url", "u"))
@@ -215,6 +241,8 @@ def _unwrap_once(url: str) -> tuple[str, str]:
         ("proxysg", lambda u, low: _is_proxysg(low, u), _decode_proxysg),
         ("kaspersky", _match_kaspersky, _decode_kaspersky),
         ("drweb", _match_drweb, _decode_drweb),
+        ("mailru_away", _match_mailru, _decode_mailru),
+        ("yandex_redir", _match_yandex, _decode_yandex),
         ("generic_redirect", lambda _u, _low: True, _decode_generic),
     ]
 

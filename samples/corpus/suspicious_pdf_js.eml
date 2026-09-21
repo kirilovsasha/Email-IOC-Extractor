@@ -1,0 +1,20 @@
+From: phish@evil.top
+To: victim@company.local
+Subject: Документ PDF
+Message-ID: <pdf_js@evil.top>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="P"
+
+--P
+Content-Type: text/plain; charset=utf-8
+
+Счёт во вложении.
+--P
+Content-Type: application/pdf; name="invoice.pdf"
+Content-Disposition: attachment; filename="invoice.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iajw8IC9PcGVuQWN0aW9uIDw8IC9TIC9KYXZhU2NyaXB0IC9KUyAoYXBw
+LmFsZXJ0KDEpKSA+PiA+PgovVVJJIChodHRwOi8vZXZpbC50b3AvKQplbmRvYmoK
+
+--P--

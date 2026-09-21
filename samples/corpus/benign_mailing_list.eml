@@ -1,0 +1,14 @@
+Received: from mailer.news.example (mailer.news.example [192.0.2.40]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: digest@news.example
+To: user@company.local
+Subject: Еженедельный дайджест продуктов
+Message-ID: <bulk_digest@news.example>
+List-Id: <product-digest.news.example>
+List-Unsubscribe: <https://news.example/unsub/abc>
+Precedence: bulk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+С уважением, команда рассылки.
+Новости недели без внешних срочных призывов.
