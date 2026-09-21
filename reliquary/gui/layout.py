@@ -63,6 +63,14 @@ class LayoutMixin:
             command=self.show_about,
             **BTN_SECONDARY,
         ).pack(side="right", padx=(6, 14), pady=4)
+        ctk.CTkButton(
+            header,
+            text="Настройки",
+            width=100,
+            font=ctk_font("caption"),
+            command=self.show_settings,
+            **BTN_SECONDARY,
+        ).pack(side="right", padx=(6, 0), pady=4)
 
         # —— Compact chrome: actions + collapsible filters (body gets the height) ——
         chrome = ctk.CTkFrame(
@@ -577,9 +585,24 @@ class LayoutMixin:
         self.ioc_table.set_density(self._ioc_density)
         self.ioc_table.pack(fill="both", expand=True)
 
-        # Batch: Treeview table + optional diff text below
+        # Batch: filter + Treeview + optional diff text
         batch_frame = self._tab_frames["batch"]
         import tkinter.ttk as ttk
+
+        self._batch_filter_var = ctk.StringVar(value="")
+        filter_row = ctk.CTkFrame(batch_frame, fg_color="transparent")
+        filter_row.pack(fill="x", padx=4, pady=(4, 0))
+        ctk.CTkLabel(filter_row, text="Фильтр:", font=ctk_font("small")).pack(side="left")
+        filt_entry = ctk.CTkEntry(filter_row, textvariable=self._batch_filter_var, width=220)
+        filt_entry.pack(side="left", padx=6)
+        filt_entry.bind("<KeyRelease>", lambda _e: self._on_batch_filter_change())
+        self._batch_restore_btn = ctk.CTkButton(
+            batch_frame,
+            text="← К пакету",
+            width=120,
+            command=self._restore_batch_tree,
+        )
+        # packed only during campaign diff
 
         self._batch_tree_scroll = ctk.CTkFrame(batch_frame, fg_color="transparent")
         self._batch_tree_scroll.pack(fill="both", expand=True, padx=4, pady=4)
@@ -591,9 +614,13 @@ class LayoutMixin:
             selectmode="browse",
             height=12,
         )
-        self.batch_tree.heading("file", text="Файл")
-        self.batch_tree.heading("verdict", text="Вердикт")
-        self.batch_tree.heading("score", text="Балл")
+        self.batch_tree.heading("file", text="Файл", command=lambda: self._on_batch_heading_click("file"))
+        self.batch_tree.heading(
+            "verdict", text="Вердикт", command=lambda: self._on_batch_heading_click("verdict")
+        )
+        self.batch_tree.heading(
+            "score", text="Балл", command=lambda: self._on_batch_heading_click("score")
+        )
         self.batch_tree.heading("reason", text="Причина")
         self.batch_tree.heading("peers", text="Кампания")
         self.batch_tree.column("file", width=220, minwidth=100)
@@ -609,6 +636,8 @@ class LayoutMixin:
         ys.pack(side="right", fill="y")
         self.batch_tree.bind("<<TreeviewSelect>>", self._on_batch_tree_select)
         self.batch_tree.bind("<Double-1>", self._on_batch_tree_diff)
+        self._batch_sort_col = str(self._prefs.get("batch_sort_column") or "score")
+        self._batch_sort_reverse = bool(self._prefs.get("batch_sort_reverse", True))
         self.batch_box = self._make_text(batch_frame)
         self.batch_box.pack_forget()  # shown only for campaign diff text
 

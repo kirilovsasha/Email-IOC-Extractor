@@ -17,6 +17,12 @@ class ResultPanelsMixin:
     def _fill_batch(self, result: AnalysisResult) -> None:
         tree = getattr(self, "batch_tree", None)
         rows = result.file_rows or []
+        self._batch_all_rows = list(rows)
+        if hasattr(self, "_batch_restore_btn"):
+            try:
+                self._batch_restore_btn.pack_forget()
+            except tk.TclError:
+                pass
         if tree is not None:
             for item in tree.get_children():
                 tree.delete(item)
@@ -30,15 +36,99 @@ class ResultPanelsMixin:
             if len(rows) < 2:
                 tree.insert("", "end", values=("Нужно ≥2 файла для пакета", "", "", "", ""))
                 return
-            for row in rows:
-                name = Path(row.path).name
-                level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
-                score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
-                reason = (row.top_reason or "—")[:60]
-                peers = ", ".join(row.campaign_peers[:3]) if row.campaign_peers else ""
-                iid = tree.insert("", "end", values=(name, level, score, reason, peers))
-                self._batch_row_map[iid] = row
+            self._render_batch_rows(rows)
             return
+        self._clear_box(self.batch_box)
+        self._batch_row_tags.clear()
+        if not hasattr(self, "_batch_diff_tags"):
+            self._batch_diff_tags = {}
+        self._batch_diff_tags.clear()
+        if len(rows) < 2:
+            self._put(self.batch_box, "Нужно ≥2 файла для таблицы пакета\n", "empty")
+            return
+        self._put(
+            self.batch_box,
+            "Пакет (текстовый режим)\n",
+            "h1",
+        )
+        for row in rows:
+            name = Path(row.path).name
+            level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
+            score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
+            self._put(self.batch_box, f"{name}: {level} {score}\n", "body")
+
+    def _render_batch_rows(self, rows: list) -> None:
+        tree = getattr(self, "batch_tree", None)
+        if tree is None:
+            return
+        for item in tree.get_children():
+            tree.delete(item)
+        self._batch_row_map = {}
+        filt = ""
+        if hasattr(self, "_batch_filter_var"):
+            filt = str(self._batch_filter_var.get() or "").strip().lower()
+        col = str(getattr(self, "_batch_sort_col", "score") or "score")
+        reverse = bool(getattr(self, "_batch_sort_reverse", True))
+
+        def _key(row):
+            if col == "file":
+                return Path(row.path).name.lower()
+            if col == "verdict":
+                return (row.verdict_level or "").lower()
+            if col == "score":
+                return row.verdict_score if row.verdict_score is not None else -1
+            return Path(row.path).name.lower()
+
+        ordered = sorted(rows, key=_key, reverse=reverse)
+        for row in ordered:
+            name = Path(row.path).name
+            level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
+            score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
+            reason = (row.top_reason or "—")[:60]
+            peers = ", ".join(row.campaign_peers[:3]) if row.campaign_peers else ""
+            if filt and filt not in f"{name} {level} {score} {reason} {peers}".lower():
+                continue
+            iid = tree.insert("", "end", values=(name, level, score, reason, peers))
+            self._batch_row_map[iid] = row
+
+    def _on_batch_heading_click(self, col: str) -> None:
+        mapping = {
+            "file": "file",
+            "verdict": "verdict",
+            "score": "score",
+            "reason": "file",
+            "peers": "file",
+        }
+        key = mapping.get(col, "score")
+        if getattr(self, "_batch_sort_col", None) == key:
+            self._batch_sort_reverse = not bool(getattr(self, "_batch_sort_reverse", True))
+        else:
+            self._batch_sort_col = key
+            self._batch_sort_reverse = key == "score"
+        rows = getattr(self, "_batch_all_rows", None) or []
+        if rows:
+            self._render_batch_rows(rows)
+
+    def _on_batch_filter_change(self, *_args) -> None:
+        rows = getattr(self, "_batch_all_rows", None) or []
+        if rows:
+            self._render_batch_rows(rows)
+
+    def _restore_batch_tree(self) -> None:
+        if hasattr(self, "_batch_restore_btn"):
+            try:
+                self._batch_restore_btn.pack_forget()
+            except tk.TclError:
+                pass
+        if hasattr(self, "_batch_tree_scroll"):
+            self._batch_tree_scroll.pack(fill="both", expand=True, padx=4, pady=4)
+        try:
+            self.batch_box.pack_forget()
+        except tk.TclError:
+            pass
+        rows = getattr(self, "_batch_all_rows", None) or []
+        if rows:
+            self._render_batch_rows(rows)
         self._clear_box(self.batch_box)
         self._batch_row_tags.clear()
         if not hasattr(self, "_batch_diff_tags"):
@@ -176,9 +266,17 @@ class ResultPanelsMixin:
         self._put(self.batch_box, delta.to_text(), "value")
         self._put(
             self.batch_box,
-            "\n  (повторный разбор пакета восстановит сводку)\n",
+            "\n  ← «К пакету» сверху или повторный разбор пакета\n",
             "muted",
         )
+        if hasattr(self, "_batch_restore_btn"):
+            try:
+                self._batch_restore_btn.pack(fill="x", padx=4, pady=(0, 4), before=self.batch_box)
+            except tk.TclError:
+                try:
+                    self._batch_restore_btn.pack(fill="x", padx=4, pady=2)
+                except tk.TclError:
+                    pass
         self._set_status(f"Сравнение: {left_name} ↔ {right_name}")
 
     def _on_batch_row_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]

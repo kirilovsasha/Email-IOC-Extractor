@@ -413,6 +413,125 @@ def _inventory_cab(data: bytes) -> tuple[list[str], list[str], list[str]]:
     return entries, flags, notes
 
 
+def _inventory_iso(data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Best-effort ISO9660 / Joliet name scrape (no full mount)."""
+    flags: list[str] = ["iso_image"]
+    notes: list[str] = ["ISO/IMG — эвристический listing имён"]
+    entries: list[str] = []
+    head = data[: min(len(data), 1024 * 1024)]
+    found: list[str] = []
+    for m in re.finditer(
+        rb"([A-Za-z0-9_\-\.]{3,80}\.(?:EXE|DLL|LNK|JS|VBS|BAT|CMD|PS1|HTA|SCR|HTML?|HTM|ZIP|RAR|ISO|IMG|PDF|DOC|DOCX)(?:;1)?)",
+        head,
+        flags=re.IGNORECASE,
+    ):
+        try:
+            name = m.group(1).decode("ascii", errors="ignore").split(";")[0]
+        except UnicodeError:
+            continue
+        if name and name not in found:
+            found.append(name)
+    try:
+        wide = head.decode("utf-16-le", errors="ignore")
+        for wm in re.finditer(
+            r"([A-Za-z0-9_\-\.]{3,80}\.(?:exe|dll|lnk|js|vbs|bat|cmd|ps1|hta|scr|html?|htm|zip|rar|iso|img|pdf|doc|docx))",
+            wide,
+            flags=re.IGNORECASE,
+        ):
+            name = wm.group(1)
+            if name and name not in found:
+                found.append(name)
+    except UnicodeError:
+        pass
+    entries = found[:MAX_ARCHIVE_ENTRIES]
+    if entries:
+        notes.append(f"Имена в ISO (эвристика): {len(entries)}")
+    else:
+        notes.append("ISO: имена членов не извлечены (проверьте в песочнице)")
+    dangerous = [n for n in entries if Path(n.lower()).suffix in DANGEROUS_EXTENSIONS]
+    if dangerous:
+        flags.append("archive_dangerous_member")
+        notes.append("Опасные члены ISO: " + ", ".join(dangerous[:8]))
+    if any(n.lower().endswith(".lnk") for n in entries):
+        flags.append("iso_contains_lnk")
+        notes.append("ISO содержит .lnk")
+    return entries, flags, notes
+
+
+def extract_nested_mail_from_archive(
+    data: bytes, *, container_name: str = "archive"
+) -> tuple[list["AttachmentInfo"], list[str]]:
+    """Extract .eml/.msg members from ZIP (or RAR if tool available)."""
+    notes: list[str] = []
+    extracted: list[AttachmentInfo] = []
+    lower = container_name.lower()
+
+    def _add(name: str, payload: bytes) -> None:
+        if len(payload) > MAX_NESTED_MEMBER_BYTES:
+            notes.append(f"Пропуск крупного вложенного письма: {name}")
+            return
+        info = inspect_bytes(name, payload, keep_bytes=True)
+        if "nested_email" not in info.risk_flags:
+            info.risk_flags.append("nested_email")
+        info.notes.append(f"Извлечено из архива «{Path(container_name).name}»")
+        extracted.append(info)
+
+    if data[:2] == b"PK" or lower.endswith(".zip"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                if any(zi.flag_bits & 0x1 for zi in zf.infolist()):
+                    notes.append("ZIP зашифрован — вложенные письма не извлечены")
+                    return extracted, notes
+                for zi in zf.infolist():
+                    if zi.is_dir():
+                        continue
+                    if Path(zi.filename).suffix.lower() not in NESTED_MAIL_EXT:
+                        continue
+                    if zi.file_size > MAX_NESTED_MEMBER_BYTES:
+                        notes.append(f"Пропуск: {zi.filename} слишком большой")
+                        continue
+                    try:
+                        payload = zf.read(zi)
+                    except (KeyError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
+                        notes.append(f"{zi.filename}: {exc}")
+                        continue
+                    _add(Path(zi.filename).name, payload)
+                    if len(extracted) >= MAX_NESTED_MEMBERS:
+                        break
+        except zipfile.BadZipFile as exc:
+            notes.append(f"ZIP nested-mail: {exc}")
+        return extracted, notes
+
+    if data[:4] == b"Rar!" or lower.endswith(".rar"):
+        try:
+            import rarfile  # type: ignore[import-untyped]
+        except ImportError:
+            notes.append("RAR nested-mail: нет rarfile")
+            return extracted, notes
+        try:
+            with rarfile.RarFile(io.BytesIO(data)) as rf:
+                if rf.needs_password():
+                    notes.append("RAR зашифрован — вложенные письма не извлечены")
+                    return extracted, notes
+                for info in rf.infolist():
+                    name = getattr(info, "filename", "") or ""
+                    if Path(name).suffix.lower() not in NESTED_MAIL_EXT:
+                        continue
+                    try:
+                        payload = rf.read(info)
+                    except Exception as exc:  # noqa: BLE001
+                        notes.append(f"RAR read {name}: {exc}")
+                        continue
+                    _add(Path(name).name, bytes(payload))
+                    if len(extracted) >= MAX_NESTED_MEMBERS:
+                        break
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"RAR nested-mail: {exc}")
+        return extracted, notes
+
+    return extracted, notes
+
+
 def _parse_lnk_target(data: bytes) -> tuple[list[str], list[str]]:
     """Best-effort Shell Link target extraction (paths / URLs) without pywin32."""
     flags: list[str] = []
@@ -541,6 +660,47 @@ def _qr_urls_from_image(data: bytes) -> tuple[list[str], list[str]]:
         return [], [f"QR: сбой декодера ({type(exc).__name__}: {exc})"]
 
 
+def _qr_from_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
+    """Best-effort: find embedded JPEG/PNG streams in PDF and run QR decode (Full)."""
+    notes: list[str] = []
+    hits: list[str] = []
+    if not data.startswith(b"%PDF"):
+        return hits, notes
+    try:
+        from reliquary.core.qr_scan import decode_qr_payloads, qr_decoder_available
+    except ImportError:
+        return hits, ["QR PDF: модуль недоступен"]
+    if not qr_decoder_available():
+        return hits, []
+    for magic, label in ((b"\xff\xd8\xff", "jpeg"), (b"\x89PNG\r\n\x1a\n", "png")):
+        start = 0
+        found = 0
+        while found < 4:
+            idx = data.find(magic, start)
+            if idx < 0:
+                break
+            if label == "jpeg":
+                end = data.find(b"\xff\xd9", idx + 2)
+                chunk = data[
+                    idx : (end + 2 if end > idx else idx + min(512_000, len(data) - idx))
+                ]
+            else:
+                end = data.find(b"IEND", idx + 8)
+                chunk = data[
+                    idx : (end + 8 if end > idx else idx + min(512_000, len(data) - idx))
+                ]
+            if len(chunk) >= 64:
+                payloads, _n = decode_qr_payloads(chunk)
+                for p in payloads:
+                    if p not in hits:
+                        hits.append(p)
+            start = idx + 4
+            found += 1
+    if hits:
+        notes.append(f"QR PDF: найдено {len(hits)} полезных нагрузок в растрах")
+    return hits[:20], notes
+
+
 def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None) -> AttachmentInfo:
     md5, sha1, sha256 = _hashes(data)
     mime = _guess_mime(data, filename)
@@ -564,6 +724,12 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
     if ext in {".iso", ".img"}:
         flags.append("iso_image")
         notes.append("Образ диска ISO/IMG — часто доставляет LNK/malware")
+        entries, iflags, inotes = _inventory_iso(data)
+        archive_entries = entries + archive_entries
+        for f in iflags:
+            if f not in flags:
+                flags.append(f)
+        notes.extend(inotes)
 
     if ext == ".lnk":
         flags.append("shortcut_lnk")
@@ -621,6 +787,23 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         pflags, pnotes = _scan_pdf_payload(data)
         flags.extend(pflags)
         notes.extend(pnotes)
+        # Best-effort: decode embedded raster as QR (Full / optional decoder)
+        qr_hits, qr_notes = _qr_from_pdf_bytes(data)
+        notes.extend(qr_notes)
+        if qr_hits:
+            flags.append("qr_url")
+            notes.append("QR в PDF: " + "; ".join(qr_hits[:5]))
+            archive_entries.extend(f"QR:{q}" for q in qr_hits[:20])
+
+    # TNEF / winmail.dat
+    if (
+        lower in {"winmail.dat", "win.dat"}
+        or mime in {"application/ms-tnef", "application/vnd.ms-tnef"}
+        or (ext == ".dat" and data[:4] == b"\x78\x9f\x3e\x22")
+    ):
+        flags.append("tnef_attachment")
+        notes.append("TNEF / winmail.dat — вложения будут извлечены офлайн")
+
 
     if (ext in IMAGE_EXTENSIONS or (mime or "").startswith("image/")) and "svg_attachment" not in flags:
         flags.append("image_attachment")
@@ -693,7 +876,7 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         flags.append("mime_mismatch")
         notes.append(f"Расширение {ext}, но MIME похож на executable ({mime})")
 
-    # Keep payload for nested email, HTML/SVG/MHT, and Office OOXML text extract.
+    # Keep payload for nested email, HTML/SVG/MHT, Office OOXML, archives with nested mail, TNEF.
     if keep_bytes is None:
         need_keep = bool(
             {
@@ -701,8 +884,11 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
                 "html_attachment",
                 "mht_attachment",
                 "svg_attachment",
+                "archive_nested_email",
+                "tnef_attachment",
             }.intersection(flags)
             or ext in {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}
+            or lower in {"winmail.dat", "win.dat"}
         )
     else:
         need_keep = keep_bytes

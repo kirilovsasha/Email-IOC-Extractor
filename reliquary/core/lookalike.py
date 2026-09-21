@@ -54,9 +54,18 @@ _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("яндекс", ("yandex.ru",)),
     ("yandex", ("yandex.ru",)),
     ("mail.ru", ("mail.ru",)),
-    ("тинькофф", ("tinkoff.ru",)),
+    ("тинькофф", ("tinkoff.ru", "tbank.ru")),
     ("втб", ("vtb.ru",)),
-    ("альфа", ("alfabank.ru",)),
+    ("альфа", ("alfabank.ru", "alfa.ru")),
+    ("фнс", ("nalog.gov.ru", "nalog.ru")),
+    ("налоговая", ("nalog.gov.ru", "nalog.ru")),
+    ("цб рф", ("cbr.ru",)),
+    ("цб", ("cbr.ru",)),
+    ("банк россии", ("cbr.ru",)),
+    ("почта россии", ("pochta.ru", "russianpost.ru")),
+    ("госключ", ("goskey.ru", "gosuslugi.ru")),
+    ("мос.ру", ("mos.ru",)),
+    ("мвд", ("мвд.рф", "mvd.ru")),
 )
 
 # Common visual confusables → ASCII (subset; offline, no full Unicode confusables table).

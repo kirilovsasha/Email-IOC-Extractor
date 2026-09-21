@@ -52,5 +52,11 @@
   "weight_lnk_dangerous": 22,
   "weight_unrar_missing": 10,
   "weight_archive_nested_email": 16,
-  "weight_zip_bomb": 18
+  "weight_zip_bomb": 18,
+  "weight_archive_password": 8,
+  "weight_archive_password_match": 22,
+  "weight_oob_delivery": 16,
+  "weight_tnef": 10,
+  "weight_iso_lnk": 18,
+  "weight_allowlisted_from": -10
 }

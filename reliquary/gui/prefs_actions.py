@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from reliquary.core.error_log import append_error_log
 from reliquary.core.filter_state import CAT_PREF_KEYS
 from reliquary.core.prefs import save_prefs
+from reliquary.gui.settings_dialog import show_settings_dialog
 from reliquary.gui.windowing import (
     fit_window_geometry,
     parse_geometry,
@@ -15,6 +18,29 @@ from reliquary.gui.windowing import (
 
 class PrefsMixin:
     """Requires ExtractorApp filter vars, paths, and screen helpers."""
+
+    def show_settings(self) -> None:
+        """Open fleet prefs dialog (paths / workers / hook / Campaign pack)."""
+
+        def _apply(fresh: dict[str, Any]) -> None:
+            self._prefs = fresh
+            self._allowlist_path = str(fresh.get("allowlist_path") or "") or None
+            self._verdict_path = str(fresh.get("verdict_path") or "") or None
+            self._handoff_template_path = (
+                str(fresh.get("handoff_template_path") or "") or None
+            )
+            self._brands_path = str(fresh.get("brands_path") or "") or None
+            self._profile_dir = str(fresh.get("profile_dir") or "") or None
+            try:
+                self._export_choice.set(str(fresh.get("export_choice") or "JSON"))
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                self._set_status("Настройки сохранены (ui_prefs.json)")
+            except Exception:  # noqa: BLE001
+                pass
+
+        show_settings_dialog(self, prefs=self._prefs, on_saved=_apply)
 
     def _apply_saved_geometry(self) -> None:
         """Restore size from prefs; center and shrink so the window fits on screen."""
@@ -92,7 +118,24 @@ class PrefsMixin:
             "verdict_compact": bool(getattr(self, "_verdict_compact", False)),
             "brands_path": self._brands_path or "",
             "profile_dir": self._profile_dir or "",
+            "allowlist_path": self._allowlist_path or "",
+            "verdict_path": self._verdict_path or "",
+            "handoff_template_path": self._handoff_template_path or "",
             "post_export_hook": str(self._prefs.get("post_export_hook") or ""),
+            "post_export_hook_json_sidecar": bool(
+                self._prefs.get("post_export_hook_json_sidecar", True)
+            ),
+            "post_export_hook_allow_external": bool(
+                self._prefs.get("post_export_hook_allow_external", False)
+            ),
+            "disable_post_export_hook": bool(
+                self._prefs.get("disable_post_export_hook", False)
+            ),
+            "max_workers": int(self._prefs.get("max_workers") or 0),
+            "folder_warn_threshold": int(self._prefs.get("folder_warn_threshold") or 80),
+            "skip_broken": bool(self._prefs.get("skip_broken", True)),
+            "batch_sort_column": str(getattr(self, "_batch_sort_col", "score") or "score"),
+            "batch_sort_reverse": bool(getattr(self, "_batch_sort_reverse", True)),
         }
         for name, var in self.cat_vars.items():
             updates[CAT_PREF_KEYS[name]] = bool(var.get())

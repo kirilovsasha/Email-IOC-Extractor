@@ -75,7 +75,9 @@ def test_update_manifest(tmp_path: Path, monkeypatch) -> None:
         json.dumps({"latest": "99.0.0", "notes": "test"}), encoding="utf-8"
     )
     msg = check_update_manifest()
-    assert msg and "update available" in msg
+    assert msg and (
+        "update available" in msg.lower() or "доступно обновление" in msg.lower()
+    )
 
 
 def test_cisco_unwrap() -> None:

@@ -30,7 +30,19 @@ def segment_for(result) -> str:
             # Prefer lookalike hits already scored; segment if reason mentions brand spoof
             if any(
                 x in reasons_l
-                for x in ("похож", "spoof", "сбер", "госуслуг", "display")
+                for x in (
+                    "похож",
+                    "spoof",
+                    "сбер",
+                    "госуслуг",
+                    "display",
+                    "фнс",
+                    "налогов",
+                    "цб",
+                    "почта россии",
+                    "госключ",
+                    "мвд",
+                )
             ):
                 return "display_spoof"
     att_flags = {
@@ -46,6 +58,18 @@ def segment_for(result) -> str:
         return "html_smuggling"
     if "cab_archive" in att_flags or "cab_contains_lnk" in att_flags:
         return "cab"
+    if "tnef_attachment" in att_flags:
+        return "tnef"
+    if "iso_contains_lnk" in att_flags or (
+        "iso_image" in att_flags and "archive_dangerous_member" in att_flags
+    ):
+        return "iso"
+    if "archive_password_match" in signals or "archive_password" in signals:
+        return "archive_password"
+    if "oob_delivery" in signals:
+        return "oob_delivery"
+    if "archive_nested_email" in att_flags or "nested_email" in att_flags:
+        return "nested_mail"
     if any(u.changed for u in (result.url_rewrites or [])):
         rewriters = {u.rewriter for u in result.url_rewrites if u.changed}
         if "microsoft_safelinks" in rewriters:

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.13.0
+
+### Детекция
+- Вложенные `.eml`/`.msg` из ZIP/RAR → разбор URL/IOC (не только флаг)
+- Связка «пароль архива» в теле + `encrypted_archive` (`archive_password_match`)
+- Out-of-band доставка: пароль/файл через Telegram / SMS / шортенер / облако
+- TNEF / `winmail.dat` — офлайн-извлечение вложений
+- Inventory ISO: LNK/EXE/HTML внутри образа (`iso_contains_lnk`)
+- QR Full: CID / inline / `data:image` + растр PDF-страниц
+- MSG: transport-заголовки + вложения во вложенных MSG
+- Display-spoof: ФНС, ЦБ, Почта России, Госключ, МВД, мос.ру
+
+### Продукт / EXE
+- Allowlist → mitigation вердикта для доверенного From (`weight_allowlisted_from`)
+- `update.json`: SHA256 EXE + канал Lite/Full + RU-строки в About/self-check
+- Диалог «Настройки»: пути, workers, post-export hook, Campaign pack
+- Post-export hook: JSON sidecar `schema_version:2` вторым argv
+- Пакет: сортировка/фильтр по вердикту·score + «← К пакету» после diff
+
+### Качество
+- Калибровка: сегменты `tnef` / `iso` / `archive_password` / `oob_delivery` / `nested_mail`
+- Corpus: password-zip match, nested-mail-in-zip, OOB, FNS spoof, MSG, ISO+LNK, TNEF
+- Schema/example: новые веса verdict_extra
+
 ## 2.12.0
 
 ### Детекция

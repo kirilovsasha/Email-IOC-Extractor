@@ -78,6 +78,12 @@ class VerdictConfig:
     weight_unrar_missing: int = 10
     weight_archive_nested_email: int = 16
     weight_zip_bomb: int = 18
+    weight_archive_password: int = 8
+    weight_archive_password_match: int = 22
+    weight_oob_delivery: int = 16
+    weight_tnef: int = 10
+    weight_iso_lnk: int = 18
+    weight_allowlisted_from: int = -10
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -444,6 +450,24 @@ def _score_attachments(
                     )
                 )
                 rest.discard("zip_bomb_suspect")
+            if "tnef_attachment" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_tnef,
+                        f"TNEF/winmail.dat «{att.filename}»",
+                    )
+                )
+                rest.discard("tnef_attachment")
+            if "iso_contains_lnk" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_iso_lnk,
+                        f"ISO «{att.filename}» содержит .lnk",
+                    )
+                )
+                rest.discard("iso_contains_lnk")
             if rest:
                 pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
@@ -554,12 +578,14 @@ def _score_content(
         "qr_url" in a.risk_flags or any(e.startswith("QR:") for e in a.archive_entries)
         for a in result.attachments
     )
+    has_enc = any("encrypted_archive" in (a.risk_flags or []) for a in result.attachments)
     signals = analyze_content_signals(
         result.raw_text_preview,
         result.html_preview,
         has_qr=has_qr,
         has_urls=has_urls,
         has_attachments=has_att,
+        has_encrypted_archive=has_enc,
     )
     # Persist kinds on result for export / corpus
     if signals and not result.content_signals:
@@ -575,6 +601,9 @@ def _score_content(
         "weight_qr_present": cfg.weight_qr_present,
         "weight_url_shortener": cfg.weight_url_shortener,
         "weight_messenger_only": cfg.weight_messenger_only,
+        "weight_archive_password": cfg.weight_archive_password,
+        "weight_archive_password_match": cfg.weight_archive_password_match,
+        "weight_oob_delivery": cfg.weight_oob_delivery,
     }
     for sig in signals:
         pts = weight_map.get(sig.weight_key, 8)
@@ -681,7 +710,10 @@ def _apply_mitigation_floor(
 
 
 def _score_mitigations(
-    result: AnalysisResult, cfg: VerdictConfig
+    result: AnalysisResult,
+    cfg: VerdictConfig,
+    *,
+    allowlist_domains: set[str] | None = None,
 ) -> tuple[int, list[ScoreContribution]]:
     """Negative contributions when auth/path looks trusted (DMARC pass, internal MX).
 
@@ -716,6 +748,8 @@ def _score_mitigations(
         "unrar_missing",
         "archive_nested_email",
         "zip_bomb_suspect",
+        "tnef_attachment",
+        "iso_contains_lnk",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
@@ -724,6 +758,8 @@ def _score_mitigations(
         "bec_payment",
         "qr_only",
         "hidden_text",
+        "archive_password_match",
+        "oob_delivery",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
 
@@ -787,6 +823,30 @@ def _score_mitigations(
                 "Received hop похож на внутренний / доверенный MX",
             )
         )
+
+    # Org allowlist: trusted From domain → soft mitigation (IOC tags alone don't change score)
+    if allowlist_domains:
+        from_hdr = mid.from_header or ""
+        host = ""
+        if "@" in from_hdr:
+            addr = from_hdr
+            if "<" in from_hdr and ">" in from_hdr:
+                addr = from_hdr.split("<", 1)[1].split(">", 1)[0]
+            host = addr.rsplit("@", 1)[-1].strip().lower().strip(">")
+        if host:
+            try:
+                from reliquary.core.allowlist import domain_matches
+
+                if domain_matches(host, allowlist_domains):
+                    parts.append(
+                        ScoreContribution(
+                            "mitigation",
+                            cfg.weight_allowlisted_from,
+                            f"From-домен в allowlist: {host}",
+                        )
+                    )
+            except (ImportError, TypeError, ValueError):
+                pass
 
     return _apply_mitigation_floor(parts, cfg.cap_mitigation)
 
@@ -878,6 +938,7 @@ def render_verdict(
     cfg: VerdictConfig | None = None,
     *,
     brands_path: str | Path | None = None,
+    allowlist_domains: set[str] | None = None,
 ) -> Verdict | None:
     """Mail triage score — primary output for email artifacts."""
     if result.source_kind != "email":
@@ -893,7 +954,7 @@ def render_verdict(
         lambda r, c: _score_urls(r, c),
         lambda r, c: _score_content(r, c),
         lambda r, c: _score_lookalike(r, c, brands_path=brands_path),
-        lambda r, c: _score_mitigations(r, c),
+        lambda r, c: _score_mitigations(r, c, allowlist_domains=allowlist_domains),
     ):
         part, parts = scorer(result, cfg)
         score += part

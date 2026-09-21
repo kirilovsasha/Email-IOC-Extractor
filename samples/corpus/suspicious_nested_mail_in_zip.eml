@@ -1,0 +1,29 @@
+Return-Path: <bounce@bad.gq>
+Received: from mail.bad.gq (unknown [203.0.113.88]) by mx.company.local; Wed, 17 Sep 2025 11:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "Post" <post@bad.gq>
+To: victim@company.local
+Subject: Documents inside zip
+Message-ID: <nestzip@bad.gq>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="NZ"
+
+--NZ
+Content-Type: text/plain; charset=utf-8
+
+See attached zip with documents.
+--NZ
+Content-Type: application/zip; name="docs.zip"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="docs.zip"
+
+UEsDBBQAAAAAAKNcNV3KtPSG/AAAAPwAAAAKAAAAbm90aWNlLmVtbFJldHVybi1QYXRoOiA8cGhp
+c2hAZXZpbC50b3A+CkZyb206ICJJVCIgPHBoaXNoQGV2aWwudG9wPgpUbzogdmljdGltQGNvbXBh
+bnkubG9jYWwKU3ViamVjdDogVmVyaWZ5IG1haWxib3gKTWVzc2FnZS1JRDogPGlubmVyLW5lc3Rl
+ZEBldmlsLnRvcD4KTUlNRS1WZXJzaW9uOiAxLjAKQ29udGVudC1UeXBlOiB0ZXh0L3BsYWluOyBj
+aGFyc2V0PXV0Zi04CgpPcGVuIGh0dHBzOi8vZXZpbC1waGlzaC50b3Avb3dhL2F1dGggaW1tZWRp
+YXRlbHkuClBLAwQUAAAAAACjXDVdcO1+MwcAAAAHAAAACgAAAHJlYWRtZS50eHRzZWUgZW1sUEsB
+AhQDFAAAAAAAo1w1Xcq09Ib8AAAA/AAAAAoAAAAAAAAAAAAAAIABAAAAAG5vdGljZS5lbWxQSwEC
+FAMUAAAAAACjXDVdcO1+MwcAAAAHAAAACgAAAAAAAAAAAAAAgAEkAQAAcmVhZG1lLnR4dFBLBQYA
+AAAAAgACAHAAAABTAQAAAAA=
+--NZ--

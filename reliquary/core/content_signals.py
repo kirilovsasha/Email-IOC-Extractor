@@ -47,6 +47,25 @@ MESSENGER_URL_RE = re.compile(
     r"discord\.gg)/[^\s<>\"')\]]+"
 )
 
+ARCHIVE_PASSWORD_RE = re.compile(
+    r"(?i)("
+    r"password\s*(?:is|:|=)|pass\s*:\s*\S+|"
+    r"пароль\s*(?:архива|от\s*архива|для\s*архива|rar|zip|7z)?\s*[:=]|"
+    r"архив\s+защищ|"
+    r"password[\s\-]*protected"
+    r")"
+)
+
+OOB_DELIVERY_RE = re.compile(
+    r"(?i)("
+    r"пароль\s+в\s+(?:telegram|телеграм|whatsapp|ватсап|sms|смс)|"
+    r"password\s+(?:in|via)\s+(?:telegram|whatsapp|sms)|"
+    r"скача(?:йте|ть)\s+(?:с|по)\s+(?:ссылке|clck|bit\.ly|vk\.cc)|"
+    r"download\s+(?:from|via)\s+(?:telegram|short\s*link)|"
+    r"файл\s+на\s+(?:яндекс\.?диск|google\s*drive|mail\.ru\s*cloud)"
+    r")"
+)
+
 
 @dataclass(frozen=True)
 class ContentSignal:
@@ -165,6 +184,7 @@ def analyze_content_signals(
     has_qr: bool = False,
     has_urls: bool = False,
     has_attachments: bool = False,
+    has_encrypted_archive: bool = False,
 ) -> list[ContentSignal]:
     """Return unique content signals from plain text and optional HTML body."""
     signals: list[ContentSignal] = []
@@ -185,6 +205,33 @@ def analyze_content_signals(
                 "bec_payment",
                 "Маркеры BEC / смены реквизитов / оплаты вне канала",
                 "weight_bec_payment",
+            )
+        )
+
+    if ARCHIVE_PASSWORD_RE.search(blob):
+        if has_encrypted_archive:
+            signals.append(
+                ContentSignal(
+                    "archive_password_match",
+                    "Пароль архива в теле + шифрованное вложение",
+                    "weight_archive_password_match",
+                )
+            )
+        else:
+            signals.append(
+                ContentSignal(
+                    "archive_password",
+                    "В теле указан пароль архива",
+                    "weight_archive_password",
+                )
+            )
+
+    if OOB_DELIVERY_RE.search(blob):
+        signals.append(
+            ContentSignal(
+                "oob_delivery",
+                "Доставка вне канала: пароль/файл через Telegram/шортенер/облако",
+                "weight_oob_delivery",
             )
         )
 

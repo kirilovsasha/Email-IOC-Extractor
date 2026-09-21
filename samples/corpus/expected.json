@@ -251,6 +251,11 @@
       "credential"
     ]
   },
+  "suspicious_display_spoof_fns.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 89
+  },
   "suspicious_display_spoof_gosuslugi.eml": {
     "level": "malicious",
     "score_min": 60,
@@ -343,6 +348,11 @@
     "score_min": 10,
     "score_max": 29
   },
+  "suspicious_iso_lnk_inventory.eml": {
+    "level": "malicious",
+    "score_min": 58,
+    "score_max": 100
+  },
   "suspicious_lnk_attachment.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -397,6 +407,11 @@
       "evil.top"
     ]
   },
+  "suspicious_nested_mail_in_zip.eml": {
+    "level": "malicious",
+    "score_min": 75,
+    "score_max": 100
+  },
   "suspicious_nested_unwrap.eml": {
     "level": "malicious",
     "score_min": 60,
@@ -410,6 +425,11 @@
       "OneNote"
     ]
   },
+  "suspicious_oob_delivery.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 95
+  },
   "suspicious_password_safelinks.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -422,6 +442,11 @@
       "verify",
       "urgent"
     ]
+  },
+  "suspicious_password_zip_match.eml": {
+    "level": "malicious",
+    "score_min": 75,
+    "score_max": 100
   },
   "suspicious_pdf_js.eml": {
     "level": "malicious",
@@ -477,6 +502,11 @@
       "script"
     ]
   },
+  "suspicious_tnef_winmail.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 85
+  },
   "suspicious_vk_away.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -504,6 +534,11 @@
     "level": "unknown",
     "score_min": 10,
     "score_max": 29
+  },
+  "unknown_msg_sample.msg": {
+    "level": "suspicious",
+    "score_min": 25,
+    "score_max": 55
   },
   "unknown_proofpoint_url.eml": {
     "level": "unknown",
