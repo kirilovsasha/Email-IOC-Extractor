@@ -1,0 +1,12 @@
+Return-Path: <bounce@notice-by.top>
+Received: from mail.notice-by.top (unknown [203.0.113.71]) by mx.company.local; Wed, 17 Sep 2025 12:30:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "Беларусбанк" <notify@bank-secure.top>
+To: victim@company.local
+Subject: Подтвердите операцию по карте
+Message-ID: <by-bb@notice-by.top>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Требуется подтвердить перевод в интернет-банке.
+https://bank-secure.top/login

@@ -36,9 +36,30 @@ DEFAULT_BRANDS: tuple[str, ...] = (
     "yandex.ru",
     "mail.ru",
     "gosuslugi.ru",
+    # Республика Беларусь — банки / госуслуги / платежи
+    "belarusbank.by",
+    "belapb.by",
+    "belgazprombank.by",
+    "priorbank.by",
+    "mtbank.by",
+    "alfabank.by",
+    "belveb.by",
+    "bsb.by",
+    "nbrb.by",
+    "nalog.gov.by",
+    "portal.gov.by",
+    "minfin.gov.by",
+    "pravo.by",
+    "president.gov.by",
+    "belpost.by",
+    "belpochta.by",
+    "erip.by",
+    "raschet.by",
+    "oplati.by",
 )
 
-# Display-name → expected brand domains (RU SOC spoof surface).
+# Display-name → expected brand domains (RU/BY SOC spoof surface).
+# Более длинные/специфичные метки — выше (substring match).
 _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("сбербанк", ("sberbank.ru", "sber.ru")),
     ("сбер", ("sberbank.ru", "sber.ru")),
@@ -56,9 +77,11 @@ _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("mail.ru", ("mail.ru",)),
     ("тинькофф", ("tinkoff.ru", "tbank.ru")),
     ("втб", ("vtb.ru",)),
-    ("альфа", ("alfabank.ru", "alfa.ru")),
+    ("альфа-банк", ("alfabank.ru", "alfa.ru", "alfabank.by")),
+    ("альфа банк", ("alfabank.ru", "alfa.ru", "alfabank.by")),
+    ("альфа", ("alfabank.ru", "alfa.ru", "alfabank.by")),
     ("фнс", ("nalog.gov.ru", "nalog.ru")),
-    ("налоговая", ("nalog.gov.ru", "nalog.ru")),
+    ("налоговая", ("nalog.gov.ru", "nalog.ru", "nalog.gov.by")),
     ("цб рф", ("cbr.ru",)),
     ("цб", ("cbr.ru",)),
     ("банк россии", ("cbr.ru",)),
@@ -66,6 +89,34 @@ _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("госключ", ("goskey.ru", "gosuslugi.ru")),
     ("мос.ру", ("mos.ru",)),
     ("мвд", ("мвд.рф", "mvd.ru")),
+    # Беларусь
+    ("беларусбанк", ("belarusbank.by",)),
+    ("belarusbank", ("belarusbank.by",)),
+    ("белагропромбанк", ("belapb.by",)),
+    ("белагро", ("belapb.by",)),
+    ("belagroprombank", ("belapb.by",)),
+    ("белгазпромбанк", ("belgazprombank.by",)),
+    ("belgazprombank", ("belgazprombank.by",)),
+    ("приорбанк", ("priorbank.by",)),
+    ("priorbank", ("priorbank.by",)),
+    ("мтбанк", ("mtbank.by",)),
+    ("mtbank", ("mtbank.by",)),
+    ("белвэб", ("belveb.by",)),
+    ("ббсбанк", ("bsb.by",)),
+    ("нацбанк рб", ("nbrb.by",)),
+    ("нацбанк", ("nbrb.by",)),
+    ("нбрб", ("nbrb.by",)),
+    ("мнс рб", ("nalog.gov.by",)),
+    ("мнс", ("nalog.gov.by",)),
+    ("міністэрства па падатках", ("nalog.gov.by",)),
+    ("портал госуслуг рб", ("portal.gov.by",)),
+    ("портал рб", ("portal.gov.by",)),
+    ("белпочта", ("belpost.by", "belpochta.by")),
+    ("belpost", ("belpost.by", "belpochta.by")),
+    ("ерип", ("erip.by", "raschet.by", "oplati.by")),
+    ("еріp", ("erip.by", "raschet.by", "oplati.by")),
+    ("оплати", ("oplati.by", "erip.by", "raschet.by")),
+    ("расчет by", ("raschet.by", "erip.by")),
 )
 
 # Common visual confusables → ASCII (subset; offline, no full Unicode confusables table).
@@ -303,14 +354,16 @@ def check_display_name_spoof(from_header: str) -> list[LookalikeHit]:
     display, addr = parse_from_display_and_addr(from_header)
     if not display or not addr or "@" not in addr:
         return []
-    host = addr.rsplit("@", 1)[-1].lower()
-    reg = _registrable(host)
+    host = addr.rsplit("@", 1)[-1].lower().strip(".")
     hits: list[LookalikeHit] = []
     for label, brands in _BRAND_DISPLAY_NAMES:
         if label not in display:
             continue
-        # Allow brand domains and their subdomains
-        if any(reg == b or host.endswith("." + b) for b in brands):
+        # Exact / subdomain match (works for portal.gov.by, nalog.gov.by, …)
+        if any(
+            host == b or host.endswith("." + b) or _registrable(host) == b
+            for b in brands
+        ):
             continue
         brand = brands[0]
         hits.append(

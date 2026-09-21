@@ -58,7 +58,7 @@ def test_org_profile_m365_preset() -> None:
 
 @pytest.mark.parametrize(
     "preset",
-    ["proxysg", "kaspersky", "drweb", "local_mx", "google", "banking"],
+    ["proxysg", "kaspersky", "drweb", "local_mx", "google", "banking", "ru_gov", "by_gov"],
 )
 def test_org_profile_new_presets(preset: str) -> None:
     profile = load_org_profile(PRESETS / preset)

@@ -1,0 +1,14 @@
+Return-Path: <noreply@portal.gov.by>
+Received: from mx1.government.by (mx1.government.by [192.0.2.40])
+ by mx.company.local with ESMTPS; Wed, 17 Sep 2025 09:00:00 +0000
+Authentication-Results: mx.company.local; spf=pass smtp.mailfrom=portal.gov.by;
+ dkim=pass header.d=portal.gov.by; dmarc=pass header.from=portal.gov.by
+From: "Портал госуслуг РБ" <noreply@portal.gov.by>
+To: citizen@company.local
+Subject: Напоминание: запись на приём
+Message-ID: <benign-portal-by@portal.gov.by>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Здравствуйте. Напоминаем о записи через portal.gov.by.
+Это автоматическое уведомление, отвечать не нужно.

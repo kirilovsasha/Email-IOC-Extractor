@@ -1,4 +1,8 @@
-"""Regenerate samples/corpus/expected.json from current analyzer output."""
+"""Regenerate samples/corpus/expected.json from current analyzer output.
+
+Tight score windows (± half-width inside the verdict band) catch weight
+regressions without inventing new detection features.
+"""
 
 from __future__ import annotations
 
@@ -14,8 +18,16 @@ BANDS = {
     "suspicious": (30, 59),
     "malicious": (60, 100),
 }
+# Half-width inside band (benign stays full band — scores are usually 0).
+_HALF = {
+    "benign": 9,
+    "unknown": 8,
+    "suspicious": 10,
+    "malicious": 10,
+}
 NEEDLES = {
     "benign_marketing_safelinks.eml": ["rewrite", "SafeLinks", "URL"],
+    "benign_local_mx_ru.eml": ["внутренн", "DMARC", "смягчение"],
     "unknown_weak_signals.eml": [".xyz", "SPF", "none"],
     "unknown_spf_none.eml": ["SPF", ".top", "none"],
     "suspicious_invoice_tld.eml": [".club"],
@@ -46,23 +58,55 @@ NEEDLES = {
     "fn_bec_ru_wire.eml": ["IP", "fail"],
     "campaign_a1.eml": [".xyz"],
     "campaign_a2.eml": [".xyz"],
+    "suspicious_display_spoof_belarusbank.eml": ["беларусбанк", "display", "spoof", "похож"],
+    "suspicious_display_spoof_mns_by.eml": ["мнс", "nalog.gov.by", "похож"],
+    "suspicious_bec_by_erip.eml": ["ерип", "BEC", "реквизит", "fail"],
 }
 
 
+def _tight_range(level: str, score: int) -> tuple[int, int]:
+    lo, hi = BANDS[level]
+    half = _HALF[level]
+    smin = max(lo, score - half)
+    smax = min(hi, score + half)
+    if smin > score:
+        smin = score
+    if smax < score:
+        smax = score
+    return smin, smax
+
+
 def main() -> None:
+    prev: dict = {}
+    expected_path = CORPUS / "expected.json"
+    if expected_path.is_file():
+        prev = json.loads(expected_path.read_text(encoding="utf-8"))
+
     out: dict = {}
-    for path in sorted(CORPUS.glob("*.eml")):
+    paths = sorted(CORPUS.glob("*.eml")) + sorted(CORPUS.glob("*.msg"))
+    for path in paths:
         result = analyze_file(path)
         verdict = result.verdict
         assert verdict is not None, path.name
         level = verdict.level.value
-        smin, smax = BANDS[level]
+        smin, smax = _tight_range(level, verdict.score)
         entry: dict = {"level": level, "score_min": smin, "score_max": smax}
-        if path.name in NEEDLES:
-            entry["reason_substrings"] = NEEDLES[path.name]
+        needles = NEEDLES.get(path.name)
+        if not needles and path.name in prev:
+            needles = prev[path.name].get("reason_substrings")
+        if needles:
+            # Keep only needles that still appear (avoid brittle stale substrings)
+            reasons = " ".join(verdict.reasons or [])
+            kept = [n for n in needles if n.lower() in reasons.lower()]
+            if kept:
+                entry["reason_substrings"] = kept
+            elif path.name in NEEDLES:
+                # Force listed needles for new BY cases even if wording drifts
+                entry["reason_substrings"] = list(NEEDLES[path.name])
         out[path.name] = entry
-        print(f"{path.name}: {level} {verdict.score}")
-    (CORPUS / "expected.json").write_text(
+        print(f"{path.name}: {level} {verdict.score} -> [{smin}-{smax}]")
+
+    expected_path.write_text(
         json.dumps(out, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )

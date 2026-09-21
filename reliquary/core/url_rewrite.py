@@ -210,7 +210,7 @@ def _unwrap_once(url: str) -> tuple[str, str]:
 
     def _match_sber_gov(u: str, low: str) -> bool:
         host = (urlparse(u).hostname or "").lower()
-        # Corporate / gov click-wraps sometimes front real destinations
+        # Corporate / gov click-wraps sometimes front real destinations (RU + BY)
         if any(
             host.endswith(x)
             for x in (
@@ -219,6 +219,16 @@ def _unwrap_once(url: str) -> tuple[str, str]:
                 "gosuslugi.ru",
                 "mos.ru",
                 "nalog.gov.ru",
+                "nalog.gov.by",
+                "portal.gov.by",
+                "belarusbank.by",
+                "belapb.by",
+                "priorbank.by",
+                "nbrb.by",
+                "erip.by",
+                "raschet.by",
+                "oplati.by",
+                "belpost.by",
             )
         ):
             return any(

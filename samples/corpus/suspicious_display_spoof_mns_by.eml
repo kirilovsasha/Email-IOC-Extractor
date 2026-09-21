@@ -1,0 +1,12 @@
+Return-Path: <bounce@tax-by.gq>
+Received: from mail.tax-by.gq (unknown [203.0.113.72]) by mx.company.local; Wed, 17 Sep 2025 12:31:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "МНС РБ" <cabinet@nalog-portal.top>
+To: victim@company.local
+Subject: Требование о предоставлении документов (МНС)
+Message-ID: <mns-by@tax-by.gq>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Войдите в личный кабинет налогоплательщика и подтвердите сведения.
+https://nalog-portal.top/cabinet

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Детекция
+- Республика Беларусь: бренды/display-spoof (Беларусбанк, МНС, ЕРИП, Приорбанк, …)
+- BEC-маркеры ЕРИП / УНП / р/с / IBAN BY; unwrap redirect `portal.gov.by` / банки РБ
+- Пресет `org_profile.example/by_gov/`
+- Fix: display-spoof не срабатывает на легитимных `*.gov.by` (portal/nalog)
+
+### Качество
+- Coverage gate core: 68 → 75; тесты install/yara/labels/prefs/error_log/formats
+- GUI smoke без Tk (`filter_state`, `tabs`, `i18n`, windowing)
+- Unwrap fuzz: SafeLinks (nam/eur) + Mail.ru / Yandex / VK / Bitrix / amoCRM / Госуслуги
+- Узкие `except` в `pipeline` и `prefs_actions` (+ лог вместо silently pass)
+- Golden corpus: узкие score windows (±8/±10); drift mid ≈2.4; кейсы BY spoof/BEC
+- `scripts/regen_expected.py` пишет tight ranges внутри полосы вердикта
+
 ## 2.15.0
 
 ### Детекция / вердикт

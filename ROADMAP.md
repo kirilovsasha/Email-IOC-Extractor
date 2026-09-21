@@ -14,17 +14,20 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 
 ## Near-term
 
+- [x] Raise core coverage gate toward 75%
+- [x] Property-based unwrap fuzz expansion (SafeLinks / RU hosts)
+- [x] GUI smoke tests without full Tk display
+- [x] Narrow remaining broad `except Exception` in prefs/pipeline
+- [x] Tighten golden corpus score windows + BY brands/spoof/BEC
 - [ ] Deeper PST support (read-only extract → eml) if fleet demands
-- [ ] Raise core coverage gate toward 75–80%
-- [ ] Property-based unwrap fuzz expansion (SafeLinks / RU hosts)
-- [ ] GUI smoke tests without full Tk display
-- [ ] Narrow remaining broad `except Exception` in prefs/pipeline
 
 ## Later
 
+- [ ] Raise coverage gate toward 80% (attachment_inspector / calibration)
 - [ ] Optional offline rule packs beyond YARA (Sigma-lite for mail?)
 - [ ] Campaign graph view in GUI
 - [ ] Authenticode-by-default release lane
+- [ ] Inbox-driven weight pack from analyst_feedback.ndjson aggregates
 
 ## Non-goals
 

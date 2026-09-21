@@ -1,0 +1,25 @@
+# Банки / госуслуги / платежи РБ — lookalike + display-spoof
+belarusbank.by
+belapb.by
+belgazprombank.by
+priorbank.by
+mtbank.by
+alfabank.by
+belveb.by
+bsb.by
+nbrb.by
+nalog.gov.by
+portal.gov.by
+minfin.gov.by
+pravo.by
+president.gov.by
+belpost.by
+belpochta.by
+erip.by
+raschet.by
+oplati.by
+# Часто споуфят вместе с локальными вендорами
+mts.by
+a1.by
+onliner.by
+myfin.by

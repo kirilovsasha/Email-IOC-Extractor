@@ -512,9 +512,16 @@ def _parse_nested_email_attachment(
             except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
                 parts.append(str(msg.get_payload()))
         return "\n".join(parts), errors
-    except (OSError, ValueError, TypeError, AttributeError) as exc:
-        return "", [f"Nested mail {att.filename}: {exc}"]
-    except Exception as exc:  # noqa: BLE001
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        KeyError,
+        LookupError,
+        UnicodeError,
+        RuntimeError,
+    ) as exc:
         return "", [f"Nested mail {att.filename}: {exc}"]
 
 
@@ -555,7 +562,16 @@ def _enrich_parsed_result(
             result.headers = analyze_headers(parsed.message)
             result.raw_headers = extract_raw_headers(parsed.message)
             result.mail_identity = build_mail_identity(parsed.message)
-        except Exception as exc:  # noqa: BLE001
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            LookupError,
+            UnicodeError,
+            re.error,
+        ) as exc:
             result.errors.append(f"Заголовки: {exc}")
 
     blob = f"{parsed.text}\n{parsed.html}"
@@ -655,9 +671,7 @@ def _enrich_parsed_result(
 
     try:
         result.url_rewrites = find_and_unwrap(blob)
-    except (ValueError, TypeError, AttributeError, re.error) as exc:
-        result.errors.append(f"URL rewrite: {exc}")
-    except Exception as exc:  # noqa: BLE001
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, re.error) as exc:
         result.errors.append(f"URL rewrite: {exc}")
 
     enriched = blob
@@ -667,10 +681,7 @@ def _enrich_parsed_result(
 
     try:
         iocs = extract_iocs(enriched, source=ioc_source)
-    except (ValueError, TypeError, AttributeError) as exc:
-        result.errors.append(f"IOC: {exc}")
-        iocs = []
-    except Exception as exc:  # noqa: BLE001
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, re.error) as exc:
         result.errors.append(f"IOC: {exc}")
         iocs = []
 

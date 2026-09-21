@@ -80,7 +80,7 @@ jobs:
           python -m pytest -q
           --cov=reliquary/core
           --cov-report=term-missing:skip-covered
-          --cov-fail-under=68
+          --cov-fail-under=75
       - name: Corpus metrics
         run: python scripts/corpus_metrics.py
 

@@ -1,0 +1,13 @@
+From: finance@partner-by.example
+To: accounting@company.local
+Subject: Срочно: оплата через ЕРИП на новые реквизиты
+Message-ID: <bec_by_erip@phish.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+Reply-To: pay-desk@totally-other.net
+
+Добрый день. По распоряжению финансового директора срочно оплатите
+сегодня через ЕРИП на новые реквизиты (УНП 190123456, р/с BY12UNBS3012).
+Пишите только в Telegram @by_finance_desk. Не звоните на старый номер.
+http://203.0.113.93/erip-pay

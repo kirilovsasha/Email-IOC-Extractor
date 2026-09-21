@@ -1,0 +1,11 @@
+{
+  "_comment": "Belarus bank/gov fleet: display-spoof / ЕРИП-BEC / soft internal MX",
+  "weight_display_spoof": 28,
+  "weight_bec_payment": 22,
+  "weight_cloud_lure": 14,
+  "weight_oob_delivery": 16,
+  "weight_allowlisted_from": -12,
+  "weight_internal_relay": -10,
+  "threshold_malicious": 58,
+  "threshold_suspicious": 28
+}

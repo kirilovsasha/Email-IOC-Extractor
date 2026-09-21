@@ -14,7 +14,7 @@ pip install -e ".[dev]"
 ```bash
 python build/sync_version_info.py   # keeps pyproject + version_info in sync with __init__
 ruff check reliquary
-pytest -q --cov=reliquary/core --cov-fail-under=68
+pytest -q --cov=reliquary/core --cov-fail-under=75
 python scripts/corpus_metrics.py
 ```
 

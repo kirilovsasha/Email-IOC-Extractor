@@ -45,6 +45,10 @@ Display-spoof: `weight_display_spoof` (отдельно от `weight_lookalike`)
 Сегменты калибровки (2.14+): `display_spoof`, `office_link`, `script_att`, `cloud_lure`,
 `tnef`, `iso`, `archive_password`, `oob_delivery`, `nested_mail`, `ru_rewrite`, …
 
+BY (Беларусь): встроенные бренды `belarusbank.by` / `nalog.gov.by` / `erip.by` / …;
+пресет [`org_profile.example/by_gov/`](../org_profile.example/by_gov/);
+BEC-маркеры ЕРИП/УНП/р/с; display-spoof «Беларусбанк» / «МНС РБ».
+
 Новые веса: `weight_office_hyperlink`, `weight_script_attachment`, `weight_cloud_lure`,
 `weight_disk_image`, `weight_nested_archive`, `weight_archive_double_extension`,
 `weight_yara_match` (2.15, optional YARA).
@@ -54,16 +58,20 @@ Display-spoof: `weight_display_spoof` (отдельно от `weight_lookalike`)
 ## Calibration loop
 
 1. Keep golden corpus green: `pytest tests/test_corpus_verdicts.py` + `python scripts/corpus_metrics.py`
+   Score windows в `expected.json` узкие (±8 unknown / ±10 suspicious·malicious) —
+   обновлять через `python scripts/regen_expected.py` только при намеренном сдвиге весов.
 2. On a **local anonymized inbox sample** (offline copy of `.eml`):
 
    ```bash
    python scripts/corpus_metrics.py --inbox path/to/eml_folder
    ```
 
-   Вывод даёт распределение по **сегментам** (bec / safelinks / calendar / …) и подсказки FP/FN — без базы данных.
+   Вывод даёт распределение по **сегментам** (bec / safelinks / calendar / display_spoof / …)
+   и подсказки FP/FN — без базы данных. Для РБ смотрите сегмент `display_spoof` и BEC.
 
 3. Adjust one knob at a time; re-run metrics; commit `verdict_extra.json` / org profile.
    Schema: [`docs/verdict_extra.schema.json`](verdict_extra.schema.json). Configs live **next to the EXE only**.
+4. Analyst FP/FN → `analyst_feedback.ndjson` → `--feedback-summary` → 1–2 кейса в corpus.
 
 ## Schema
 

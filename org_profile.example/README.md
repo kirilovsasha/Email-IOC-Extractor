@@ -25,6 +25,7 @@
 | Local MX | [`local_mx/`](local_mx/) | Внутренний MX, сильнее mitigations |
 | RU mail stack | [`ru_mail/`](ru_mail/) | Mail.ru/Yandex/VK unwrap + RU brands |
 | RU bank / gov | [`ru_gov/`](ru_gov/) | ФНС/ЦБ/Почта/Госуслуги brands + веса spoof/cloud |
+| Belarus bank / gov | [`by_gov/`](by_gov/) | Беларусбанк/МНС/ЕРИП/portal.gov.by + веса spoof/BEC |
 
 Скопируйте пресет в `org_profile/` рядом с exe или: `reliquary mail.eml --profile org_profile.example/m365`
 

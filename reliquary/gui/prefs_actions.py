@@ -15,6 +15,11 @@ from reliquary.gui.windowing import (
     size_only_geometry,
 )
 
+try:
+    from tkinter import TclError
+except ImportError:  # pragma: no cover
+    TclError = RuntimeError  # type: ignore[misc, assignment]
+
 
 class PrefsMixin:
     """Requires ExtractorApp filter vars, paths, and screen helpers."""
@@ -40,21 +45,21 @@ class PrefsMixin:
                 set_high_contrast(bool(fresh.get("high_contrast")))
                 remap = apply_appearance(self._appearance_mode)
                 self._apply_live_theme(remap)
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError, RuntimeError) as exc:
+                append_error_log("settings: theme apply failed", exc=exc)
             try:
                 if hasattr(self, "ioc_table"):
                     self.ioc_table.set_density(self._ioc_density)
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError) as exc:
+                append_error_log("settings: ioc density failed", exc=exc)
             try:
                 self._apply_verdict_compact()
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError) as exc:
+                append_error_log("settings: verdict compact failed", exc=exc)
             try:
                 self._export_choice.set(str(fresh.get("export_choice") or "JSON"))
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError) as exc:
+                append_error_log("settings: export choice failed", exc=exc)
             for attr, key in (
                 ("actionable_only", "actionable_only"),
                 ("hide_rewriter", "hide_rewriter"),
@@ -66,12 +71,12 @@ class PrefsMixin:
                 if var is not None:
                     try:
                         var.set(bool(fresh.get(key)))
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except (AttributeError, TclError, TypeError, ValueError) as exc:
+                        append_error_log(f"settings: filter {key} failed", exc=exc)
             try:
                 self._set_status("Настройки сохранены (ui_prefs.json)")
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError) as exc:
+                append_error_log("settings: status update failed", exc=exc)
 
         show_settings_dialog(self, prefs=self._prefs, on_saved=_apply)
 
@@ -91,26 +96,30 @@ class PrefsMixin:
         # minsize must not exceed fitted size, or Tk will clip the window
         try:
             self.minsize(min(920, fw), min(620, fh))
-        except Exception:  # noqa: BLE001
-            pass
+        except (AttributeError, TclError, TypeError, ValueError) as exc:
+            append_error_log("geometry: minsize failed", exc=exc)
         try:
             self.geometry(fitted)
-        except Exception:  # noqa: BLE001
-            self.geometry("1320x820")
+        except (AttributeError, TclError, TypeError, ValueError) as exc:
+            append_error_log("geometry: apply failed, using default", exc=exc)
+            try:
+                self.geometry("1320x820")
+            except (AttributeError, TclError, TypeError, ValueError):
+                pass
         try:
             self.after_idle(self._ensure_window_fully_visible)
-        except Exception:  # noqa: BLE001
-            pass
+        except (AttributeError, TclError, TypeError, ValueError) as exc:
+            append_error_log("geometry: after_idle failed", exc=exc)
 
     def _ensure_window_fully_visible(self) -> None:
         """Second pass after map: re-fit using live screen metrics."""
         try:
             self.update_idletasks()
-        except Exception:  # noqa: BLE001
+        except (AttributeError, TclError, RuntimeError):
             return
         try:
             cur = str(self.geometry())
-        except Exception:  # noqa: BLE001
+        except (AttributeError, TclError, TypeError, ValueError):
             return
         screen, virtual = self._screen_metrics()
         fitted = fit_window_geometry(
@@ -124,12 +133,12 @@ class PrefsMixin:
             fw, fh, _, _ = parse_geometry(fitted)
             try:
                 self.minsize(min(920, fw), min(620, fh))
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError) as exc:
+                append_error_log("geometry: re-fit minsize failed", exc=exc)
             try:
                 self.geometry(fitted)
-            except Exception:  # noqa: BLE001
-                pass
+            except (AttributeError, TclError, TypeError, ValueError) as exc:
+                append_error_log("geometry: re-fit apply failed", exc=exc)
 
     def _persist_prefs(self) -> None:
         # Persist size only — position is recalculated (centered) on next launch

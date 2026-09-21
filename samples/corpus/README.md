@@ -1,4 +1,4 @@
-"""README golden verdict corpus (85 cases).
+"""README golden verdict corpus (91 cases).
 
 Добавить кейс
 --------------
@@ -10,10 +10,16 @@
 
 3. Добавьте запись в ``expected.json`` (или ``python scripts/regen_expected.py``)::
 
-     "YOUR.eml": {"level": "suspicious", "score_min": 30, "score_max": 59, "reason_substrings": ["optional"]}
+     "YOUR.eml": {"level": "suspicious", "score_min": 40, "score_max": 55, "reason_substrings": ["optional"]}
+
+   ``regen_expected.py`` пишет **узкие** окна (±8 unknown / ±10 suspicious·malicious)
+   внутри полосы уровня — так ловятся регрессии весов.
 
 4. ``pytest tests/test_corpus_verdicts.py`` и ``python scripts/corpus_metrics.py`` должны пройти.
 
 Уровни: ``benign`` (<10), ``unknown`` (10–29), ``suspicious`` (30–59), ``malicious`` (≥60).
 Тюнинг: ``docs/TUNING.md``. Калибровка offline inbox: ``python scripts/corpus_metrics.py --inbox DIR``.
+
+BY (РБ): ``suspicious_display_spoof_belarusbank.eml``, ``suspicious_display_spoof_mns_by.eml``,
+``suspicious_bec_by_erip.eml``, ``benign_portal_gov_by.eml`` + пресет ``org_profile.example/by_gov/``.
 """
