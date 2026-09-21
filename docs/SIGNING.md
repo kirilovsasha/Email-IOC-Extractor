@@ -1,32 +1,36 @@
-# Authenticode signing (Windows)
+# Authenticode-подпись (Windows)
 
-Releases from CI are **unsigned** by default. SmartScreen / AV may warn until a
-corporate SoftCert / EV certificate signs the binary.
+Релизы из CI по умолчанию **без подписи**. SmartScreen / AV могут предупреждать,
+пока корпоративный SoftCert / EV не подпишет бинарник.
 
-## Verify before deploy
+Опциональная подпись в CI уже поддержана: секреты `SIGNING_PFX_BASE64` и
+`SIGNING_PFX_PASSWORD` — job `release` вызывает `build/sign_exe.ps1` для Lite+Full.
 
-1. Download `EmailIOCExtractor.exe` and `EmailIOCExtractor.exe.sha256`.
-2. Confirm the hash:
+## Проверка перед выкладкой
+
+1. Скачайте `EmailIOCExtractor.exe` и `EmailIOCExtractor.exe.sha256`.
+2. Сверьте хеш:
 
 ```powershell
 Get-FileHash .\EmailIOCExtractor.exe -Algorithm SHA256
 Get-Content .\EmailIOCExtractor.exe.sha256
 ```
 
-## Sign locally
+## Локальная подпись
 
 ```powershell
 powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe
-# or with a PFX:
+# или с PFX:
 powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe `
   -PfxPath .\certs\soc.pfx -PfxPassword (Read-Host -AsSecureString)
 ```
 
-Requires Windows SDK `signtool.exe`.
+Нужен Windows SDK `signtool.exe`. Сертификаты в репозиторий не класть.
 
-## Optional CI signing
+## Чеклист air-gap флота
 
-Wire organization secrets (e.g. `SIGNING_PFX_BASE64`, `SIGNING_PFX_PASSWORD`) and
-call `build/sign_exe.ps1` after PyInstaller in the `release` job. Do not commit
-certificates. Until that exists, publish SHA256 and sign on a locked-down build
-host before fleet deployment.
+1. SHA256 совпал.
+2. Authenticode (локально или CI).
+3. Выбрать **Lite** или **Full** (`EmailIOCExtractor-Full.exe` + UnRAR.exe рядом при RAR).
+4. Рядом с EXE: `org_profile.zip` (или `org_profile/`), опционально `verdict_extra.json`, `allowlist_extra.txt`, `ui_prefs.json`.
+5. `update.json` с `{"latest":"…"}` для локального баннера версии (без сети).

@@ -12,6 +12,7 @@ _PREFS_NAME = "ui_prefs.json"
 _DEFAULTS: dict[str, Any] = {
     "last_dir": "",
     "last_export_dir": "",
+    "last_inbox_dir": "",  # last folder used for inbox calibration
     "copy_format": "type|value",
     "export_choice": "JSON",
     "ui_scale": 1.0,

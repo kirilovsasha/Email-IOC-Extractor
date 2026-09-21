@@ -201,14 +201,23 @@
     "score_max": 100
   },
   "suspicious_brand_spoof.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59,
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
     "reason_substrings": [
       "Reply-To",
-      "spoof",
-      "Display",
-      "Microsoft"
+      "Имя",
+      "microsoft"
+    ]
+  },
+  "suspicious_cab_attachment.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 100,
+    "reason_substrings": [
+      "CAB",
+      "cab",
+      "архив"
     ]
   },
   "suspicious_credential_owa.eml": {
@@ -221,6 +230,27 @@
       "webmail",
       "login",
       "credential"
+    ]
+  },
+  "suspicious_display_spoof_gosuslugi.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "госуслуг",
+      "Имя",
+      "шортен",
+      "bit.ly"
+    ]
+  },
+  "suspicious_display_spoof_sber.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "сбер",
+      "sber",
+      "Имя"
     ]
   },
   "suspicious_dkim_misalign.eml": {
@@ -294,6 +324,16 @@
     "score_min": 10,
     "score_max": 29
   },
+  "suspicious_lnk_attachment.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 100,
+    "reason_substrings": [
+      "LNK",
+      "ярлык",
+      "lnk"
+    ]
+  },
   "suspicious_mailru_wrap.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -308,6 +348,16 @@
     "level": "unknown",
     "score_min": 10,
     "score_max": 29
+  },
+  "suspicious_messenger_only.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "Telegram",
+      "messenger",
+      "t.me"
+    ]
   },
   "suspicious_nested_depth2.eml": {
     "level": "malicious",

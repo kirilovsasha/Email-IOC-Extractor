@@ -43,5 +43,7 @@
   "weight_pdf_javascript": 18,
   "weight_html_smuggling": 20,
   "weight_html_attachment": 10,
-  "weight_mailing_list": -8
+  "weight_mailing_list": -8,
+  "weight_url_shortener": 10,
+  "weight_messenger_only": 14
 }

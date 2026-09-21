@@ -42,7 +42,7 @@ def _print_verdict(result, stream=None) -> None:
             print(f"  ! {err}", file=stream)
         return
     print(
-        f"\n[{__app_name__}] VERDICT {v.level.value.upper()}  score={v.score}/100",
+        f"\n[{__app_name__}] ВЕРДИКТ {v.level.value.upper()}  score={v.score}/100",
         file=stream,
     )
     print(f"  {v.summary}", file=stream)
@@ -121,8 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="reliquary",
         description=(
-            f"{__app_name__} v{__version__} — offline email IOC extractor "
-            f"(formats: {formats_help_line()})"
+            f"{__app_name__} v{__version__} — офлайн triage писем / IOC "
+            f"(форматы: {formats_help_line()})"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "-t",
         "--text",
-        help="Разбор pasted RFC822 (.eml source) из строки",
+        help="Разбор вставленного RFC822 (.eml) из строки",
     )
     parser.add_argument(
         "--no-recursive",
@@ -192,15 +192,15 @@ def main(argv: list[str] | None = None) -> int:
         dest="handoff_template_path",
         default=def_handoff_tmpl,
         help=(
-            "Шаблон handoff с плейсхолдерами {verdict} {score} …. "
-            "Иначе — handoff_extra.txt / handoff_{level}.txt рядом с приложением"
+            "Шаблон тикета с плейсхолдерами {verdict} {score} …. "
+            "Иначе — handoff_extra.txt / handoff_{level}.txt рядом с EXE"
         ),
     )
     parser.add_argument(
         "--profile",
         dest="profile_dir",
         default=def_profile,
-        help="Org profile: папка или .zip (allowlist/verdict/handoff/brands)",
+        help="Профиль организации: папка или .zip (allowlist/verdict/тикет/brands)",
     )
 
     filt = parser.add_argument_group(
@@ -253,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
     exp.add_argument(
         "--handoff",
         dest="handoff_out",
-        help="Текстовый handoff для тикета (ITSM)",
+        help="Текстовый блок для тикета (ITSM)",
     )
     exp.add_argument(
         "--ecs",
@@ -426,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {msg}", file=sys.stderr)
         if args.batch_csv_out:
             export_batch_csv(result, args.batch_csv_out, batch_results=batch_results)
-            print(f"Batch CSV → {args.batch_csv_out}", file=sys.stderr)
+            print(f"Пакетный CSV → {args.batch_csv_out}", file=sys.stderr)
             msg = run_post_export_hook(
                 hook,
                 args.batch_csv_out,
@@ -459,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
                 template_path=handoff_template_path,
                 handoff_by_level=handoff_by_level,
             )
-            print(f"Handoff → {args.handoff_out}", file=sys.stderr)
+            print(f"Тикет → {args.handoff_out}", file=sys.stderr)
             msg = run_post_export_hook(
                 hook,
                 args.handoff_out,

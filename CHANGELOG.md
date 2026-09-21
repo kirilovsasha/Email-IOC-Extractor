@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.11.0
+
+### Детекция
+- Spoof display-name From («Сбербанк / Госуслуги / Microsoft» при чужом `@`)
+- Текст OOXML (`office_extract`) в pipeline → IOC / content signals
+- RAR: double-ext / nested mail / `unrar_missing`; CAB listing; цель LNK офлайн
+- Сигналы `url_shortener` и `messenger_only` (bit.ly / t.me …)
+
+### Продукт / EXE
+- Вкладка «Ошибки»: путь к журналу, [L] открыть каталог, [R]/Ctrl+R причины вердикта
+- Prefs `last_inbox_dir` для калибровки; CLI help/статусы на русском
+- Self-check: rarfile ≠ UnRAR.exe
+- `docs/PACKAGING.md` и `docs/SIGNING.md` на русском + чеклист флота
+
+### Качество
+- Corpus: display-spoof, messenger-only, LNK, CAB
+- MSG из bytes (temp-файл); узкие `except` в `document_parser`
+
 ## 2.10.0
 
 ### Детекция

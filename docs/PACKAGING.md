@@ -1,8 +1,8 @@
-# Packaging / fleet deploy
+# Упаковка и выкладка на флот
 
-## Current ship form
+## Что публикуется
 
-CI publishes **Lite** `EmailIOCExtractor.exe` + `.sha256` on `main` and on tag `v*`.
+CI публикует **Lite** `EmailIOCExtractor.exe` + `.sha256` на `main` и на тег `v*`.
 На теге `v*` в Release также публикуется **Full** `EmailIOCExtractor-Full.exe` (RAR/QR).
 
 Локально Full:
@@ -11,22 +11,23 @@ CI publishes **Lite** `EmailIOCExtractor.exe` + `.sha256` on `main` and on tag `
 build_exe.bat --full
 ```
 
-или CI job `build-exe-full` (artifact на push в main).
+или CI job `build-exe-full` (артефакт на push в main).
 
-## Silent / scripted copy
+## Деплой без MSI
 
-There is no MSI in-tree. Typical enterprise deploy:
+В дереве нет MSI. Типичная выкладка SOC:
 
-1. Verify SHA256 (`docs/SIGNING.md`).
-2. Authenticode-sign (`build/sign_exe.ps1`).
-3. Copy EXE + optional `org_profile/` + prefs templates to a locked folder.
-4. Optional winget private manifest pointing at an internal HTTPS URL of the signed EXE.
+1. Проверить SHA256 (`docs/SIGNING.md`).
+2. Подписать Authenticode (`build/sign_exe.ps1` или секреты CI).
+3. Скопировать EXE + опционально `org_profile.zip` / prefs в защищённую папку.
+4. Для Full: положить `UnRAR.exe` рядом с EXE (иначе RAR inventory недоступен).
+5. Опционально — private winget-манифест на внутренний HTTPS URL подписанного EXE.
 
-### Winget-style manifest sketch
+### Эскиз winget-манифеста
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.10.0
+PackageVersion: 2.11.0
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -34,12 +35,14 @@ Installers:
     InstallerSha256: <sha256>
 ```
 
-Publish via your private winget source; do not rely on public winget for internal SOC tools.
+Публикуйте через свой private winget source; на публичный winget для SOC не опирайтесь.
 
-## Offline version flag
+## Офлайн-флаг версии
 
-Drop `update.json` next to the EXE (`{"latest":"2.10.0","notes":"..."}`). About dialog shows status — no network.
+Положите `update.json` рядом с EXE (`{"latest":"2.11.0","notes":"..."}`).
+Диалог «О программе» покажет статус — без сети.
 
-Prefer a single `org_profile.zip` next to the EXE (auto-loaded); folder `org_profile/` still works.
+Предпочтительно один файл **`org_profile.zip`** рядом с EXE (подхватывается автоматически);
+папка `org_profile/` тоже работает.
 
-Optional CI Authenticode: set repository secrets `SIGNING_PFX_BASE64` and `SIGNING_PFX_PASSWORD`; the release job signs Lite+Full when present.
+Опциональная CI-подпись: секреты `SIGNING_PFX_BASE64` и `SIGNING_PFX_PASSWORD`.

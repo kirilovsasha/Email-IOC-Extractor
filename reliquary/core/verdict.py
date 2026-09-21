@@ -69,6 +69,8 @@ class VerdictConfig:
     weight_pdf_javascript: int = 18
     weight_html_smuggling: int = 20
     weight_html_attachment: int = 10
+    weight_url_shortener: int = 10
+    weight_messenger_only: int = 14
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -495,6 +497,8 @@ def _score_content(
         "weight_html_form": cfg.weight_html_form,
         "weight_qr_only": cfg.weight_qr_only,
         "weight_qr_present": cfg.weight_qr_present,
+        "weight_url_shortener": cfg.weight_url_shortener,
+        "weight_messenger_only": cfg.weight_messenger_only,
     }
     for sig in signals:
         pts = weight_map.get(sig.weight_key, 8)

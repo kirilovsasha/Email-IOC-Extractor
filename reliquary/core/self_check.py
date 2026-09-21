@@ -2,12 +2,38 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from reliquary import __version__
 from reliquary.core.paths import app_dir
 from reliquary.core.qr_scan import qr_decoder_available
 from reliquary.core.verdict import default_extra_verdict_path, resolve_verdict_path
+
+
+def _unrar_tool_available() -> tuple[bool, str]:
+    """rarfile may import while UnRAR.exe is still missing on PATH / next to EXE."""
+    try:
+        import rarfile  # type: ignore[import-untyped]
+    except ImportError:
+        return False, "rarfile не установлен"
+
+    root = app_dir()
+    candidates = [
+        root / "UnRAR.exe",
+        root / "unrar.exe",
+        root / "unrar",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return True, str(c.name)
+    which = shutil.which("UnRAR") or shutil.which("unrar") or shutil.which("UnRAR.exe")
+    if which:
+        return True, Path(which).name
+    tool = getattr(rarfile, "UNRAR_TOOL", "") or ""
+    if tool and Path(tool).is_file():
+        return True, Path(tool).name
+    return False, "UnRAR.exe не найден (рядом с EXE или в PATH)"
 
 
 def build_self_check_lines(
@@ -20,26 +46,31 @@ def build_self_check_lines(
     root = app_dir()
     lines: list[str] = [f"Версия {__version__} · каталог: {root.name}/"]
 
-    # Lite vs Full extras
-    rar_ok = False
+    rar_mod = False
     try:
         import rarfile  # noqa: F401
 
-        rar_ok = True
+        rar_mod = True
     except ImportError:
         pass
+    unrar_ok, unrar_note = _unrar_tool_available() if rar_mod else (False, "нет rarfile")
     qr_ok = qr_decoder_available()
-    if rar_ok and qr_ok:
-        lines.append("Сборка: Full (RAR + QR)")
-    elif rar_ok or qr_ok:
+
+    if rar_mod and unrar_ok and qr_ok:
+        lines.append("Сборка: Full (RAR + UnRAR + QR)")
+    elif rar_mod and qr_ok and not unrar_ok:
+        lines.append(f"Сборка: Full без UnRAR — {unrar_note}")
+    elif rar_mod or qr_ok:
         parts = []
-        parts.append("RAR" if rar_ok else "без RAR")
+        if rar_mod:
+            parts.append("RAR-модуль" + ("+UnRAR" if unrar_ok else " без UnRAR"))
+        else:
+            parts.append("без RAR")
         parts.append("QR" if qr_ok else "без QR")
         lines.append("Сборка: частичная (" + ", ".join(parts) + ")")
     else:
         lines.append("Сборка: Lite (без rarfile / pyzbar)")
 
-    # Configs next to EXE
     allow = root / "allowlist_extra.txt"
     verdict = resolve_verdict_path(verdict_path)
     prefs = root / "ui_prefs.json"

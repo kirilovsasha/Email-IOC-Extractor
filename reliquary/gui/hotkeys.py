@@ -26,6 +26,8 @@ class HotkeysMixin:
         self.bind("<Control-Shift-c>", self._hotkey_copy_defanged)
         self.bind("<Control-h>", lambda _e: self.copy_handoff())
         self.bind("<Control-H>", lambda _e: self.copy_handoff())
+        self.bind("<Control-r>", lambda _e: self.copy_verdict_reasons())
+        self.bind("<Control-R>", lambda _e: self.copy_verdict_reasons())
         self.bind("<Control-e>", lambda _e: self._export_clicked())
         self.bind("<Control-E>", lambda _e: self._export_clicked())
         self.bind("<Control-l>", lambda _e: self._cycle_appearance())

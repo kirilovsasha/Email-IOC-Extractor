@@ -47,6 +47,8 @@
     "weight_corp_signature": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_thread_reply": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_mailing_list": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_url_shortener": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_messenger_only": { "type": "integer", "minimum": -50, "maximum": 100 },
     "cap_headers": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_attachments": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_urls": { "type": "integer", "minimum": 0, "maximum": 100 },
