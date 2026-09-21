@@ -47,14 +47,14 @@ _TYPE_LABEL: dict[str, str] = {
 _SIGNAL_ORDER: tuple[tuple[str, str], ...] = (
     ("unwrapped", "UNWRAP"),
     ("from_url", "URL"),
-    ("attachment_hash", "ATT"),
+    ("attachment_hash", "ВЛОЖ"),
     ("qr", "QR"),
-    ("double_extension", "2EXT"),
-    ("dangerous_extension", "EXEC"),
-    ("private", "PRIV"),
-    ("allowlisted", "ALLOW"),
-    ("url_rewriter", "PROXY"),
-    ("noise_candidate", "NOISE"),
+    ("double_extension", "2РАСШ"),
+    ("dangerous_extension", "ИСП"),
+    ("private", "ЛОК"),
+    ("allowlisted", "ДОВЕР"),
+    ("url_rewriter", "ПРОКСИ"),
+    ("noise_candidate", "ШУМ"),
 )
 
 # Inspector must fit type + value + meta; a short locked box clips the IOC.

@@ -14,6 +14,8 @@ from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
 from reliquary.core.paths import app_dir
 from reliquary.core.prefs import load_prefs
+from reliquary.core.self_check import build_self_check_lines
+from reliquary.core.verdict import probe_verdict_extra_warnings
 from reliquary.gui.about import show_about_dialog
 from reliquary.gui.analysis_actions import AnalysisActionsMixin
 from reliquary.gui.analyst_actions import AnalystActionsMixin
@@ -42,7 +44,7 @@ apply_global_fonts()
 
 _PLACEHOLDER = (
     "Откройте .eml / .msg или вставьте исходник письма (RFC822).\n\n"
-    "Ctrl+O — письмо · Ctrl+H — handoff · Ctrl+E — экспорт · 1 — вердикт"
+    "Ctrl+O — письмо · Ctrl+H — тикет · Ctrl+E — экспорт · 1 — вердикт"
 )
 
 _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
@@ -156,10 +158,24 @@ class ExtractorApp(
         self._build()
         if self._verdict_compact:
             self._apply_verdict_compact()
+        self._verdict_extra_warnings = probe_verdict_extra_warnings(self._verdict_path)
         self._try_hook_drop()
         self._bind_global_hotkeys()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._search_var.trace_add("write", lambda *_: self._schedule_search_refresh())
+        # Startup self-check (Lite/Full + configs beside EXE)
+        try:
+            lines = build_self_check_lines(
+                profile_dir=self._profile_dir,
+                verdict_path=self._verdict_path,
+                verdict_warnings=self._verdict_extra_warnings,
+            )
+            short = " · ".join(lines[:2])
+            if self._verdict_extra_warnings:
+                short = f"⚠ verdict_extra · {short}"
+            self.after(200, lambda: self._set_status(short[:180]))
+        except (OSError, AttributeError, TypeError, ValueError):
+            pass
 
     # ------------------------------------------------------------------ UI
     def _on_window_configure(self, event: tk.Event) -> None:  # type: ignore[type-arg]
@@ -703,6 +719,8 @@ class ExtractorApp(
             ioc_density=self._ioc_density,
             result=self.result,
             profile_dir=self._profile_dir,
+            verdict_path=self._verdict_path,
+            verdict_warnings=getattr(self, "_verdict_extra_warnings", None),
         )
 
 

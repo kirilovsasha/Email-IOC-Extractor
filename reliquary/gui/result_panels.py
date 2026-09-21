@@ -50,12 +50,12 @@ class ResultPanelsMixin:
         self._put(
             self.batch_box,
             f"▸ Сводка пакета  ({len(rows)})  — клик по имени → IOC; "
-            f"«diff» → сравнение с peer кампании\n\n",
+            f"«сравнить» → сравнение с peer кампании\n\n",
             "section",
         )
         self._put(
             self.batch_box,
-            f"  {'Файл':<36} {'Вердикт':<12} {'Score':>5}  Причина\n",
+            f"  {'Файл':<36} {'Вердикт':<14} {'Балл':>5}  Причина\n",
             "muted",
         )
         self._put(self.batch_box, "  " + "─" * 72 + "\n", "muted")
@@ -128,7 +128,7 @@ class ResultPanelsMixin:
         self._focus_source_file = name
         self._update_focus_hint()
         self._refresh_views()
-        self._set_status(f"Focus: {name}")
+        self._set_status(f"Фокус: {name}")
 
     def _on_batch_tree_diff(self, _event: object = None) -> None:
         tree = getattr(self, "batch_tree", None)
@@ -139,7 +139,7 @@ class ResultPanelsMixin:
             return
         row = getattr(self, "_batch_row_map", {}).get(sel[0])
         if row is None or not row.campaign_peers:
-            self._set_status("No campaign peer for diff")
+            self._set_status("Нет peer кампании для сравнения")
             return
         self._show_campaign_diff(Path(row.path).name, row.campaign_peers[0])
 
@@ -286,7 +286,7 @@ class ResultPanelsMixin:
                     "info",
                 )
             if a.nested_kind:
-                self._put(self.att_box, f"      nested  {a.nested_kind}\n", "meta")
+                self._put(self.att_box, f"      вложенный тип  {a.nested_kind}\n", "meta")
             if a.archive_entries:
                 members = [e for e in a.archive_entries if not e.startswith("QR:")]
                 qr_lines = [e[3:] for e in a.archive_entries if e.startswith("QR:")]

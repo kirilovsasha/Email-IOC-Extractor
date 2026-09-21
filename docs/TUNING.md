@@ -33,7 +33,10 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 | `weight_calendar_invite` | −8 | ICS / meeting / приглашение |
 | `weight_corp_signature` | −5 | Корп. подпись / disclaimer |
 | `weight_thread_reply` | −4 | Re:/Отв: + In-Reply-To / References |
+| `weight_mailing_list` | −8 | List-Unsubscribe / List-Id / Precedence:bulk |
 | `cap_mitigation` | 30 | Max absolute reduction |
+
+HTML/PDF вложения: `weight_html_smuggling`, `weight_pdf_javascript`, `weight_html_attachment`.
 
 ## Calibration loop
 

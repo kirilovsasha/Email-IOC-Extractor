@@ -53,6 +53,18 @@ def default_profile_dir() -> Path:
     return app_dir() / "org_profile"
 
 
+def resolve_default_profile_path() -> Path | None:
+    """Prefer ``org_profile.zip`` next to EXE, else ``org_profile/`` folder."""
+    root = app_dir()
+    zip_path = root / "org_profile.zip"
+    if zip_path.is_file():
+        return zip_path
+    folder = root / "org_profile"
+    if folder.exists():
+        return folder
+    return None
+
+
 def _pick(root: Path, name: str) -> Path | None:
     p = root / name
     return p if p.is_file() else None
@@ -93,13 +105,14 @@ def safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
 
 
 def load_org_profile(path: str | Path | None = None) -> OrgProfile | None:
-    """Load profile from directory, zip, or default ``org_profile/`` next to app."""
+    """Load profile from directory, zip, or default ``org_profile.zip`` / ``org_profile/``."""
     if path is not None and str(path).strip():
         target = Path(str(path).strip())
     else:
-        target = default_profile_dir()
-        if not target.exists():
+        resolved = resolve_default_profile_path()
+        if resolved is None:
             return None
+        target = resolved
 
     if not target.exists():
         return None
@@ -145,6 +158,9 @@ def load_org_profile(path: str | Path | None = None) -> OrgProfile | None:
 def profile_example_readme() -> str:
     files = "\n".join(f"  - {n}" for n in _PROFILE_FILES)
     return (
-        "Org profile folder or .zip next to the exe (org_profile/) may contain:\n"
+        "Профиль организации рядом с EXE:\n"
+        "  - org_profile.zip  (предпочтительно — один файл)\n"
+        "  - org_profile/     (папка)\n"
+        "Содержимое:\n"
         f"{files}\n"
     )

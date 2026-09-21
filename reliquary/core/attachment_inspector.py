@@ -56,10 +56,22 @@ ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".gz", ".tar", ".cab", ".iso"}
 MACRO_OFFICE = {".doc", ".docm", ".xls", ".xlsm", ".ppt", ".pptm", ".rtf"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 NESTED_MAIL_EXT = {".eml", ".msg"}
+WEB_PAYLOAD_EXT = {".html", ".htm", ".shtml", ".mht", ".mhtml", ".svg"}
+PDF_EXT = {".pdf"}
 DOUBLE_EXT_RE = re.compile(
     r"\.(?:pdf|docx?|xlsx?|pptx?|txt|jpg|png|gif)\.(?:exe|scr|bat|cmd|js|vbs|ps1|jar)$",
     re.IGNORECASE,
 )
+
+_PDF_JS_RE = re.compile(rb"/(?:JavaScript|JS|OpenAction|AA|Launch)\b")
+_PDF_URI_RE = re.compile(rb"/URI\s*\(")
+_HTML_SMUGGLE_RE = re.compile(
+    rb"(?i)(data:text/html|atob\s*\(|Blob\s*\(|msSaveOrOpenBlob|"
+    rb"ActiveXObject|fromCharCode|unescape\s*\(|String\.fromCharCode|"
+    rb"HTML smuggling|download\s*=)"
+)
+_DATA_URI_BIG_RE = re.compile(rb"(?i)data:(?:application|text)[^,]{0,80},[A-Za-z0-9+/=]{800,}")
+
 
 
 def _hashes(data: bytes) -> tuple[str, str, str]:
@@ -81,6 +93,9 @@ def _guess_mime(data: bytes, filename: str) -> str:
         ".pdf": "application/pdf",
         ".html": "text/html",
         ".htm": "text/html",
+        ".mht": "multipart/related",
+        ".mhtml": "multipart/related",
+        ".svg": "image/svg+xml",
         ".txt": "text/plain",
         ".csv": "text/csv",
         ".zip": "application/zip",
@@ -341,6 +356,48 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
     return entries, flags, notes
 
 
+def _scan_pdf_payload(data: bytes) -> tuple[list[str], list[str]]:
+    """Byte heuristics for PDF JS / OpenAction / URI (no full PDF parser)."""
+    flags: list[str] = []
+    notes: list[str] = []
+    head = data[: min(len(data), 512 * 1024)]
+    if _PDF_JS_RE.search(head):
+        flags.append("pdf_javascript")
+        notes.append("PDF: найдены /JS · /JavaScript · /OpenAction · /Launch")
+    if _PDF_URI_RE.search(head):
+        flags.append("pdf_uri_action")
+        notes.append("PDF: найдены /URI-действия (возможны внешние ссылки)")
+    return flags, notes
+
+
+def _scan_web_payload(filename: str, data: bytes) -> tuple[list[str], list[str], str]:
+    """Flag HTML/SVG/MHT surface + smuggling heuristics. Returns (flags, notes, nested_kind)."""
+    flags: list[str] = []
+    notes: list[str] = []
+    ext = Path(filename.lower()).suffix
+    kind = ""
+    if ext in {".html", ".htm", ".shtml"} or b"<html" in data[:4096].lower():
+        flags.append("html_attachment")
+        kind = "html"
+        notes.append("HTML-вложение — офлайн-разбор ссылок/форм")
+    elif ext in {".mht", ".mhtml"}:
+        flags.append("mht_attachment")
+        kind = "mht"
+        notes.append("MHTML-вложение — возможен встроенный фишинговый HTML")
+    elif ext == ".svg" or b"<svg" in data[:4096].lower():
+        flags.append("svg_attachment")
+        kind = "svg"
+        notes.append("SVG-вложение — возможны script/xlink")
+    sample = data[: min(len(data), 1024 * 1024)]
+    if _HTML_SMUGGLE_RE.search(sample) or _DATA_URI_BIG_RE.search(sample):
+        flags.append("html_smuggling")
+        notes.append("Признаки HTML-smuggling (data: URI / atob / Blob / ActiveX)")
+    if kind == "svg" and (b"<script" in sample.lower() or b"onload=" in sample.lower()):
+        flags.append("svg_script")
+        notes.append("SVG содержит script/onload")
+    return flags, notes, kind
+
+
 def _ole_streams(data: bytes) -> tuple[list[str], list[str], list[str]]:
     flags: list[str] = ["ole_compound"]
     notes: list[str] = ["OLE Compound File (старый Office / вложения)"]
@@ -425,7 +482,24 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         nested_kind = "email"
         notes.append("Вложенное письмо (.eml/.msg) — будет разобрано в pipeline")
 
-    if ext in IMAGE_EXTENSIONS or (mime or "").startswith("image/"):
+    if ext in WEB_PAYLOAD_EXT or (
+        mime in {"text/html", "image/svg+xml", "multipart/related"}
+        and ext in WEB_PAYLOAD_EXT.union({".html", ".htm", ".svg", ".mht", ".mhtml", ""})
+    ):
+        if ext in WEB_PAYLOAD_EXT or b"<html" in data[:4096].lower() or b"<svg" in data[:4096].lower():
+            wflags, wnotes, wkind = _scan_web_payload(filename, data)
+            flags.extend(wflags)
+            notes.extend(wnotes)
+            if wkind and not nested_kind:
+                nested_kind = wkind
+
+    if ext in PDF_EXT or mime == "application/pdf" or data[:5] == b"%PDF-":
+        flags.append("pdf_attachment")
+        pflags, pnotes = _scan_pdf_payload(data)
+        flags.extend(pflags)
+        notes.extend(pnotes)
+
+    if (ext in IMAGE_EXTENSIONS or (mime or "").startswith("image/")) and "svg_attachment" not in flags:
         flags.append("image_attachment")
         notes.append("Изображение — проверьте QR / скриншоты фишинга")
         qr_hits, qr_notes = _qr_urls_from_image(data)
@@ -496,9 +570,12 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         flags.append("mime_mismatch")
         notes.append(f"Расширение {ext}, но MIME похож на executable ({mime})")
 
-    # Keep payload only for nested email (pipeline re-parses .eml/.msg bytes).
+    # Keep payload for nested email and HTML/SVG/MHT (pipeline re-parses).
     if keep_bytes is None:
-        need_keep = "nested_email" in flags
+        need_keep = bool(
+            {"nested_email", "html_attachment", "mht_attachment", "svg_attachment"}
+            .intersection(flags)
+        )
     else:
         need_keep = keep_bytes
     keep = data if need_keep and len(data) <= MAX_KEEP_BYTES else None

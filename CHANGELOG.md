@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.10.0
+
+### Детекция
+- HTML/HTM/MHT/SVG вложения: офлайн-разбор + флаги `html_attachment` / `html_smuggling` / `svg_script`
+- PDF-эвристики: `/JS` · `/OpenAction` · `/URI` (`pdf_javascript`, `pdf_uri_action`)
+- RU unwrap: Mail.ru away/click, Яндекс clck/redir
+- Benign: `List-Unsubscribe` / `List-Id` / `Precedence: bulk` (`weight_mailing_list`)
+- Веса: `weight_pdf_javascript`, `weight_html_smuggling`, `weight_html_attachment`
+
+### Продукт / один EXE
+- Self-check при старте и в «О программе» (Lite/Full, конфиги рядом с EXE)
+- Предупреждения битого `verdict_extra.json` в статусе / About
+- Кнопка «Калибр.» — отчёт сегментов FP/FN без БД (`calibration_inbox_report.txt`)
+- Автоподхват `org_profile.zip` рядом с EXE (приоритетнее папки)
+- Дочистка EN в UI (Балл, ДОВЕР/ПРОКСИ, Фокус, тикет)
+
+### Качество
+- Corpus: mailing-list, HTML-att, PDF JS, Mail.ru/Yandex wraps
+- `reliquary.core.calibration` / `self_check`
+
 ## 2.9.0
 
 ### Детекция / triage

@@ -39,5 +39,9 @@
   "cap_urls": 30,
   "cap_content": 40,
   "cap_lookalike": 30,
-  "cap_mitigation": 30
+  "cap_mitigation": 30,
+  "weight_pdf_javascript": 18,
+  "weight_html_smuggling": 20,
+  "weight_html_attachment": 10,
+  "weight_mailing_list": -8
 }

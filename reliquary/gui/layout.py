@@ -24,7 +24,7 @@ from reliquary.gui.tooltips import FilterChip, HoverTip, toolbar_group
 
 _PLACEHOLDER = (
     "Откройте .eml / .msg или вставьте исходник письма (RFC822).\n\n"
-    "Ctrl+O — письмо · Ctrl+H — handoff · Ctrl+E — экспорт · 1 — вердикт"
+    "Ctrl+O — письмо · Ctrl+H — тикет · Ctrl+E — экспорт · 1 — вердикт"
 )
 
 _COPY_FORMATS = ("type|value", "value", "csv", "defanged", "defanged|type")
@@ -95,8 +95,21 @@ class LayoutMixin:
         btn_folder = ctk.CTkButton(
             src, text="Папка", width=64, font=btn_font, command=self.open_folder, **BTN_SECONDARY
         )
-        btn_folder.pack(side="left")
+        btn_folder.pack(side="left", padx=(0, 4))
         HoverTip(btn_folder, "Рекурсивно разобрать все .eml / .msg в папке")
+        btn_cal = ctk.CTkButton(
+            src,
+            text="Калибр.",
+            width=64,
+            font=btn_font,
+            command=self.calibrate_inbox_folder,
+            **BTN_SECONDARY,
+        )
+        btn_cal.pack(side="left")
+        HoverTip(
+            btn_cal,
+            "Калибровка inbox: сегменты FP/FN без БД (отчёт → файл рядом с EXE)",
+        )
 
         hand_shell, hand = toolbar_group(actions, "Буфер", compact=True)
         self._hand_shell = hand_shell
@@ -580,7 +593,7 @@ class LayoutMixin:
         )
         self.batch_tree.heading("file", text="Файл")
         self.batch_tree.heading("verdict", text="Вердикт")
-        self.batch_tree.heading("score", text="Score")
+        self.batch_tree.heading("score", text="Балл")
         self.batch_tree.heading("reason", text="Причина")
         self.batch_tree.heading("peers", text="Кампания")
         self.batch_tree.column("file", width=220, minwidth=100)

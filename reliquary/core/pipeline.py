@@ -287,6 +287,24 @@ def _lift_attachment_iocs(attachments: list[AttachmentInfo], iocs: list[Ioc]) ->
             )
 
 
+def _parse_web_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
+    """Extract text/HTML from .html/.htm/.mht/.svg attachment bytes for IOC + signals."""
+    web_flags = {"html_attachment", "mht_attachment", "svg_attachment"}
+    if not att.data or not web_flags.intersection(att.risk_flags or []):
+        return "", []
+    errors: list[str] = []
+    try:
+        raw = att.data
+        # Strip UTF-8 BOM; try charset sniff for MHT
+        text = raw.decode("utf-8", errors="replace")
+        if raw[:3] == b"\xef\xbb\xbf":
+            text = raw[3:].decode("utf-8", errors="replace")
+        header = f"Web-Att {att.filename} flags={','.join(sorted(web_flags.intersection(att.risk_flags)))}"
+        return f"{header}\n{text}", errors
+    except (UnicodeError, TypeError, ValueError) as exc:
+        return "", [f"Web-att {att.filename}: {exc}"]
+
+
 def _parse_nested_email_attachment(
     att: AttachmentInfo, *, depth: int = 0, max_depth: int = 2
 ) -> tuple[str, list[str]]:
@@ -426,9 +444,19 @@ def _enrich_parsed_result(
             blob += "\n" + nested_text
             att.notes.append("Вложенное письмо разобрано локально")
         result.errors.extend(nested_errs)
+        web_text, web_errs = _parse_web_attachment(att)
+        if web_text:
+            blob += "\n" + web_text
+            att.notes.append("HTML/SVG/MHT разобрано локально")
+        result.errors.extend(web_errs)
         if (
             att.data is not None
-            and "nested_email" in att.risk_flags
+            and (
+                "nested_email" in att.risk_flags
+                or {"html_attachment", "mht_attachment", "svg_attachment"}.intersection(
+                    att.risk_flags or []
+                )
+            )
             and att.size > 2 * 1024 * 1024
         ):
             att.data = None
@@ -445,6 +473,8 @@ def _enrich_parsed_result(
 
     try:
         result.url_rewrites = find_and_unwrap(blob)
+    except (ValueError, TypeError, AttributeError, re.error) as exc:
+        result.errors.append(f"URL rewrite: {exc}")
     except Exception as exc:  # noqa: BLE001
         result.errors.append(f"URL rewrite: {exc}")
 
@@ -455,6 +485,9 @@ def _enrich_parsed_result(
 
     try:
         iocs = extract_iocs(enriched, source=ioc_source)
+    except (ValueError, TypeError, AttributeError) as exc:
+        result.errors.append(f"IOC: {exc}")
+        iocs = []
     except Exception as exc:  # noqa: BLE001
         result.errors.append(f"IOC: {exc}")
         iocs = []

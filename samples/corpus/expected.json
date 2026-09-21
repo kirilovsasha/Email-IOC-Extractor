@@ -34,6 +34,11 @@
     "score_min": 0,
     "score_max": 9
   },
+  "benign_mailing_list.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
   "benign_marketing_safelinks.eml": {
     "level": "benign",
     "score_min": 0,
@@ -261,6 +266,16 @@
       "microsoft"
     ]
   },
+  "suspicious_html_attachment.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "smuggl",
+      "HTML",
+      "html"
+    ]
+  },
   "suspicious_html_form.eml": {
     "level": "malicious",
     "score_min": 60,
@@ -278,6 +293,16 @@
     "level": "unknown",
     "score_min": 10,
     "score_max": 29
+  },
+  "suspicious_mailru_wrap.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "rewrite",
+      "URL",
+      "evil"
+    ]
   },
   "suspicious_messenger_lure.eml": {
     "level": "unknown",
@@ -321,6 +346,16 @@
       "urgent"
     ]
   },
+  "suspicious_pdf_js.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "PDF",
+      "JavaScript",
+      "OpenAction"
+    ]
+  },
   "suspicious_qr_mention.eml": {
     "level": "unknown",
     "score_min": 10,
@@ -330,6 +365,16 @@
     "level": "unknown",
     "score_min": 10,
     "score_max": 29
+  },
+  "suspicious_yandex_wrap.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      "rewrite",
+      "URL",
+      "evil"
+    ]
   },
   "unknown_bec_wire.eml": {
     "level": "suspicious",

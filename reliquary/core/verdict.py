@@ -66,6 +66,9 @@ class VerdictConfig:
     weight_attachment_iso: int = 18
     weight_attachment_lnk: int = 16
     weight_attachment_onenote: int = 14
+    weight_pdf_javascript: int = 18
+    weight_html_smuggling: int = 20
+    weight_html_attachment: int = 10
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -74,6 +77,7 @@ class VerdictConfig:
     weight_calendar_invite: int = -8
     weight_corp_signature: int = -5
     weight_thread_reply: int = -4
+    weight_mailing_list: int = -8
     # Per-category caps (evidence stacking without score explosion)
     cap_headers: int = 45
     cap_attachments: int = 40
@@ -145,32 +149,50 @@ def validate_verdict_extra(data: dict) -> list[str]:
 
 
 def load_verdict_overrides(path: str | Path | None) -> dict[str, int]:
+    overrides, _warnings = load_verdict_overrides_report(path)
+    return overrides
+
+
+def load_verdict_overrides_report(
+    path: str | Path | None,
+) -> tuple[dict[str, int], list[str]]:
+    """Load overrides and return (overrides, RU validation warnings)."""
     if path is None:
-        return {}
+        return {}, []
     p = Path(path)
     if not p.is_file():
-        return {}
+        return {}, [f"файл не найден: {p.name}"]
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    except OSError as exc:
+        return {}, [f"не удалось прочитать {p.name}: {exc}"]
+    except json.JSONDecodeError as exc:
+        return {}, [f"битый JSON в {p.name}: {exc}"]
     if not isinstance(raw, dict):
-        return {}
-    # Soft-validate; ignore bad keys via parse_verdict_overrides
-    _ = validate_verdict_extra(raw)
-    return parse_verdict_overrides(raw)
+        return {}, [f"{p.name}: корень должен быть объектом JSON"]
+    warnings = validate_verdict_extra(raw)
+    return parse_verdict_overrides(raw), warnings
 
 
 def load_verdict_config(path: str | Path | None = None) -> VerdictConfig:
     """Built-in weights merged with optional JSON override file."""
     cfg = VerdictConfig()
     resolved = resolve_verdict_path(path)
-    overrides = load_verdict_overrides(resolved)
+    overrides, _warnings = load_verdict_overrides_report(resolved)
     if overrides:
         base = asdict(cfg)
         base.update(overrides)
         return VerdictConfig(**base)
     return cfg
+
+
+def probe_verdict_extra_warnings(path: str | Path | None = None) -> list[str]:
+    """Warnings for UI / About when ``verdict_extra.json`` is present beside EXE."""
+    resolved = resolve_verdict_path(path)
+    if resolved is None:
+        return []
+    _overrides, warnings = load_verdict_overrides_report(resolved)
+    return warnings
 
 
 def default_verdict_config() -> VerdictConfig:
@@ -268,6 +290,9 @@ def _score_attachments(
         "iso_image",
         "shortcut_lnk",
         "onenote_attachment",
+        "pdf_javascript",
+        "html_smuggling",
+        "svg_script",
     }
     seen_flags: set[str] = set()
     soft_noted = False
@@ -314,6 +339,33 @@ def _score_attachments(
                     )
                 )
                 rest.discard("onenote_attachment")
+            if "pdf_javascript" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_pdf_javascript,
+                        f"PDF «{att.filename}»: JavaScript / OpenAction",
+                    )
+                )
+                rest.discard("pdf_javascript")
+            if "html_smuggling" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_html_smuggling,
+                        f"HTML-smuggling во вложении «{att.filename}»",
+                    )
+                )
+                rest.discard("html_smuggling")
+            if "svg_script" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_html_smuggling,
+                        f"SVG со script «{att.filename}»",
+                    )
+                )
+                rest.discard("svg_script")
             if rest:
                 pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
@@ -323,15 +375,22 @@ def _score_attachments(
                         f"Вложение «{att.filename}»: {', '.join(sorted(rest))}",
                     )
                 )
-        elif (
-            not soft_noted
-            and ("archive" in att.risk_flags or "office_macro_capable" in att.risk_flags)
+        elif not soft_noted and (
+            "archive" in att.risk_flags
+            or "office_macro_capable" in att.risk_flags
+            or "html_attachment" in att.risk_flags
+            or "mht_attachment" in att.risk_flags
         ):
             soft_noted = True
+            pts = (
+                cfg.weight_html_attachment
+                if {"html_attachment", "mht_attachment"}.intersection(att.risk_flags)
+                else cfg.weight_attachment_soft
+            )
             parts.append(
                 ScoreContribution(
                     "attachments",
-                    cfg.weight_attachment_soft,
+                    pts,
                     f"Вложение «{att.filename}» требует ручной проверки",
                 )
             )
@@ -555,6 +614,9 @@ def _score_mitigations(
         "iso_image",
         "shortcut_lnk",
         "onenote_attachment",
+        "pdf_javascript",
+        "html_smuggling",
+        "svg_script",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
@@ -694,6 +756,21 @@ def _benign_marker_parts(
                     "Ответ в существующем треде (In-Reply-To / References)",
                 )
             )
+    # Bulk / mailing-list markers
+    prec = ((mid.precedence if mid else "") or "").lower()
+    list_hdr = (
+        ((mid.list_unsubscribe if mid else "") or "")
+        + " "
+        + ((mid.list_id if mid else "") or "")
+    ).strip()
+    if list_hdr or prec in ("bulk", "list", "junk"):
+        parts.append(
+            ScoreContribution(
+                "mitigation",
+                cfg.weight_mailing_list,
+                "Рассылка / List-Unsubscribe / Precedence:bulk — смягчение score",
+            )
+        )
     return parts
 
 
