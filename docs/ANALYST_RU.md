@@ -1,15 +1,15 @@
 # Analyst runbook (RU) — Email IOC Extractor
 
-Офлайн triage писем `.eml` / `.msg`. Сеть не используется.
+Офлайн triage писем `.eml` / `.msg` / `.mbox`. Сеть не используется.
 Деплой: **1 EXE** + опциональные конфиги рядом. Без базы данных.
 
 ## Быстрый цикл
 
 1. Откройте письмо / папку / вставьте RFC822 (Ctrl+Enter).
-2. Вкладка **Вердикт** — уровень, score, разбор весов.
+2. Вкладка **Вердикт** — уровень, score, уверенность, разбор весов.
 3. При шуме: фильтры «к разбору», SafeLinks, allowlist.
 4. ПКМ по IOC → **В allowlist** или **Override вердикта**.
-5. Тикет (Ctrl+H) / JSON / CSV / Batch CSV (Ctrl+E).
+5. Тикет (Ctrl+H) / JSON / CSV / Batch CSV (Ctrl+E). В GUI других форматов нет.
 6. Пакет: таблица файлов; Ctrl+N/P — следующее письмо; peers → diff кампании.
 7. Ctrl+Shift+V — компактный режим (только вердикт, без панели исходника).
 8. Ctrl+R — копировать причины вердикта; вкладка «Ошибки» → [L] каталог журнала.
@@ -23,7 +23,9 @@
 | Ctrl+O | Открыть письмо |
 | Ctrl+Enter | Разбор текста слева |
 | Ctrl+H | Тикет (handoff) |
-| Ctrl+E | Экспорт |
+| Ctrl+E | Экспорт (JSON / CSV / Batch CSV / Тикет) |
+| Ctrl+R | Копировать причины вердикта |
+| Ctrl+C / Ctrl+Shift+C | IOC / defanged |
 | Ctrl+Shift+V | Компактный вердикт |
 | Ctrl+N / Ctrl+P | Следующее / предыдущее в пакете |
 | Ctrl+L | Тема |
@@ -35,17 +37,18 @@
 
 Если вложение с паролем — содержимое не извлекается. ПКМ → «Заметка: шифрованный архив» для ITSM. Пароль запрашивайте out-of-band; не открывайте на рабочей станции без песочницы.
 
-## Экспорт SIEM / TI
+## Экспорт
 
-- **ECS** — JSON Elastic Common Schema
-- **CEF** — ArcSight CEF (строки)
-- **STIX** — STIX 2.1 lite bundle
-- **MISP** — attribute CSV
-- **OpenCTI** — observables JSON lite
-- **Кампания** — пакетный handoff по campaign_key (`thread:` / Msg-ID)
-- **Тикет** — текстовый блок для ITSM
+**GUI (выпадающий список):** JSON · CSV · Batch CSV · Тикет.
 
-CLI: `--ecs` / `--cef` / `--stix` / `--misp` / `--opencti` / `--campaign-handoff` / `--handoff`.
+**CLI SIEM / кампания** (в GUI нет; для пайплайнов):
+
+- `--ecs` — Elastic Common Schema JSON
+- `--cef` — ArcSight CEF
+- `--stix` — STIX 2.1 lite bundle
+- `--misp` — attribute CSV
+- `--opencti` — observables JSON lite
+- `--campaign-handoff` / `--campaign-pack` — пакет по campaign_key
 
 UI только на русском. Вердикт: безопасный / неясный / подозрительный / вредоносный.
 
@@ -56,6 +59,6 @@ UI только на русском. Вердикт: безопасный / не
 - `update.json` — локальный манифест (без сети): `latest` / `channel` lite|full / `sha256`
 - «Настройки» в GUI — пути allowlist/verdict/profile, workers, post-export hook + JSON sidecar
 - схема весов: `docs/verdict_extra.schema.json`
-- при старте: self-check Lite/Full + наличиеждения `verdict_extra`
+- при старте: self-check Lite/Full + предупреждения `verdict_extra`
 
 См. также `docs/TUNING.md`, `SECURITY.md`, `docs/SIGNING.md`.

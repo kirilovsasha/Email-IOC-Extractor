@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Docs
+- README / ANALYST_RU: повседневный экспорт только JSON·CSV·Batch CSV·Тикет;
+  SIEM/кампания — отдельный блок «CLI only» (в GUI выпадающего списка нет)
+
 ### Детекция
 - Республика Беларусь: бренды/display-spoof (Беларусбанк, МНС, ЕРИП, Приорбанк, …)
 - BEC-маркеры ЕРИП / УНП / р/с / IBAN BY; unwrap redirect `portal.gov.by` / банки РБ
