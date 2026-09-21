@@ -1,4 +1,4 @@
-"""About dialog helper for Email IOC Extractor GUI."""
+"""Окно «О программе» для GUI Email IOC Extractor."""
 
 from __future__ import annotations
 
@@ -27,25 +27,27 @@ def show_about_dialog(
             f"{k}={Path(v).name}" for k, v in ov.items()
         )
     elif profile_dir:
-        overrides = f"\nProfile: {profile_dir}"
+        overrides = f"\nПрофиль: {profile_dir}"
     update = check_update_manifest()
     update_line = f"\n{update}" if update else ""
     runbook = root / "docs" / "ANALYST_RU.md"
-    runbook_line = f"\nRunbook: {runbook}" if runbook.is_file() else "\nRunbook: docs/ANALYST_RU.md"
+    runbook_line = (
+        f"\nRunbook: {runbook}" if runbook.is_file() else "\nRunbook: docs/ANALYST_RU.md"
+    )
     messagebox.showinfo(
         f"{t('about_title')} — {__app_name__}",
         f"{__app_name__} v{__version__}\n"
         f"{__tagline__}\n\n"
-        "Offline email triage (.eml / .msg).\n"
-        "Verdict first; IOC as evidence. Network blocked.\n\n"
-        "1. Open mail or folder\n"
-        "2. Verdict — score / breakdown / reasons\n"
-        "3. Attachments · URL · IOC\n"
-        "4. Export JSON / CSV / Handoff\n"
-        "5. ПКМ on IOC → allowlist / override\n\n"
-        f"Log: {__log_name__}\n"
-        "Ctrl+O · Ctrl+H handoff · Ctrl+E export · Ctrl+L theme · Ctrl+D density\n"
-        f"Theme: {appearance_mode} · IOC: {ioc_density}"
+        "Офлайн-triage писем (.eml / .msg).\n"
+        "Сначала вердикт; IOC — как доказательства. Сеть заблокирована.\n\n"
+        "1. Откройте письмо или папку\n"
+        "2. Вердикт — score / разбор / причины\n"
+        "3. Вложения · URL · IOC\n"
+        "4. Экспорт JSON / CSV / ECS / CEF / STIX / Handoff\n"
+        "5. ПКМ по IOC → allowlist / override\n\n"
+        f"Журнал: {__log_name__}\n"
+        "Ctrl+O · Ctrl+H handoff · Ctrl+E экспорт · Ctrl+L тема · Ctrl+D плотность\n"
+        f"Тема: {appearance_mode} · IOC: {ioc_density}"
         f"{overrides}{update_line}{runbook_line}\n\n"
-        f"Folder:\n{root}",
+        f"Каталог:\n{root}",
     )

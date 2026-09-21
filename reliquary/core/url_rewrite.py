@@ -45,6 +45,21 @@ DEFENDER_ATP = re.compile(
     r"protection\.office\.com|aka\.ms)/[^\\s\"'<>]*",
     re.IGNORECASE,
 )
+# Blue Coat / Symantec ProxySG: /*,1,0/ or /proxy?url=
+PROXYSG = re.compile(
+    r"https?://[a-z0-9.-]+(?::\d+)?/(?:\*,\d+(?:,\d+)?/|.*(?:proxy|cfredirect))"
+    r"[^\\s\"'<>]*",
+    re.IGNORECASE,
+)
+KASPERSKY = re.compile(
+    r"https?://[a-z0-9.-]*(?:kaspersky|klclick|click\.kaspersky)[a-z0-9.-]*/"
+    r"[^\\s\"'<>]+",
+    re.IGNORECASE,
+)
+DRWEB = re.compile(
+    r"https?://[a-z0-9.-]*(?:drweb|drweb-av)[a-z0-9.-]*/[^\\s\"'<>]+",
+    re.IGNORECASE,
+)
 GENERIC_URL = re.compile(r"(?i)\bhttps?://[^\s<>\"')\]]+")
 
 
@@ -86,6 +101,41 @@ def _param_url(url: str, keys: tuple[str, ...]) -> str | None:
         if key in qs and qs[key]:
             return unquote(qs[key][0])
     return None
+
+
+def _path_embedded_url(url: str) -> str | None:
+    """Extract http(s) URL embedded in path (common for SG / AV wrappers)."""
+    # ProxySG: http://proxy:8080/*,1,/http://evil.example/path
+    m = re.search(r"/\*,\d+(?:,\d+)?/(https?://.+)$", url, re.IGNORECASE)
+    if m:
+        return unquote(m.group(1).rstrip(".,;:!?)"))
+    # Percent-encoded target in path
+    m = re.search(r"/(https?%3A%2F%2F[^\\s\"'<>]+)", url, re.IGNORECASE)
+    if m:
+        return unquote(m.group(1).rstrip(".,;:!?)"))
+    # Second http(s) occurrence (wrapper host + embedded target)
+    matches = list(re.finditer(r"https?://", url, re.IGNORECASE))
+    if len(matches) >= 2:
+        return unquote(url[matches[1].start() :].rstrip(".,;:!?)"))
+    return None
+
+
+def _is_proxysg(lower: str, original: str) -> bool:
+    if "/*," in original or "/*%2c" in lower:
+        return True
+    if "cfredirect" in lower or "proxysg" in lower or "bluecoat" in lower:
+        return True
+    # Host often corporate; path carries embedded target
+    if re.search(r"/\*,\d+", original):
+        return True
+    return False
+
+
+def _decode_proxysg(url: str) -> str | None:
+    candidate = _param_url(url, ("url", "u", "target", "dest", "redirect"))
+    if candidate and candidate.startswith("http"):
+        return candidate
+    return _path_embedded_url(url)
 
 
 def unwrap_url(url: str) -> UrlRewriteResult:
@@ -132,15 +182,32 @@ def unwrap_url(url: str) -> UrlRewriteResult:
             candidate = _param_url(original, ("url", "u", "link"))
             if candidate:
                 unwrapped, rewriter = candidate, "defender_atp"
+        elif _is_proxysg(lower, original):
+            candidate = _decode_proxysg(original)
+            if candidate:
+                unwrapped, rewriter = candidate, "proxysg"
+        elif "kaspersky" in lower or "klclick" in lower:
+            candidate = _param_url(original, ("url", "u", "target", "link", "redir"))
+            if not candidate:
+                candidate = _path_embedded_url(original)
+            if candidate:
+                unwrapped, rewriter = candidate, "kaspersky"
+        elif "drweb" in lower:
+            candidate = _param_url(original, ("url", "u", "target", "link"))
+            if not candidate:
+                candidate = _path_embedded_url(original)
+            if candidate:
+                unwrapped, rewriter = candidate, "drweb"
         else:
             # Generic redirectors: ?url=, ?dest=, ?redirect=, ?r=, ?target=
             candidate = _param_url(
-                original, ("url", "u", "dest", "destination", "redirect", "r", "target", "link")
+                original,
+                ("url", "u", "dest", "destination", "redirect", "r", "target", "link"),
             )
             host = (urlparse(original).hostname or "").lower()
             if candidate and candidate.startswith("http") and host and host not in candidate:
                 unwrapped, rewriter = candidate, "generic_redirect"
-    except Exception:
+    except (ValueError, KeyError, IndexError, TypeError, re.error):
         # Keep original on any parse failure — offline safety first.
         return UrlRewriteResult(
             original=original, unwrapped=original, rewriter="parse_error", changed=False

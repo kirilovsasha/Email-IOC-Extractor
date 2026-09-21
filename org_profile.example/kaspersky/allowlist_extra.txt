@@ -1,0 +1,7 @@
+# Kaspersky mail / cloud noise
+*.kaspersky.com
+*.kaspersky-labs.com
+*.klclick.com
+click.kaspersky.com
+*.avp.ru
+*.kaspersky.ru

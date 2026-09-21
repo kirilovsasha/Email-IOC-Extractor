@@ -1,0 +1,6 @@
+{
+  "_comment": "Kaspersky perimeter: rewrite шум ниже, lookalike чуть выше для RU-брендов",
+  "weight_url_rewrite": 3,
+  "weight_lookalike": 24,
+  "weight_idn": 14
+}

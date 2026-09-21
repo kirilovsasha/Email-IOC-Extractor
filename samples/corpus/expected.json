@@ -60,29 +60,49 @@
       ".xyz"
     ]
   },
+  "fn_bec_ru_wire.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "IP",
+      "fail"
+    ]
+  },
   "fp_hr_pdf_mention.eml": {
     "level": "benign",
     "score_min": 0,
-    "score_max": 9,
-    "reason_substrings": []
-  },
-  "fp_softfail_legit_brand.eml": {
-    "level": "unknown",
-    "score_min": 10,
-    "score_max": 29,
-    "reason_substrings": []
+    "score_max": 9
   },
   "fp_marketing_safelinks.eml": {
     "level": "benign",
     "score_min": 0,
-    "score_max": 15,
-    "reason_substrings": []
+    "score_max": 9
+  },
+  "fp_proxysg_partner.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "fp_ru_calendar.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
+  },
+  "fp_ru_hr_vacation.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9
   },
   "fp_short_brand_partner.eml": {
     "level": "benign",
     "score_min": 0,
-    "score_max": 20,
-    "reason_substrings": []
+    "score_max": 9
+  },
+  "fp_softfail_legit_brand.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
   "malicious_encrypted_zip.eml": {
     "level": "malicious",
@@ -91,7 +111,8 @@
     "reason_substrings": [
       "encrypted",
       "archive",
-      "fail"
+      "fail",
+      "шифр"
     ]
   },
   "malicious_exe_ip_url.eml": {
@@ -112,6 +133,16 @@
     "level": "malicious",
     "score_min": 60,
     "score_max": 100
+  },
+  "malicious_kaspersky_wrap.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "lookalike",
+      "micros0ft",
+      "fail"
+    ]
   },
   "malicious_lookalike.eml": {
     "level": "malicious",
@@ -185,6 +216,17 @@
       "DMARC",
       "softfail",
       "fail"
+    ]
+  },
+  "suspicious_drweb_wrap.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59,
+    "reason_substrings": [
+      ".club",
+      "softfail",
+      "password",
+      "urgent"
     ]
   },
   "suspicious_hidden_html.eml": {

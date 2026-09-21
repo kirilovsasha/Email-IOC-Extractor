@@ -1,0 +1,5 @@
+# Dr.Web / Doctor Web rewrite hosts
+*.drweb.com
+*.drweb.ru
+*.drweb-av.ru
+link.drweb.com

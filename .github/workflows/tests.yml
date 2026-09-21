@@ -60,17 +60,19 @@ jobs:
           reliquary/core/defang.py
           reliquary/core/update_check.py
           reliquary/core/qr_scan.py
+          reliquary/core/office_extract.py
           reliquary/gui/export_actions.py
           reliquary/gui/tabs.py
           reliquary/gui/windowing.py
           reliquary/gui/filters_actions.py
           reliquary/gui/i18n.py
+          reliquary/gui/about.py
       - name: Test + coverage (core)
         run: >
           python -m pytest -q
           --cov=reliquary/core
           --cov-report=term-missing:skip-covered
-          --cov-fail-under=65
+          --cov-fail-under=68
       - name: Corpus metrics
         run: python scripts/corpus_metrics.py
 
@@ -185,7 +187,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install + build
+      - name: Install + build Lite
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
@@ -193,20 +195,40 @@ jobs:
           pip install -e .
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
+          Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Lite.exe
+        shell: pwsh
       - name: Frozen CLI smoke
         shell: cmd
         env:
           PYTHONUTF8: "1"
         run: |
-          dist\EmailIOCExtractor.exe --cli samples\corpus\benign_hr_notice.eml --json dist\smoke_report.json --quiet-verdict
+          dist\EmailIOCExtractor-Lite.exe --cli samples\corpus\benign_hr_notice.eml --json dist\smoke_report.json --quiet-verdict
           if errorlevel 1 exit /b 1
           if not exist dist\smoke_report.json exit /b 1
-      - name: SHA256
+      - name: SHA256 Lite
         shell: pwsh
         run: |
+          Copy-Item dist\EmailIOCExtractor-Lite.exe dist\EmailIOCExtractor.exe -Force
           $hash = (Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  EmailIOCExtractor.exe" | Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
           Get-Content dist\EmailIOCExtractor.exe.sha256
+      - name: Build Full (RAR/QR)
+        env:
+          RELIQUARY_FULL: "1"
+        run: |
+          pip install -e ".[rar,qr]"
+          python -m PyInstaller build/reliquary.spec --noconfirm
+          Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Full.exe
+          # Restore Lite artifact name for release upload
+          Copy-Item dist\EmailIOCExtractor-Lite.exe dist\EmailIOCExtractor.exe -Force
+        shell: pwsh
+      - name: SHA256 Full
+        shell: pwsh
+        run: |
+          Get-FileHash dist\EmailIOCExtractor-Full.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
+          Get-Content dist\EmailIOCExtractor-Full.exe.sha256
       - name: Extract changelog snippet
         shell: bash
         run: |
@@ -225,11 +247,14 @@ jobs:
                   out.append(line)
           sha = Path("dist/EmailIOCExtractor.exe.sha256").read_text(encoding="utf-8").strip()
           digest = sha.split()[0] if sha else "(missing)"
+          full_sha = Path("dist/EmailIOCExtractor-Full.exe.sha256").read_text(encoding="utf-8").strip()
+          full_digest = full_sha.split()[0] if full_sha else "(missing)"
           body = "\n".join(out) + "\n\n## Artifacts\n\n"
-          body += "- `EmailIOCExtractor.exe` — **Lite** build (no RAR/QR extras bundled)\n"
-          body += f"- SHA256: `{digest}`\n"
-          body += "- **Full** (RAR/QR): `build_exe.bat --full` / `RELIQUARY_FULL=1` after `pip install -e \".[rar,qr]\"`\n"
-          body += "- Unsigned by default — see `docs/SIGNING.md` (verify SHA256 before deploy)\n"
+          body += "- `EmailIOCExtractor.exe` — **Lite** (без RAR/QR extras)\n"
+          body += f"- SHA256 Lite: `{digest}`\n"
+          body += "- `EmailIOCExtractor-Full.exe` — **Full** (RAR + QR)\n"
+          body += f"- SHA256 Full: `{full_digest}`\n"
+          body += "- Без подписи по умолчанию — см. `docs/SIGNING.md` (проверяйте SHA256 перед выкладкой)\n"
           Path("release_notes.md").write_text(body, encoding="utf-8")
           PY
       - name: Create GitHub Release
@@ -238,5 +263,7 @@ jobs:
           files: |
             dist/EmailIOCExtractor.exe
             dist/EmailIOCExtractor.exe.sha256
+            dist/EmailIOCExtractor-Full.exe
+            dist/EmailIOCExtractor-Full.exe.sha256
           body_path: release_notes.md
           generate_release_notes: true

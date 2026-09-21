@@ -69,6 +69,12 @@ def test_hook_blocks_powershell() -> None:
     assert err and "blocked" in err
 
 
+def test_hook_blocks_bash_and_metachar() -> None:
+    assert validate_post_export_hook("bash -c 'id'")
+    assert validate_post_export_hook("/bin/sh script.sh")
+    assert validate_post_export_hook("python app_hook.py | tee out")
+
+
 def test_run_hook_allow_external(tmp_path: Path) -> None:
     import sys
 

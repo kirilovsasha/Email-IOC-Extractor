@@ -1,0 +1,13 @@
+From: finance@partner-corp.example
+To: user@company.local
+Subject: Срочно: смена реквизитов для оплаты
+Message-ID: <fn_bec_ru@evil.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+Reply-To: wire-help@totally-other.net
+
+Добрый день. Срочно переведите оплату по новому счёту сегодня.
+Реквизиты во вложении и по ссылке:
+http://203.0.113.88/pay-invoice
+Не звоните на старый номер — пишите только сюда.

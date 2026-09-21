@@ -19,9 +19,9 @@ public issues with exploit details for unpatched local RCE / path-traversal bugs
 | Surface | Guidance |
 |---------|----------|
 | Org profile `.zip` | Only load packs from trusted SOC admins. Zip members are validated against path traversal. |
-| `ui_prefs.json` | Treat as admin-controlled next to the EXE. `post_export_hook` is restricted: blocked downloader tokens; scripts should live under the app directory unless `post_export_hook_allow_external` is set. |
+| `ui_prefs.json` | Treat as admin-controlled next to the EXE. `post_export_hook` is restricted: blocked downloader/shell tokens (curl, powershell, bash, node, …) and shell metacharacters; scripts should live under the app directory unless `post_export_hook_allow_external` is set. |
 | Disable hooks | Set prefs `disable_post_export_hook: true` or env `RELIQUARY_DISABLE_EXPORT_HOOK=1`. |
-| Releases | Verify `EmailIOCExtractor.exe.sha256` before deploy. Prefer Authenticode when available (`docs/SIGNING.md`). |
+| Releases | Verify `EmailIOCExtractor.exe.sha256` / Full SHA256 before deploy. Prefer Authenticode when available (`docs/SIGNING.md`). |
 
 ## Known intentional capabilities
 

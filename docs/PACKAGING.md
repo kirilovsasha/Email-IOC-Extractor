@@ -3,13 +3,15 @@
 ## Current ship form
 
 CI publishes **Lite** `EmailIOCExtractor.exe` + `.sha256` on `main` and on tag `v*`.
-**Full** (RAR/QR) is built with:
+На теге `v*` в Release также публикуется **Full** `EmailIOCExtractor-Full.exe` (RAR/QR).
+
+Локально Full:
 
 ```bat
 build_exe.bat --full
 ```
 
-or in CI via the optional `build-exe-full` job artifact.
+или CI job `build-exe-full` (artifact на push в main).
 
 ## Silent / scripted copy
 
@@ -24,7 +26,7 @@ There is no MSI in-tree. Typical enterprise deploy:
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.6.0
+PackageVersion: 2.7.0
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -36,4 +38,4 @@ Publish via your private winget source; do not rely on public winget for interna
 
 ## Offline version flag
 
-Drop `update.json` next to the EXE (`{"latest":"2.6.1","notes":"..."}`). About dialog shows status — no network.
+Drop `update.json` next to the EXE (`{"latest":"2.7.0","notes":"..."}`). About dialog shows status — no network.

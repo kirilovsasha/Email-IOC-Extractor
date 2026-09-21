@@ -18,12 +18,17 @@ _BLOCKED_PATTERN = re.compile(
     r"curl|wget|bitsadmin|certutil|Invoke-WebRequest|Invoke-RestMethod|"
     r"iwr\b|irm\b|Start-BitsTransfer|ftp\.exe|"
     r"powershell|pwsh|cmd\.exe|cmd\s+/c|msiexec|"
+    r"bash|zsh|sh\b|/bin/sh|/bin/bash|osascript|"
+    r"ruby|perl|node|nodejs|deno|bun|"
+    r"eval\b|base64\s+-d|FromBase64String|"
     r"https?://|ftp://"
     r")\b"
 )
 _INTERPRETER_NAMES = frozenset(
     {"python", "python.exe", "pythonw.exe", "python3", "python3.exe", "py", "py.exe"}
 )
+# Extensions that must live under the app dir even with allow_external=False
+_SCRIPT_SUFFIXES = frozenset({".py", ".bat", ".cmd", ".ps1"})
 
 
 def _env_hooks_disabled() -> bool:
@@ -69,6 +74,9 @@ def validate_post_export_hook(
     joined = " ".join(parts)
     if _BLOCKED_PATTERN.search(joined):
         return "hook blocked: looks like a downloader/shell remote helper"
+    # Reject obvious shell metacharacters even with allow_external
+    if any(tok in joined for tok in ("|", ";", "&&", "`", "$(", "${")):
+        return "hook blocked: shell metacharacters not allowed"
     if allow_external:
         return None
     first = Path(parts[0])
@@ -80,6 +88,13 @@ def validate_post_export_hook(
     if name in _INTERPRETER_NAMES or name.startswith("python"):
         if len(parts) >= 2 and (_under_app(Path(parts[1])) or (app_dir() / parts[1]).is_file()):
             return None
+        return "hook blocked: python script must live under the app directory"
+    # Bare script with known suffix
+    if first.suffix.lower() in _SCRIPT_SUFFIXES:
+        return (
+            "hook blocked: script outside app dir "
+            "(set post_export_hook_allow_external or place script next to the exe)"
+        )
     return (
         "hook blocked: executable outside app dir "
         "(set post_export_hook_allow_external or place script next to the exe)"
@@ -117,7 +132,7 @@ def run_post_export_hook(
             if bool(prefs.get("disable_post_export_hook")):
                 return "hook disabled"
             allow_external = bool(prefs.get("post_export_hook_allow_external"))
-        except Exception:  # noqa: BLE001
+        except (OSError, ValueError, TypeError, KeyError):
             allow_external = False
 
     err = validate_post_export_hook(parts, allow_external=bool(allow_external))

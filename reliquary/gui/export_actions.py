@@ -6,12 +6,19 @@ from pathlib import Path
 from typing import Any
 
 from reliquary.core.export_hook import run_post_export_hook
-from reliquary.core.exporters import export_batch_csv, export_csv, export_report_json
+from reliquary.core.exporters import (
+    export_batch_csv,
+    export_cef,
+    export_csv,
+    export_ecs_json,
+    export_report_json,
+    export_stix_lite,
+)
 from reliquary.core.handoff import export_handoff
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.prefs import load_prefs
 
-EXPORT_CHOICES = ("JSON", "CSV", "Batch CSV", "Handoff")
+EXPORT_CHOICES = ("JSON", "CSV", "Batch CSV", "Handoff", "ECS", "CEF", "STIX")
 
 
 def normalize_export_kind(kind: str) -> str:
@@ -52,6 +59,12 @@ def run_export(
             filters_applied=filters_applied,
             batch_results=batch_results,
         )
+    elif kind_n == "ecs":
+        written = export_ecs_json(result, out)
+    elif kind_n == "cef":
+        written = export_cef(result, out)
+    elif kind_n == "stix":
+        written = export_stix_lite(result, out)
     else:
         raise ValueError(f"Неизвестный формат экспорта: {kind}")
 
@@ -75,4 +88,7 @@ def default_export_filename(kind: str) -> str:
         "batch_csv": "mail_batch_triage.csv",
         "json": "verdict_report.json",
         "handoff": "mail_handoff.txt",
+        "ecs": "mail_ecs.json",
+        "cef": "mail_siem.cef",
+        "stix": "mail_stix_bundle.json",
     }.get(kind_n, "export.bin")

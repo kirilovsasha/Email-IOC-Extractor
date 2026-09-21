@@ -20,7 +20,6 @@ from reliquary.gui.analyst_actions import AnalystActionsMixin
 from reliquary.gui.clipboard_actions import ClipboardActionsMixin
 from reliquary.gui.filters_actions import FiltersActionsMixin
 from reliquary.gui.hotkeys import HotkeysMixin
-from reliquary.gui.i18n import set_ui_lang
 from reliquary.gui.layout import LayoutMixin
 from reliquary.gui.prefs_actions import PrefsMixin
 from reliquary.gui.result_panels import ResultPanelsMixin
@@ -64,7 +63,6 @@ class ExtractorApp(
     def __init__(self) -> None:
         super().__init__()
         self._prefs = load_prefs()
-        set_ui_lang(str(self._prefs.get("ui_lang") or "ru"))
         if bool(self._prefs.get("high_contrast")):
             set_high_contrast(True)
         appearance = str(self._prefs.get("appearance_mode") or "dark")
@@ -396,8 +394,8 @@ class ExtractorApp(
             "encrypted_archive" in a.risk_flags for a in (self.result.attachments or [])
         ):
             menu.add_command(
-                label="Заметка: encrypted archive",
-                command=self._copy_encrypted_archive_note,
+            label="Заметка: шифрованный архив",
+            command=self._copy_encrypted_archive_note,
             )
         try:
             menu.tk_popup(x_root, y_root)

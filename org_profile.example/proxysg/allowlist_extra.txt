@@ -1,0 +1,7 @@
+# ProxySG / Blue Coat CDN and rewrite hosts (noise)
+*.bluecoat.com
+*.symantec.com
+*.broadcom.com
+proxysg.example.local
+sg.company.local
+url.cloud.bluecoat.com

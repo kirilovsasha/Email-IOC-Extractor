@@ -1,0 +1,13 @@
+From: support@vendor.example
+To: user@company.local
+Subject: Документация обновлена
+Message-ID: <sus_drweb@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=softfail; dkim=pass; dmarc=pass
+
+<html><body>
+Проверьте ссылку:
+<a href="https://link.drweb.com/go?url=https%3A%2F%2Fvendor-docs.club%2Freset">docs</a>
+Подтвердите пароль аккаунта немедленно.
+</body></html>

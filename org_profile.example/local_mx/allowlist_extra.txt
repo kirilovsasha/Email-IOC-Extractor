@@ -1,0 +1,8 @@
+# Внутренний MX / корпоративная почта (шум allowlist)
+mail.company.local
+mx.company.local
+smtp.company.local
+*.company.local
+*.corp.local
+owa.company.local
+autodiscover.company.local
