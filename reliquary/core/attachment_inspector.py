@@ -431,14 +431,14 @@ def _parse_lnk_target(data: bytes) -> tuple[list[str], list[str]]:
             continue
         if t and t not in targets:
             targets.append(t)
-    # UTF-16LE paths
+    # UTF-16LE paths (separate match var — mypy: Match[bytes] vs Match[str])
     try:
         wide = data[: min(len(data), 64 * 1024)].decode("utf-16-le", errors="ignore")
-        for m in re.finditer(
+        for wm in re.finditer(
             r"(?i)((?:[A-Za-z]:\\|\\\\|https?://|file://)[^\x00\r\n]{4,240})",
             wide,
         ):
-            t = m.group(1).strip(" \t\"'")
+            t = wm.group(1).strip(" \t\"'")
             if t and t not in targets:
                 targets.append(t)
     except UnicodeError:
