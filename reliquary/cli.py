@@ -11,7 +11,7 @@ from pathlib import Path
 from reliquary import __app_name__, __version__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, run_batch
-from reliquary.core.campaign import export_campaign_handoff
+from reliquary.core.campaign import export_campaign_handoff, export_campaign_pack
 from reliquary.core.export_hook import run_post_export_hook
 from reliquary.core.exporters import (
     export_batch_csv,
@@ -286,6 +286,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Пакетный handoff по кампаниям (папка / несколько писем)",
     )
     exp.add_argument(
+        "--campaign-pack",
+        dest="campaign_pack_out",
+        help="Офлайн SIEM pack (NDJSON или .cef) по пакету писем — без БД",
+    )
+    exp.add_argument(
         "--post-export-hook",
         dest="post_export_hook",
         default=str(load_prefs().get("post_export_hook") or ""),
@@ -534,6 +539,22 @@ def main(argv: list[str] | None = None) -> int:
             )
             if msg:
                 print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "campaign_pack_out", None):
+            pack_path = Path(args.campaign_pack_out)
+            export_campaign_pack(
+                batch_results or [result],
+                pack_path,
+                fmt="cef" if pack_path.suffix.lower() == ".cef" else "ndjson",
+            )
+            print(f"Campaign pack → {args.campaign_pack_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.campaign_pack_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
 
         if result.meta and result.meta.overrides_loaded:
             ov = ", ".join(
@@ -566,6 +587,7 @@ def main(argv: list[str] | None = None) -> int:
                 getattr(args, "misp_out", None),
                 getattr(args, "opencti_out", None),
                 getattr(args, "campaign_out", None),
+                getattr(args, "campaign_pack_out", None),
                 args.iocs_only,
             )
         )

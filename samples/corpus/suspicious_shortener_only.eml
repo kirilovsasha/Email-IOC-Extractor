@@ -1,0 +1,11 @@
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+From: help@odd.xyz
+To: user@company.local
+Subject: =?utf-8?b?0JrQvtGA0L7RgtC60LjQuSDQu9C40L3Qug==?=
+Message-ID: <shortener_only@odd.xyz>
+Authentication-Results: mx; spf=none; dkim=none; dmarc=none
+
+0J/QtdGA0LXQudC00LjRgtC1INC/0L4g0YHRgdGL0LvQutC1IGh0dHBzOi8vYml0Lmx5L3J1LXBh
+eS1ub3cg0YHRgNC+0YfQvdC+Lg==

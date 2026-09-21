@@ -71,6 +71,13 @@ class VerdictConfig:
     weight_html_attachment: int = 10
     weight_url_shortener: int = 10
     weight_messenger_only: int = 14
+    weight_display_spoof: int = 24
+    weight_pdf_uri_action: int = 12
+    weight_cab_archive: int = 14
+    weight_lnk_dangerous: int = 22
+    weight_unrar_missing: int = 10
+    weight_archive_nested_email: int = 16
+    weight_zip_bomb: int = 18
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -291,10 +298,18 @@ def _score_attachments(
         "encrypted_archive",
         "iso_image",
         "shortcut_lnk",
+        "lnk_dangerous",
+        "lnk_http_target",
         "onenote_attachment",
         "pdf_javascript",
+        "pdf_uri_action",
         "html_smuggling",
         "svg_script",
+        "cab_archive",
+        "cab_contains_lnk",
+        "unrar_missing",
+        "archive_nested_email",
+        "zip_bomb_suspect",
     }
     seen_flags: set[str] = set()
     soft_noted = False
@@ -322,7 +337,20 @@ def _score_attachments(
                 )
                 rest.discard("iso_image")
                 rest.discard("dangerous_extension")
-            if "shortcut_lnk" in rest:
+            if "lnk_dangerous" in rest or "lnk_http_target" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_lnk_dangerous,
+                        f"LNK «{att.filename}»: опасная цель (cmd/powershell/http)",
+                    )
+                )
+                rest.discard("lnk_dangerous")
+                rest.discard("lnk_http_target")
+                rest.discard("shortcut_lnk")
+                rest.discard("lnk_target")
+                rest.discard("dangerous_extension")
+            elif "shortcut_lnk" in rest:
                 parts.append(
                     ScoreContribution(
                         "attachments",
@@ -331,6 +359,7 @@ def _score_attachments(
                     )
                 )
                 rest.discard("shortcut_lnk")
+                rest.discard("lnk_target")
                 rest.discard("dangerous_extension")
             if "onenote_attachment" in rest:
                 parts.append(
@@ -350,6 +379,15 @@ def _score_attachments(
                     )
                 )
                 rest.discard("pdf_javascript")
+            if "pdf_uri_action" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_pdf_uri_action,
+                        f"PDF «{att.filename}»: /URI-действие (внешняя ссылка)",
+                    )
+                )
+                rest.discard("pdf_uri_action")
             if "html_smuggling" in rest:
                 parts.append(
                     ScoreContribution(
@@ -368,6 +406,44 @@ def _score_attachments(
                     )
                 )
                 rest.discard("svg_script")
+            if "cab_contains_lnk" in rest or "cab_archive" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_cab_archive,
+                        f"CAB «{att.filename}»"
+                        + (" содержит .lnk" if "cab_contains_lnk" in rest else ""),
+                    )
+                )
+                rest.discard("cab_contains_lnk")
+                rest.discard("cab_archive")
+            if "unrar_missing" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_unrar_missing,
+                        f"RAR «{att.filename}»: UnRAR.exe недоступен — содержимое не разобрано",
+                    )
+                )
+                rest.discard("unrar_missing")
+            if "archive_nested_email" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_archive_nested_email,
+                        f"Архив «{att.filename}» содержит вложенное письмо",
+                    )
+                )
+                rest.discard("archive_nested_email")
+            if "zip_bomb_suspect" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_zip_bomb,
+                        f"Подозрение на zip-bomb «{att.filename}»",
+                    )
+                )
+                rest.discard("zip_bomb_suspect")
             if rest:
                 pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
@@ -536,7 +612,12 @@ def _score_lookalike(
         if hit.kind in seen_kinds and hit.kind != "levenshtein":
             continue
         seen_kinds.add(hit.kind)
-        pts = cfg.weight_idn if hit.kind == "idn" else cfg.weight_lookalike
+        if hit.kind == "idn":
+            pts = cfg.weight_idn
+        elif hit.kind == "display_spoof":
+            pts = cfg.weight_display_spoof
+        else:
+            pts = cfg.weight_lookalike
         parts.append(ScoreContribution("lookalike", pts, hit.detail))
         if len(parts) >= 3:
             break
@@ -545,9 +626,15 @@ def _score_lookalike(
 
 _INTERNAL_RELAY_RE = re.compile(
     r"(?i)\b("
-    r"mail\.internal|intranet|"
+    r"mail\.internal|intranet|corp\.local|ad\.local|"
+    r"mail\.[a-z0-9\-]+\.(local|lan|corp|internal)|"
+    r"mx\.[a-z0-9\-]+\.(local|lan|corp|internal)|"
     r"outlook\.office365\.com|mail\.protection\.outlook\.com|"
-    r"protection\.outlook\.com|mail\.google\.com|googlemail\.com"
+    r"protection\.outlook\.com|mail\.google\.com|googlemail\.com|"
+    # Typical RU / on-prem relay hostnames seen in Received
+    r"mail\.(sber|vtb|alfa|gazprom|rosneft|rzd|rt\.ru)|"
+    r"relay\.[a-z0-9\-]+\.(ru|local)|"
+    r"smtp\.[a-z0-9\-]+\.(local|lan|corp)"
     r")"
 )
 
@@ -617,10 +704,18 @@ def _score_mitigations(
         "mime_mismatch",
         "iso_image",
         "shortcut_lnk",
+        "lnk_dangerous",
+        "lnk_http_target",
         "onenote_attachment",
         "pdf_javascript",
+        "pdf_uri_action",
         "html_smuggling",
         "svg_script",
+        "cab_archive",
+        "cab_contains_lnk",
+        "unrar_missing",
+        "archive_nested_email",
+        "zip_bomb_suspect",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {

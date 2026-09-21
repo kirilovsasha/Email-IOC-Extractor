@@ -293,7 +293,8 @@ def _inventory_7z(data: bytes) -> tuple[list[str], list[str], list[str]]:
             if needs_pw:
                 flags.append("encrypted_archive")
                 notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: 7z — содержимое недоступно без пароля")
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError, Exception) as exc:  # noqa: BLE001
+        # py7zr.Bad7zFile and similar are not always OSError subclasses
         msg = str(exc).lower()
         if "password" in msg:
             flags.append("encrypted_archive")
@@ -448,6 +449,16 @@ def _parse_lnk_target(data: bytes) -> tuple[list[str], list[str]]:
         notes.append("LNK цель: " + "; ".join(targets[:3]))
         for t in targets[:5]:
             notes.append(f"LNK→ {t}")
+        joined = "\n".join(targets)
+        if re.search(
+            r"(?i)(cmd\.exe|powershell|pwsh(\.exe)?|wscript|cscript|mshta|rundll32)",
+            joined,
+        ):
+            flags.append("lnk_dangerous")
+            notes.append("LNK: цель указывает на интерпретатор / cmd")
+        if re.search(r"(?i)(https?://|file://|\\\\)", joined):
+            flags.append("lnk_http_target")
+            notes.append("LNK: цель — URL или UNC-путь")
     else:
         notes.append("LNK: цель не извлечена (проверьте в песочнице)")
     return flags, notes

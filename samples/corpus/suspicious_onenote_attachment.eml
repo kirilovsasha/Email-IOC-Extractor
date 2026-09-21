@@ -1,0 +1,25 @@
+Content-Type: multipart/mixed; boundary="===============0332308990827906894=="
+MIME-Version: 1.0
+From: note@evil.top
+To: victim@company.local
+Subject: =?utf-8?b?0JfQsNC80LXRgtC60LAgT25lTm90ZQ==?=
+Message-ID: <onenote_att@evil.top>
+Authentication-Results: mx; spf=fail; dkim=none; dmarc=fail
+
+--===============0332308990827906894==
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+0KHQvNC+0YLRgNC40YLQtSDQstC70L7QttC10L3QuNC1Lg==
+
+--===============0332308990827906894==
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="meeting.one"
+
+T05FTk9URUZBS0UAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAA
+
+--===============0332308990827906894==--

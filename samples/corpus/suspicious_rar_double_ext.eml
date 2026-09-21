@@ -1,0 +1,24 @@
+Content-Type: multipart/mixed; boundary="===============8742164096038324193=="
+MIME-Version: 1.0
+From: rar@evil.top
+To: victim@company.local
+Subject: =?utf-8?b?0JTQvtC60YPQvNC10L3RgiBSQVI=?=
+Message-ID: <rar_dbl@evil.top>
+Authentication-Results: mx; spf=fail; dkim=fail; dmarc=fail
+
+--===============8742164096038324193==
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+
+0KHRh9GR0YIg0LLQviDQstC70L7QttC10L3QuNC4Lg==
+
+--===============8742164096038324193==
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice.pdf.rar"
+
+UmFyIRoHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+
+--===============8742164096038324193==--

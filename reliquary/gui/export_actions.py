@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from reliquary.core.campaign import export_campaign_handoff
+from reliquary.core.campaign import export_campaign_handoff, export_campaign_pack
 from reliquary.core.export_hook import run_post_export_hook
 from reliquary.core.exporters import (
     export_batch_csv,
@@ -32,6 +32,7 @@ EXPORT_CHOICES = (
     "STIX",
     "MISP",
     "OpenCTI",
+    "Campaign pack",
 )
 
 
@@ -42,6 +43,8 @@ def normalize_export_kind(kind: str) -> str:
         "handoff": "handoff",
         "кампания": "campaign",
         "campaign_handoff": "campaign",
+        "campaign_pack": "campaign_pack",
+        "pack": "campaign_pack",
         "opencti": "opencti",
         "misp_csv": "misp",
     }
@@ -77,6 +80,12 @@ def run_export(
         )
     elif kind_n == "campaign":
         written = export_campaign_handoff(batch_results or [result], out)
+    elif kind_n == "campaign_pack":
+        written = export_campaign_pack(
+            batch_results or [result],
+            out,
+            fmt="cef" if out.suffix.lower() == ".cef" else "ndjson",
+        )
     elif kind_n == "json":
         written = export_report_json(
             result,
@@ -118,6 +127,7 @@ def default_export_filename(kind: str) -> str:
         "json": "verdict_report.json",
         "handoff": "mail_handoff.txt",
         "campaign": "campaign_handoff.txt",
+        "campaign_pack": "campaign_pack.ndjson",
         "ecs": "mail_ecs.json",
         "cef": "mail_siem.cef",
         "stix": "mail_stix_bundle.json",

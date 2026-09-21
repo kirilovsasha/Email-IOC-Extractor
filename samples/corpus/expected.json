@@ -34,6 +34,16 @@
     "score_min": 0,
     "score_max": 9
   },
+  "benign_local_mx_ru.eml": {
+    "level": "benign",
+    "score_min": 0,
+    "score_max": 9,
+    "reason_substrings": [
+      "внутренн",
+      "DMARC",
+      "смягчение"
+    ]
+  },
   "benign_mailing_list.eml": {
     "level": "benign",
     "score_min": 0,
@@ -183,6 +193,15 @@
       "dangerous_extension",
       "SPF",
       "fail"
+    ]
+  },
+  "suspicious_7z_archive.eml": {
+    "level": "suspicious",
+    "score_min": 43,
+    "score_max": 59,
+    "reason_substrings": [
+      "7z",
+      "archive"
     ]
   },
   "suspicious_arc_auth_fail.eml": {
@@ -383,6 +402,14 @@
     "score_min": 60,
     "score_max": 100
   },
+  "suspicious_onenote_attachment.eml": {
+    "level": "malicious",
+    "score_min": 69,
+    "score_max": 94,
+    "reason_substrings": [
+      "OneNote"
+    ]
+  },
   "suspicious_password_safelinks.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -397,13 +424,20 @@
     ]
   },
   "suspicious_pdf_js.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59,
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 80,
     "reason_substrings": [
       "PDF",
-      "JavaScript",
-      "OpenAction"
+      "JavaScript"
+    ]
+  },
+  "suspicious_pdf_uri_only.eml": {
+    "level": "malicious",
+    "score_min": 62,
+    "score_max": 87,
+    "reason_substrings": [
+      "URI"
     ]
   },
   "suspicious_qr_mention.eml": {
@@ -411,10 +445,45 @@
     "score_min": 10,
     "score_max": 29
   },
+  "suspicious_rar_double_ext.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 83,
+    "reason_substrings": [
+      "RAR",
+      "archive"
+    ]
+  },
   "suspicious_return_path_mismatch.eml": {
     "level": "unknown",
     "score_min": 10,
     "score_max": 29
+  },
+  "suspicious_shortener_only.eml": {
+    "level": "suspicious",
+    "score_min": 31,
+    "score_max": 56,
+    "reason_substrings": [
+      "bit.ly",
+      "url_shortener"
+    ]
+  },
+  "suspicious_svg_script.eml": {
+    "level": "malicious",
+    "score_min": 90,
+    "score_max": 100,
+    "reason_substrings": [
+      "SVG",
+      "script"
+    ]
+  },
+  "suspicious_vk_away.eml": {
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 46,
+    "reason_substrings": [
+      "rewrite"
+    ]
   },
   "suspicious_yandex_wrap.eml": {
     "level": "suspicious",

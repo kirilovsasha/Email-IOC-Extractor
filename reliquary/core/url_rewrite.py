@@ -178,16 +178,52 @@ def _unwrap_once(url: str) -> tuple[str, str]:
 
     def _match_mailru(u: str, low: str) -> bool:
         host = (urlparse(u).hostname or "").lower()
-        if host.endswith(("mail.ru", "imgsmail.ru")):
-            return "click" in low or "away" in low or "/cgi-bin/link" in low or "redir" in low
+        if host.endswith(("mail.ru", "imgsmail.ru", "list.ru", "bk.ru", "inbox.ru")):
+            return any(
+                x in low
+                for x in ("click", "away", "/cgi-bin/link", "redir", "go?", "goto")
+            )
         return "click.mail.ru" in low or "away.mail.ru" in low
 
     def _match_yandex(u: str, low: str) -> bool:
         host = (urlparse(u).hostname or "").lower()
-        if "clck.yandex." in host or host.startswith("away.yandex"):
+        if host.startswith(("clck.yandex.", "away.yandex.", "l.yandex.", "href.yandex.")):
             return True
-        if "yandex." in host:
-            return any(x in low for x in ("/clck/", "/redir/", "away.yandex", "l.yandex"))
+        if "yandex." in host or host.endswith("yandex.ru") or host.endswith("ya.ru"):
+            return any(
+                x in low
+                for x in ("/clck/", "/redir/", "away.yandex", "l.yandex", "/goto?", "cc/")
+            )
+        return False
+
+    def _match_vk(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        if host in {"vk.com", "vk.ru", "vk.cc", "away.vk.com"} or host.endswith(".vk.com"):
+            return any(x in low for x in ("away.php", "/away", "to=", "cc/"))
+        return False
+
+    def _match_ok(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        if host in {"ok.ru", "odnoklassniki.ru"} or host.endswith(".ok.ru"):
+            return "dk?" in low or "st.cmd" in low or "redirect" in low or "away" in low
+        return False
+
+    def _match_sber_gov(u: str, low: str) -> bool:
+        host = (urlparse(u).hostname or "").lower()
+        # Corporate / gov click-wraps sometimes front real destinations
+        if any(
+            host.endswith(x)
+            for x in (
+                "sberbank.ru",
+                "sber.ru",
+                "gosuslugi.ru",
+                "mos.ru",
+                "nalog.gov.ru",
+            )
+        ):
+            return any(
+                x in low for x in ("/redirect", "/redir", "url=", "target=", "goto=", "link=")
+            )
         return False
 
     def _decode_kaspersky(u: str) -> str | None:
@@ -204,9 +240,18 @@ def _unwrap_once(url: str) -> tuple[str, str]:
 
     def _decode_yandex(u: str) -> str | None:
         return (
-            _param_url(u, ("url", "u", "target", "link", "redir", "dst"))
+            _param_url(u, ("url", "u", "target", "link", "redir", "dst", "to"))
             or _path_embedded_url(u)
         )
+
+    def _decode_vk(u: str) -> str | None:
+        return _param_url(u, ("to", "url", "u", "target", "link")) or _path_embedded_url(u)
+
+    def _decode_ok(u: str) -> str | None:
+        return _param_url(u, ("st.layer.w", "url", "u", "target", "link", "redir"))
+
+    def _decode_sber_gov(u: str) -> str | None:
+        return _param_url(u, ("url", "u", "target", "link", "redir", "goto"))
 
     def _decode_google(u: str) -> str | None:
         candidate = _param_url(u, ("q", "url", "u"))
@@ -243,6 +288,9 @@ def _unwrap_once(url: str) -> tuple[str, str]:
         ("drweb", _match_drweb, _decode_drweb),
         ("mailru_away", _match_mailru, _decode_mailru),
         ("yandex_redir", _match_yandex, _decode_yandex),
+        ("vk_away", _match_vk, _decode_vk),
+        ("ok_redir", _match_ok, _decode_ok),
+        ("ru_gov_redir", _match_sber_gov, _decode_sber_gov),
         ("generic_redirect", lambda _u, _low: True, _decode_generic),
     ]
 
