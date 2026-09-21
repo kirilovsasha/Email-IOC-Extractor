@@ -112,7 +112,7 @@ class LayoutMixin:
         HoverTip(btn_msgid, "Message-ID / Subject для корреляции")
         btn_handoff = ctk.CTkButton(
             hand,
-            text="Handoff",
+            text="В тикет",
             width=72,
             font=btn_font,
             command=self.copy_handoff,

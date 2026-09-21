@@ -26,7 +26,7 @@ There is no MSI in-tree. Typical enterprise deploy:
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.7.0
+PackageVersion: 2.8.0
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -38,4 +38,6 @@ Publish via your private winget source; do not rely on public winget for interna
 
 ## Offline version flag
 
-Drop `update.json` next to the EXE (`{"latest":"2.7.0","notes":"..."}`). About dialog shows status — no network.
+Drop `update.json` next to the EXE (`{"latest":"2.8.0","notes":"..."}`). About dialog shows status — no network.
+
+Optional CI Authenticode: set repository secrets `SIGNING_PFX_BASE64` and `SIGNING_PFX_PASSWORD`; the release job signs Lite+Full when present.

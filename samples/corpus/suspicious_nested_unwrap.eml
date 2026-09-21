@@ -1,0 +1,12 @@
+From: docs@vendor.example
+To: user@company.local
+Subject: Документация (ссылка через gateway)
+Message-ID: <nested_unwrap@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=softfail; dkim=pass; dmarc=pass
+
+<html><body>
+<a href="https://nam.safelinks.protection.outlook.com/?url=http%3A%2F%2Fsg.company.local%3A8080%2F*%2C1%2C%2Fhttps%3A%2F%2Fvendor-secure.club%2Freset">microsoft.com/login</a>
+Подтвердите пароль немедленно.
+</body></html>

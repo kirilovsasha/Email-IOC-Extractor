@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 
 from reliquary.core.diff import diff_results, find_batch_peer
+from reliquary.core.labels import verdict_label_ru
 from reliquary.core.models import AnalysisResult
 from reliquary.gui.theme import SEVERITY_LABELS_RU
 
@@ -158,7 +159,7 @@ class ResultPanelsMixin:
         left = find_batch_peer(batch, filename=left_name)
         right = find_batch_peer(batch, filename=right_name)
         if left is None or right is None:
-            self._set_status(f"Diff: нет данных для {left_name} / {right_name}")
+            self._set_status(f"Сравнение: нет данных для {left_name} / {right_name}")
             return
         delta = diff_results(left, right)
         if hasattr(self, "_batch_tree_scroll"):
@@ -177,7 +178,7 @@ class ResultPanelsMixin:
             "\n  (повторный разбор пакета восстановит сводку)\n",
             "muted",
         )
-        self._set_status(f"Diff: {left_name} ↔ {right_name}")
+        self._set_status(f"Сравнение: {left_name} ↔ {right_name}")
 
     def _on_batch_row_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]
         widget = self._tk(self.batch_box)
@@ -235,6 +236,9 @@ class ResultPanelsMixin:
             self._put(self.url_box, "      ", "label")
             self._put(self.url_box, f"{u.original}\n", "muted" if u.changed else "value")
             if u.changed:
+                if u.chain and len(u.chain) > 1:
+                    self._put(self.url_box, "   цепочка  ", "label")
+                    self._put(self.url_box, f"{' → '.join(u.chain)}\n", "info")
                 self._put(self.url_box, "   →  ", "label")
                 self._put(self.url_box, f"{u.unwrapped}\n", "value")
             self._put(self.url_box, "\n")
@@ -264,6 +268,12 @@ class ResultPanelsMixin:
             self._put(self.att_box, f"      SHA256  {a.sha256}\n", "value")
             if a.risk_flags:
                 self._put(self.att_box, f"      флаги   {', '.join(a.risk_flags)}\n", "warn")
+            if any("QR:" in n or "опциональный декодер" in n for n in (a.notes or [])):
+                from reliquary.core.qr_scan import qr_decoder_available
+                from reliquary.gui.i18n import t
+
+                if not qr_decoder_available():
+                    self._put(self.att_box, f"      {t('qr_lite')}\n", "warn")
             if a.ole_streams:
                 preview = ", ".join(a.ole_streams[:10])
                 more = len(a.ole_streams) - 10
@@ -315,7 +325,7 @@ class ResultPanelsMixin:
             self._put(self.mail_box, "▸ Вердикт  ", "section")
             self._put(
                 self.mail_box,
-                f"{v.level.value.upper()} · score {v.score}\n",
+                f"{verdict_label_ru(v.level).upper()} ({v.level.value}) · score {v.score}\n",
                 color_tag,
                 "hero",
             )

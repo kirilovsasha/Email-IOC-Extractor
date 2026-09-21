@@ -229,6 +229,26 @@ jobs:
             ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
             Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
           Get-Content dist\EmailIOCExtractor-Full.exe.sha256
+      - name: Optional Authenticode sign
+        if: ${{ secrets.SIGNING_PFX_BASE64 != '' }}
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:SIGNING_PFX_BASE64)
+          [IO.File]::WriteAllBytes("$pwd\sign.pfx", $bytes)
+          $secure = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
+          powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe -PfxPath sign.pfx -PfxPassword $secure
+          powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor-Full.exe -PfxPath sign.pfx -PfxPassword $secure
+          Remove-Item sign.pfx -Force -ErrorAction SilentlyContinue
+          # refresh hashes after signing
+          Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
+          Get-FileHash dist\EmailIOCExtractor-Full.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
       - name: Extract changelog snippet
         shell: bash
         run: |

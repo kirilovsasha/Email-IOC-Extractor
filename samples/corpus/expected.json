@@ -180,6 +180,11 @@
     "score_min": 30,
     "score_max": 59
   },
+  "suspicious_bec_ru_payment.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
+  },
   "suspicious_brand_spoof.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -247,9 +252,9 @@
     ]
   },
   "suspicious_html_form.eml": {
-    "level": "suspicious",
-    "score_min": 30,
-    "score_max": 59
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
   },
   "suspicious_invoice_tld.eml": {
     "level": "suspicious",
@@ -258,6 +263,11 @@
     "reason_substrings": [
       ".club"
     ]
+  },
+  "suspicious_iso_attachment.eml": {
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 29
   },
   "suspicious_messenger_lure.eml": {
     "level": "unknown",
@@ -272,6 +282,11 @@
       "nested",
       "evil.top"
     ]
+  },
+  "suspicious_nested_unwrap.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
   },
   "suspicious_password_safelinks.eml": {
     "level": "suspicious",
@@ -297,9 +312,9 @@
     "score_max": 29
   },
   "unknown_bec_wire.eml": {
-    "level": "unknown",
-    "score_min": 10,
-    "score_max": 29
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 59
   },
   "unknown_empty_body.eml": {
     "level": "unknown",

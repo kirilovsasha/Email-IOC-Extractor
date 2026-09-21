@@ -11,12 +11,15 @@ from pathlib import Path
 from reliquary import __app_name__, __version__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, run_batch
+from reliquary.core.campaign import export_campaign_handoff
 from reliquary.core.export_hook import run_post_export_hook
 from reliquary.core.exporters import (
     export_batch_csv,
     export_cef,
     export_csv,
     export_ecs_json,
+    export_misp_csv,
+    export_opencti_json,
     export_report_json,
     export_stix_lite,
 )
@@ -268,6 +271,21 @@ def main(argv: list[str] | None = None) -> int:
         help="STIX 2.1 lite bundle (indicators)",
     )
     exp.add_argument(
+        "--misp",
+        dest="misp_out",
+        help="MISP attribute CSV",
+    )
+    exp.add_argument(
+        "--opencti",
+        dest="opencti_out",
+        help="OpenCTI observables JSON (lite)",
+    )
+    exp.add_argument(
+        "--campaign-handoff",
+        dest="campaign_out",
+        help="Пакетный handoff по кампаниям (папка / несколько писем)",
+    )
+    exp.add_argument(
         "--post-export-hook",
         dest="post_export_hook",
         default=str(load_prefs().get("post_export_hook") or ""),
@@ -483,6 +501,39 @@ def main(argv: list[str] | None = None) -> int:
             )
             if msg:
                 print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "misp_out", None):
+            export_misp_csv(filtered, args.misp_out)
+            print(f"MISP → {args.misp_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.misp_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "opencti_out", None):
+            export_opencti_json(filtered, args.opencti_out)
+            print(f"OpenCTI → {args.opencti_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.opencti_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "campaign_out", None):
+            export_campaign_handoff(batch_results or [result], args.campaign_out)
+            print(f"Кампания → {args.campaign_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.campaign_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
 
         if result.meta and result.meta.overrides_loaded:
             ov = ", ".join(
@@ -512,6 +563,9 @@ def main(argv: list[str] | None = None) -> int:
                 getattr(args, "ecs_out", None),
                 getattr(args, "cef_out", None),
                 getattr(args, "stix_out", None),
+                getattr(args, "misp_out", None),
+                getattr(args, "opencti_out", None),
+                getattr(args, "campaign_out", None),
                 args.iocs_only,
             )
         )

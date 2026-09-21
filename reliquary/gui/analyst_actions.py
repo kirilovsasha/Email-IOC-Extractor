@@ -9,7 +9,8 @@ from reliquary import __app_name__
 from reliquary.core.allowlist import append_allowlist_entry, resolve_allowlist_path
 from reliquary.core.error_log import append_error_log
 from reliquary.core.handoff import encrypted_archive_handoff_note
-from reliquary.core.models import Ioc, VerdictLevel
+from reliquary.core.labels import parse_verdict_level, verdict_label_ru
+from reliquary.core.models import Ioc
 from reliquary.core.prefs import load_prefs, save_prefs
 from reliquary.gui.i18n import t
 
@@ -57,16 +58,14 @@ class AnalystActionsMixin:
             return
         choice = simpledialog.askstring(
             t("btn_override"),
-            "Новый уровень: benign / unknown / suspicious / malicious",
+            t("verdict_prompt"),
             parent=self,
             initialvalue=self.result.verdict.level.value,
         )
         if not choice:
             return
-        level = choice.strip().lower()
-        try:
-            new_level = VerdictLevel(level)
-        except ValueError:
+        new_level = parse_verdict_level(choice)
+        if new_level is None:
             messagebox.showerror(__app_name__, f"Неизвестный уровень: {choice}")
             return
         note = simpledialog.askstring(
@@ -79,11 +78,16 @@ class AnalystActionsMixin:
         v.analyst_override = new_level.value
         v.analyst_note = note.strip()
         v.level = new_level
-        v.summary = f"[override аналитика {old}→{new_level.value}] {v.summary}"
+        v.summary = (
+            f"[сменён аналитиком {verdict_label_ru(old)}→"
+            f"{verdict_label_ru(new_level)}] {v.summary}"
+        )
         if note.strip():
             v.reasons = [f"Аналитик: {note.strip()}"] + list(v.reasons)
         self._refresh_views(full=True)
-        self._set_status(f"Override: {old} → {new_level.value}")
+        self._set_status(
+            f"Вердикт: {verdict_label_ru(old)} → {verdict_label_ru(new_level)}"
+        )
 
     def _copy_encrypted_archive_note(self) -> None:
         name = ""

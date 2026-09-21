@@ -19,6 +19,18 @@ CREDENTIAL_RE = re.compile(
     r")\b"
 )
 
+BEC_RE = re.compile(
+    r"(?i)\b("
+    r"wire\s*transfer|bank\s*transfer|change\s*(?:of\s*)?banking|"
+    r"new\s*(?:bank\s*)?details|payment\s*instructions|"
+    r"реквизит\w*|перевод\w*\s*(?:на\s*)?(?:сч[её]т|карт)|"
+    r"смен\w*\s*реквизит|оплат\w*\s*сегодня|срочн\w*\s*оплат|"
+    r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
+    r"пишите\s*только\s*сюда|не\s*звоните|CEO\s*urgent|"
+    r"генеральн\w*\s*директор|финансов\w*\s*директор"
+    r")\b"
+)
+
 HIDDEN_STYLE_RE = re.compile(
     r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|"
     r"opacity\s*:\s*0|color\s*:\s*#?fff(?:fff)?|"
@@ -40,35 +52,40 @@ def _visible_text(soup: BeautifulSoup) -> str:
 
 
 def _href_mismatch(soup: BeautifulSoup) -> list[ContentSignal]:
+    from reliquary.core.url_rewrite import unwrap_url
+
     hits: list[ContentSignal] = []
     for a in soup.find_all("a", href=True):
         href = unescape(str(a.get("href") or "")).strip()
         label = a.get_text(" ", strip=True)
         if not href or not label or href.startswith(("mailto:", "#", "tel:")):
             continue
-        # Skip if label is not URL-like
         label_l = label.lower().strip()
         if "://" not in label_l and "." not in label_l:
             continue
         try:
-            href_host = (urlparse(href).hostname or "").lower()
-        except Exception:  # noqa: BLE001
+            final = unwrap_url(href)
+            href_for_host = final.unwrapped if final.changed else href
+            href_host = (urlparse(href_for_host).hostname or "").lower()
+        except (ValueError, TypeError, AttributeError):
             continue
-        # Extract host-ish from visible label
         label_host = label_l
         if "://" in label_host:
             try:
                 label_host = (urlparse(label_host).hostname or label_host).lower()
-            except Exception:  # noqa: BLE001
+            except (ValueError, TypeError, AttributeError):
                 pass
         label_host = label_host.split("/")[0].split("?")[0].lstrip("www.")
         href_host = href_host.lstrip("www.")
         if href_host and label_host and href_host != label_host and label_host in label_l:
             if len(label_host) >= 4 and "." in label_host:
+                detail = f"Ссылка «{label[:60]}» ведёт на {href_host}"
+                if final.changed and final.chain:
+                    detail += f" (после unwrap: {'→'.join(final.chain)})"
                 hits.append(
                     ContentSignal(
                         "href_mismatch",
-                        f"Ссылка «{label[:60]}» ведёт на {href_host}",
+                        detail,
                         "weight_href_mismatch",
                     )
                 )
@@ -152,11 +169,20 @@ def analyze_content_signals(
             )
         )
 
+    if BEC_RE.search(blob):
+        signals.append(
+            ContentSignal(
+                "bec_payment",
+                "Маркеры BEC / смены реквизитов / оплаты вне канала",
+                "weight_bec_payment",
+            )
+        )
+
     soup: BeautifulSoup | None = None
     if html and ("<" in html):
         try:
             soup = BeautifulSoup(html, "lxml")
-        except Exception:  # noqa: BLE001
+        except (ValueError, TypeError, OSError):
             soup = None
         if soup is not None:
             signals.extend(_href_mismatch(soup))

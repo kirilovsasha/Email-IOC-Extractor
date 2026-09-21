@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 
 # Bump when top-level JSON report shape changes in a breaking way.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class IocType(str, Enum):
@@ -132,6 +132,8 @@ class UrlRewriteResult:
     unwrapped: str
     rewriter: str
     changed: bool
+    # Ordered rewriter steps for nested SafeLinks→ProxySG→… chains
+    chain: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -248,7 +250,7 @@ class AnalysisResult:
     meta: AnalysisMeta | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "source_path": self.source_path,
             "source_kind": self.source_kind,
@@ -260,6 +262,15 @@ class AnalysisResult:
             "raw_headers": self.raw_headers,
             "mail_identity": self.mail_identity.to_dict() if self.mail_identity else None,
             "url_rewrites": [u.to_dict() for u in self.url_rewrites],
+            "unwrap_chains": [
+                {
+                    "original": u.original,
+                    "final": u.unwrapped,
+                    "chain": list(u.chain) or ([u.rewriter] if u.changed else []),
+                }
+                for u in self.url_rewrites
+                if u.changed
+            ],
             "attachments": [a.to_dict() for a in self.attachments],
             "verdict": self.verdict.to_dict() if self.verdict else None,
             "raw_text_preview": self.raw_text_preview,
@@ -269,3 +280,28 @@ class AnalysisResult:
             "file_rows": [r.to_dict() for r in self.file_rows],
             "meta": self.meta.to_dict() if self.meta else None,
         }
+        if self.verdict and self.verdict.analyst_override:
+            payload["analyst_override"] = {
+                "level": self.verdict.analyst_override,
+                "note": self.verdict.analyst_note or "",
+            }
+        if self.file_rows:
+            campaigns = []
+            by_key: dict[str, list[FileTriageRow]] = {}
+            for row in self.file_rows:
+                by_key.setdefault(row.campaign_key or row.path, []).append(row)
+            for key, rows in by_key.items():
+                campaigns.append(
+                    {
+                        "campaign_key": key,
+                        "file_count": len(rows),
+                        "paths": [r.path for r in rows],
+                        "max_score": max((r.verdict_score or 0) for r in rows),
+                        "levels": {
+                            lvl: sum(1 for r in rows if r.verdict_level == lvl)
+                            for lvl in {r.verdict_level for r in rows if r.verdict_level}
+                        },
+                    }
+                )
+            payload["campaign"] = campaigns
+        return payload

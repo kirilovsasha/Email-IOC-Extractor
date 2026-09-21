@@ -28,19 +28,24 @@
 
 Если вложение с паролем — содержимое не извлекается. ПКМ → «Заметка: шифрованный архив» для ITSM. Пароль запрашивайте out-of-band; не открывайте на рабочей станции без песочницы.
 
-## Экспорт SIEM
+## Экспорт SIEM / TI
 
 - **ECS** — JSON Elastic Common Schema
 - **CEF** — ArcSight CEF (строки)
 - **STIX** — STIX 2.1 lite bundle
+- **MISP** — attribute CSV
+- **OpenCTI** — observables JSON lite
+- **Кампания** — пакетный handoff по campaign_key
 
-CLI: `--ecs` / `--cef` / `--stix`. GUI: выбор формата в комбобоксе экспорта.
+CLI: `--ecs` / `--cef` / `--stix` / `--misp` / `--opencti` / `--campaign-handoff`.
+
+UI только на русском. Вердикт в интерфейсе: безопасный / неясный / подозрительный / вредоносный.
 
 ## Overrides рядом с EXE
 
 - `allowlist_extra.txt`, `verdict_extra.json`, `org_profile/`
 - `ui_prefs.json` — prefs (контраст `high_contrast`, hook…)
-- `update.json` — локальный манифест версии (без сети): `{"latest":"2.7.0"}`
+- `update.json` — локальный манифест версии (без сети): `{"latest":"2.8.0"}`
 
 UI только на русском.
 

@@ -13,7 +13,7 @@ CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
 
 def test_schema_version_constant() -> None:
-    assert SCHEMA_VERSION >= 1
+    assert SCHEMA_VERSION >= 2
     result = analyze_file(CORPUS / "benign_hr_notice.eml")
     assert result.to_dict()["schema_version"] == SCHEMA_VERSION
 

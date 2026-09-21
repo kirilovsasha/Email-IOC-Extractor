@@ -1,0 +1,13 @@
+From: ceo@partner-finance.example
+To: accounting@company.local
+Subject: Срочно: смените реквизиты для оплаты счёта
+Message-ID: <bec_ru_payment@phish.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+Reply-To: pay-desk@totally-other.net
+
+Добрый день. По распоряжению генерального директора срочно оплатите
+сегодня на новые реквизиты. Пишите только в Telegram @finance_desk_help.
+Не звоните на старый номер.
+http://203.0.113.91/invoice-pay

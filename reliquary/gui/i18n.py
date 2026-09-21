@@ -15,19 +15,24 @@ _STRINGS: dict[str, str] = {
     "btn_folder": "Папка",
     "btn_cancel": "Стоп",
     "btn_export": "Экспорт",
-    "btn_handoff": "Handoff",
+    "btn_handoff": "В тикет",
     "btn_allowlist": "В allowlist",
-    "btn_override": "Override вердикта",
+    "btn_override": "Сменить вердикт",
     "btn_copy_enc_note": "Заметка: шифрованный архив",
     "status_ready": "Готово",
     "status_analyzing": "Разбор…",
     "status_cancelled": "Отменено",
     "batch_need_two": "Нужно ≥2 файла для пакетной таблицы",
-    "batch_diff": "diff vs peer",
+    "batch_diff": "сравнить с peer",
     "about_title": "О программе",
     "high_contrast": "Контраст",
     "update_available": "Доступна новая версия (локальный манифест)",
     "update_ok": "Версия актуальна (манифест)",
+    "qr_lite": "QR-декод недоступен (сборка Lite / нет pyzbar) — используйте Full",
+    "verdict_prompt": (
+        "Новый уровень: безопасный / неясный / подозрительный / вредоносный\n"
+        "(или benign / unknown / suspicious / malicious)"
+    ),
 }
 
 

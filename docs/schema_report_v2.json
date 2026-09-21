@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.soc/reliquary/report.schema.v2.json",
+  "title": "Email IOC Extractor report",
+  "description": "JSON export schema_version = 2 (reliquary.core.models.SCHEMA_VERSION)",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "unwrap_chains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "original": { "type": "string" },
+          "final": { "type": "string" },
+          "chain": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "campaign": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "campaign_key": { "type": "string" },
+          "file_count": { "type": "integer" },
+          "paths": { "type": "array", "items": { "type": "string" } },
+          "max_score": { "type": "integer" },
+          "levels": { "type": "object" }
+        }
+      }
+    },
+    "analyst_override": {
+      "type": ["object", "null"],
+      "properties": {
+        "level": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "app_version": { "type": "string" },
+        "overrides_loaded": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "verdict": {
+      "type": ["object", "null"],
+      "properties": {
+        "level": { "type": "string", "enum": ["benign", "unknown", "suspicious", "malicious"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "summary": { "type": "string" },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "breakdown": { "type": "array" },
+        "analyst_override": { "type": ["string", "null"] },
+        "analyst_note": { "type": "string" }
+      }
+    },
+    "iocs": { "type": "array" },
+    "content_signals": { "type": "array", "items": { "type": "string" } }
+  }
+}
