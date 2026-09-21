@@ -117,6 +117,8 @@ class ExtractorApp(
         self._brands_path = str(self._prefs.get("brands_path") or "") or None
         self._profile_dir = str(self._prefs.get("profile_dir") or "") or None
         self._handoff_by_level: dict[str, str] | None = None
+        self._archive_passwords: tuple[str, ...] = ()
+        self._inbox_watcher = None
         self._job_busy = False
         self._hint_default = "Откройте письмо или вставьте RFC822 · затем вкладка «Вердикт»"
         self._flash_after_id: str | None = None
@@ -176,6 +178,10 @@ class ExtractorApp(
             self.after(200, lambda: self._set_status(short[:180]))
         except (OSError, AttributeError, TypeError, ValueError):
             pass
+        if bool(self._prefs.get("watch_inbox_enabled")) and str(
+            self._prefs.get("watch_inbox_dir") or ""
+        ).strip():
+            self.after(500, self.toggle_watch_inbox)
 
     # ------------------------------------------------------------------ UI
     def _on_window_configure(self, event: tk.Event) -> None:  # type: ignore[type-arg]
@@ -412,12 +418,29 @@ class ExtractorApp(
             label="Сменить вердикт…",
             command=self._override_verdict,
         )
+        menu.add_separator()
+        menu.add_command(
+            label="Feedback: ложное срабатывание (FP)",
+            command=lambda: self._record_feedback("fp"),
+        )
+        menu.add_command(
+            label="Feedback: пропуск (FN)",
+            command=lambda: self._record_feedback("fn"),
+        )
+        menu.add_command(
+            label="Feedback: подтвердить вердикт",
+            command=lambda: self._record_feedback("confirm"),
+        )
         if self.result and any(
             "encrypted_archive" in a.risk_flags for a in (self.result.attachments or [])
         ):
             menu.add_command(
-            label="Заметка: шифрованный архив",
-            command=self._copy_encrypted_archive_note,
+                label="Заметка: шифрованный архив",
+                command=self._copy_encrypted_archive_note,
+            )
+            menu.add_command(
+                label="Пароль архива и переразбор…",
+                command=self.unlock_encrypted_and_reanalyze,
             )
         try:
             menu.tk_popup(x_root, y_root)

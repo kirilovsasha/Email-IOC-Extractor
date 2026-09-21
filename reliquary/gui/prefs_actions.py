@@ -176,15 +176,22 @@ class PrefsMixin:
             append_error_log("failed to save ui_prefs.json")
 
     def _on_close(self) -> None:
+        watcher = getattr(self, "_inbox_watcher", None)
+        if watcher is not None:
+            try:
+                watcher.stop()
+            except (AttributeError, RuntimeError):
+                pass
+            self._inbox_watcher = None
         try:
             self._persist_prefs()
-        except Exception as exc:  # noqa: BLE001
+        except OSError as exc:
             append_error_log("prefs save on close failed", exc=exc)
         profile = getattr(self, "_org_profile", None)
         if profile is not None:
             try:
                 profile.cleanup()
-            except Exception as exc:  # noqa: BLE001
+            except (OSError, AttributeError, RuntimeError) as exc:
                 append_error_log("org profile cleanup failed", exc=exc)
             self._org_profile = None
         self.destroy()

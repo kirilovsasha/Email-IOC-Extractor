@@ -61,6 +61,16 @@ jobs:
           reliquary/core/update_check.py
           reliquary/core/qr_scan.py
           reliquary/core/office_extract.py
+          reliquary/core/feedback.py
+          reliquary/core/archive_unlock.py
+          reliquary/core/weight_compare.py
+          reliquary/core/mbox_ingest.py
+          reliquary/core/inbox_watch.py
+          reliquary/core/yara_scan.py
+          reliquary/core/verdict_config.py
+          reliquary/core/verdict_scoring.py
+          reliquary/core/verdict_confidence.py
+          reliquary/core/org_profile_install.py
           reliquary/gui/export_actions.py
           reliquary/gui/tabs.py
           reliquary/gui/windowing.py

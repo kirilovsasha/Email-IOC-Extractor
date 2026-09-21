@@ -24,7 +24,12 @@ from reliquary.core.exporters import (
     export_stix_lite,
 )
 from reliquary.core.filter_state import FilterState
-from reliquary.core.formats import collect_supported, formats_help_line, is_supported
+from reliquary.core.formats import (
+    collect_supported,
+    expand_input_paths,
+    formats_help_line,
+    is_supported,
+)
 from reliquary.core.handoff import export_handoff
 from reliquary.core.offline import enforce_offline
 from reliquary.core.org_profile import load_org_profile
@@ -41,11 +46,16 @@ def _print_verdict(result, stream=None) -> None:
         for err in result.errors[:5]:
             print(f"  ! {err}", file=stream)
         return
+    conf = getattr(v, "confidence", "") or ""
+    conf_s = f"  confidence={conf}" if conf else ""
     print(
-        f"\n[{__app_name__}] ВЕРДИКТ {v.level.value.upper()}  score={v.score}/100",
+        f"\n[{__app_name__}] ВЕРДИКТ {v.level.value.upper()}  score={v.score}/100{conf_s}",
         file=stream,
     )
     print(f"  {v.summary}", file=stream)
+    note = getattr(v, "confidence_note", "") or ""
+    if note:
+        print(f"  Почему: {note}", file=stream)
     for reason in v.reasons[:10]:
         print(f"  • {reason}", file=stream)
 
@@ -90,7 +100,7 @@ def _resolve_inputs(args: argparse.Namespace) -> list[str]:
         if key not in seen:
             seen.add(key)
             out.append(p)
-    return [p for p in out if is_supported(p)]
+    return expand_input_paths([p for p in out if is_supported(p) or Path(p).suffix.lower() == ".mbox"])
 
 
 def _configure_stdio() -> None:
@@ -151,9 +161,38 @@ def main(argv: list[str] | None = None) -> int:
         help="Калибровка inbox: сегменты FP/FN по папке .eml/.msg (без БД)",
     )
     parser.add_argument(
+        "--compare-weights",
+        nargs=3,
+        metavar=("DIR", "VERDICT_A", "VERDICT_B"),
+        help="A/B сравнение двух verdict_extra.json по папке",
+    )
+    parser.add_argument(
+        "--feedback-summary",
+        action="store_true",
+        help="Сводка analyst_feedback.ndjson и выход",
+    )
+    parser.add_argument(
+        "--archive-password",
+        action="append",
+        default=[],
+        metavar="PWD",
+        help="Пароль для encrypted ZIP/7z/RAR (можно несколько раз; не логируется)",
+    )
+    parser.add_argument(
+        "--enable-yara",
+        action="store_true",
+        help="Офлайн YARA scan (нужен pip install .[yara] и rules рядом с EXE)",
+    )
+    parser.add_argument(
+        "--yara-rules",
+        dest="yara_rules_path",
+        default=None,
+        help="Путь к .yar или папке правил",
+    )
+    parser.add_argument(
         "path",
         nargs="?",
-        help="Письмо (.eml/.msg) или папка с письмами",
+        help="Письмо (.eml/.msg/.mbox) или папка с письмами",
     )
     parser.add_argument(
         "files",
@@ -354,6 +393,20 @@ def main(argv: list[str] | None = None) -> int:
         print(report.to_text())
         return 0 if report.file_count else 1
 
+    if getattr(args, "feedback_summary", False):
+        from reliquary.core.feedback import feedback_summary
+
+        print(feedback_summary())
+        return 0
+
+    if getattr(args, "compare_weights", None):
+        from reliquary.core.weight_compare import compare_verdict_weights
+
+        folder, va, vb = args.compare_weights
+        report = compare_verdict_weights(folder, verdict_a=va, verdict_b=vb)
+        print(report.to_text())
+        return 0 if report.rows else 1
+
     if not args.path and not args.text and not args.files:
         parser.print_help()
         return 2
@@ -366,6 +419,13 @@ def main(argv: list[str] | None = None) -> int:
     opts.profile_dir = args.profile_dir or opts.profile_dir
     opts.max_workers = args.workers
     opts.skip_broken = not args.no_skip_broken
+    pwds = tuple(p for p in (getattr(args, "archive_password", None) or []) if p)
+    if pwds:
+        opts.archive_passwords = pwds
+    if getattr(args, "enable_yara", False):
+        opts.enable_yara = True
+    if getattr(args, "yara_rules_path", None):
+        opts.yara_rules_path = args.yara_rules_path
 
     profile = load_org_profile(opts.profile_dir)
     try:

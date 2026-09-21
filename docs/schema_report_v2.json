@@ -67,6 +67,8 @@
         "summary": { "type": "string" },
         "reasons": { "type": "array", "items": { "type": "string" } },
         "breakdown": { "type": "array" },
+        "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+        "confidence_note": { "type": "string" },
         "analyst_override": { "type": ["string", "null"] },
         "analyst_note": { "type": "string" }
       }

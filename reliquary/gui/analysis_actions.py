@@ -11,17 +11,23 @@ from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, format_eta, run_batch
 from reliquary.core.calibration import calibrate_inbox
 from reliquary.core.error_log import append_error_log
-from reliquary.core.formats import collect_supported, tk_filetypes
+from reliquary.core.formats import collect_supported, expand_input_paths, tk_filetypes
 from reliquary.core.models import AnalysisResult
 from reliquary.core.org_profile import load_org_profile
 from reliquary.core.paths import app_dir
 from reliquary.core.pipeline import analyze_text
+from reliquary.core.weight_compare import compare_verdict_weights
 
 
 class AnalysisActionsMixin:
     """Requires ExtractorApp prefs, widgets, and ``_apply_result`` helpers."""
 
     def _analysis_options(self) -> AnalysisOptions:
+        pwds = tuple(
+            p
+            for p in getattr(self, "_archive_passwords", ()) or ()
+            if isinstance(p, str) and p.strip()
+        )
         opts = AnalysisOptions(
             allowlist_path=getattr(self, "_allowlist_path", None),
             verdict_path=getattr(self, "_verdict_path", None),
@@ -30,6 +36,9 @@ class AnalysisActionsMixin:
             profile_dir=getattr(self, "_profile_dir", None),
             max_workers=int(self._prefs.get("max_workers") or 0),
             skip_broken=bool(self._prefs.get("skip_broken", True)),
+            archive_passwords=pwds,
+            yara_rules_path=str(self._prefs.get("yara_rules_path") or "") or None,
+            enable_yara=bool(self._prefs.get("enable_yara", False)),
         )
         old = getattr(self, "_org_profile", None)
         if old is not None:
@@ -165,7 +174,7 @@ class AnalysisActionsMixin:
             return
         self._last_dir = str(Path(paths[0]).parent)
         self._persist_prefs()
-        self._analyze_paths(list(paths))
+        self._analyze_paths(expand_input_paths(list(paths)))
 
     def open_folder(self) -> None:
         folder = filedialog.askdirectory(
@@ -180,7 +189,7 @@ class AnalysisActionsMixin:
         if not paths:
             messagebox.showinfo(
                 __app_name__,
-                "В папке нет писем (.eml / .msg).",
+                "В папке нет писем (.eml / .msg / .mbox).",
             )
             return
         try:
@@ -195,6 +204,130 @@ class AnalysisActionsMixin:
             ):
                 return
         self._analyze_paths(paths)
+
+    def compare_weights_folder(self) -> None:
+        """A/B сравнение двух verdict_extra по папке inbox."""
+        folder = filedialog.askdirectory(
+            title=f"{__app_name__} — папка для сравнения весов",
+            initialdir=str(self._prefs.get("last_inbox_dir") or self._last_dir or "")
+            or None,
+        )
+        if not folder:
+            return
+        path_a = filedialog.askopenfilename(
+            title="verdict_extra A (пусто = defaults рядом с EXE)",
+            filetypes=[("JSON", "*.json"), ("Все", "*.*")],
+        )
+        path_b = filedialog.askopenfilename(
+            title="verdict_extra B",
+            filetypes=[("JSON", "*.json"), ("Все", "*.*")],
+        )
+        if not path_b:
+            messagebox.showinfo(__app_name__, "Нужен файл B для сравнения")
+            return
+        self._sync_job_row(busy=True)
+        self._set_status("Сравнение весов…")
+
+        def _run() -> None:
+            try:
+                report = compare_verdict_weights(
+                    folder,
+                    verdict_a=path_a or None,
+                    verdict_b=path_b,
+                )
+                out = app_dir() / "weight_compare_report.txt"
+                out.write_text(report.to_text(), encoding="utf-8")
+
+                def _ok() -> None:
+                    self._sync_job_row(busy=False)
+                    if hasattr(self, "err_box"):
+                        self._clear_box(self.err_box)
+                        self._put(self.err_box, report.to_text(), "value")
+                        if "err" in getattr(self, "_tab_label_by_key", {}):
+                            label = self._tab_label_by_key["err"]
+                            self._tab_var.set(label)
+                            self._tab_seg.set(label)
+                            self._show_tab_frame("err")
+                    self._set_status(
+                        f"Сравнение весов: изменено {report.changed_count}/{len(report.rows)}"
+                    )
+                    messagebox.showinfo(
+                        __app_name__,
+                        f"Изменилось: {report.changed_count} из {len(report.rows)}\n"
+                        f"Отчёт: {out}",
+                    )
+
+                self.after(0, _ok)
+            except Exception as exc:  # noqa: BLE001
+                append_error_log("weight compare failed", exc=exc)
+                msg = str(exc)
+
+                def _fail() -> None:
+                    self._sync_job_row(busy=False)
+                    messagebox.showerror("Ошибка", msg)
+
+                self.after(0, _fail)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def toggle_watch_inbox(self) -> None:
+        """Вкл/выкл опрос папки watch-inbox."""
+        from reliquary.core.inbox_watch import InboxWatcher
+
+        watcher = getattr(self, "_inbox_watcher", None)
+        if watcher is not None and watcher.running:
+            watcher.stop()
+            self._inbox_watcher = None
+            self._prefs["watch_inbox_enabled"] = False
+            self._persist_prefs()
+            self._set_status("Watch-inbox: выкл")
+            return
+        folder = str(self._prefs.get("watch_inbox_dir") or "").strip()
+        if not folder:
+            folder = filedialog.askdirectory(
+                title=f"{__app_name__} — папка watch-inbox",
+                initialdir=self._last_dir or None,
+            )
+            if not folder:
+                return
+            self._prefs["watch_inbox_dir"] = folder
+        interval = float(self._prefs.get("watch_interval_s") or 3)
+        self._inbox_watcher = InboxWatcher(
+            folder,
+            on_new=lambda paths: self.after(0, lambda: self._analyze_paths(list(paths))),
+            interval_s=interval,
+        )
+        self._inbox_watcher.start()
+        self._prefs["watch_inbox_enabled"] = True
+        self._persist_prefs()
+        self._set_status(f"Watch-inbox: {folder}")
+
+    def unlock_encrypted_and_reanalyze(self) -> None:
+        """Запросить пароль архива и переразобрать текущее письмо."""
+        from tkinter import simpledialog
+
+        if not self.result or not self.result.source_path:
+            messagebox.showinfo(__app_name__, "Сначала откройте письмо с архивом")
+            return
+        has_enc = any(
+            "encrypted_archive" in (a.risk_flags or []) for a in (self.result.attachments or [])
+        )
+        if not has_enc:
+            messagebox.showinfo(__app_name__, "Нет вложений с флагом encrypted_archive")
+            return
+        pwd = simpledialog.askstring(
+            __app_name__,
+            "Пароль архива (только для этой сессии, не сохраняется):",
+            parent=self,
+            show="*",
+        )
+        if not pwd:
+            return
+        existing = list(getattr(self, "_archive_passwords", ()) or ())
+        if pwd not in existing:
+            existing.append(pwd)
+        self._archive_passwords = tuple(existing)
+        self._analyze_paths([self.result.source_path])
 
     def _on_drop(self, files) -> None:
         from reliquary.core.formats import SUPPORTED_SUFFIXES
@@ -215,12 +348,12 @@ class AnalysisActionsMixin:
                 paths.append(str(path))
             elif path.is_dir():
                 paths.extend(collect_supported(path, recursive=True))
-        paths = sorted(set(paths))
+        paths = expand_input_paths(sorted(set(paths)))
         if not paths:
             self.after(
                 0,
                 lambda: messagebox.showinfo(
-                    __app_name__, "Нет писем (.eml / .msg) для разбора"
+                    __app_name__, "Нет писем (.eml / .msg / .mbox) для разбора"
                 ),
             )
             return

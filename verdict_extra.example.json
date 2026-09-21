@@ -64,5 +64,6 @@
   "weight_archive_double_extension": 16,
   "weight_script_attachment": 20,
   "weight_disk_image": 16,
-  "weight_cloud_lure": 14
+  "weight_cloud_lure": 14,
+  "weight_yara_match": 25
 }

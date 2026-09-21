@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.15.0
+
+### Детекция / вердикт
+- Уверенность вердикта (`confidence` high/medium/low) + текст «Почему»
+- Разнесение scoring: `verdict_config` / `verdict_scoring` / `verdict_confidence`
+- Сессионный пароль encrypted ZIP/7z/RAR → извлечение членов (`archive_unlocked`)
+- Опциональный offline YARA (`weight_yara_match`, extra `yara`)
+
+### Продукт / EXE
+- FP/FN feedback → `analyst_feedback.ndjson` (GUI ПКМ + `--feedback-summary`)
+- Watch-inbox: опрос папки на новые письма
+- A/B сравнение весов (`--compare-weights`, кнопка «A/B»)
+- Вход `.mbox` (разворот во временные `.eml`)
+- Мастер импорта org_profile в «Настройки»
+- CLI: `--archive-password`, `--enable-yara`, `--yara-rules`
+
+### Качество
+- Corpus: BEC без URL, reply-chain spoof
+- Тесты v2.15; ROADMAP + GitHub issue templates
+- Docs / schema: `weight_yara_match`, confidence в JSON
+
 ## 2.14.0
 
 ### Детекция

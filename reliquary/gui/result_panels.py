@@ -511,11 +511,22 @@ class ResultPanelsMixin:
             self._put(self.mail_box, "▸ Вердикт  ", "section")
             self._put(
                 self.mail_box,
-                f"{verdict_label_ru(v.level).upper()} ({v.level.value}) · score {v.score}\n",
+                f"{verdict_label_ru(v.level).upper()} ({v.level.value}) · score {v.score}",
                 color_tag,
                 "hero",
             )
-            self._put(self.mail_box, f"  {v.summary}\n\n", "value")
+            conf = getattr(v, "confidence", "") or ""
+            if conf:
+                conf_tag = {"high": "ok", "medium": "info", "low": "warn"}.get(conf, "info")
+                self._put(self.mail_box, f" · уверенность {conf}\n", conf_tag, "hero")
+            else:
+                self._put(self.mail_box, "\n", color_tag, "hero")
+            self._put(self.mail_box, f"  {v.summary}\n", "value")
+            note = getattr(v, "confidence_note", "") or ""
+            if note:
+                self._put(self.mail_box, f"  Почему: {note}\n\n", "muted")
+            else:
+                self._put(self.mail_box, "\n", "value")
             if v.breakdown:
                 self._put(self.mail_box, "  Разбор score\n", "label")
                 for b in v.breakdown:

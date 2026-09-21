@@ -113,11 +113,31 @@ class LayoutMixin:
             command=self.calibrate_inbox_folder,
             **BTN_SECONDARY,
         )
-        btn_cal.pack(side="left")
+        btn_cal.pack(side="left", padx=(0, 4))
         HoverTip(
             btn_cal,
             "Калибровка inbox: сегменты FP/FN без БД (отчёт → файл рядом с EXE)",
         )
+        btn_watch = ctk.CTkButton(
+            src,
+            text="Watch",
+            width=56,
+            font=btn_font,
+            command=self.toggle_watch_inbox,
+            **BTN_SECONDARY,
+        )
+        btn_watch.pack(side="left", padx=(0, 4))
+        HoverTip(btn_watch, "Опрос папки watch-inbox на новые письма")
+        btn_wcmp = ctk.CTkButton(
+            src,
+            text="A/B",
+            width=44,
+            font=btn_font,
+            command=self.compare_weights_folder,
+            **BTN_SECONDARY,
+        )
+        btn_wcmp.pack(side="left")
+        HoverTip(btn_wcmp, "Сравнение двух verdict_extra по папке")
 
         hand_shell, hand = toolbar_group(actions, "Буфер", compact=True)
         self._hand_shell = hand_shell

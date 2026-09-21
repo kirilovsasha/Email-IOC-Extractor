@@ -18,6 +18,10 @@ class AnalysisOptions:
     profile_dir: str | Path | None = None
     max_workers: int = 0  # 0 = auto
     skip_broken: bool = True
+    # Session passwords for encrypted ZIP/7z/RAR (never persisted)
+    archive_passwords: tuple[str, ...] = ()
+    yara_rules_path: str | Path | None = None
+    enable_yara: bool = False
 
     def resolved_allowlist(self) -> str | Path | None:
         return self.allowlist_path
@@ -52,6 +56,8 @@ class AnalysisOptions:
             profile_dir=str(prefs.get("profile_dir") or "") or None,
             max_workers=int(prefs.get("max_workers") or 0),
             skip_broken=bool(prefs.get("skip_broken", True)),
+            yara_rules_path=str(prefs.get("yara_rules_path") or "") or None,
+            enable_yara=bool(prefs.get("enable_yara", False)),
         )
 
     def overrides_loaded(self) -> dict[str, str]:

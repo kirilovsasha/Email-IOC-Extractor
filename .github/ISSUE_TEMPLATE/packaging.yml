@@ -1,0 +1,18 @@
+name: Packaging / fleet
+description: EXE, signing, org_profile, air-gap deploy
+title: "[packaging] "
+labels: ["packaging"]
+body:
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Lite/Full, signed?, org_profile?
+    validations:
+      required: true
+  - type: textarea
+    id: ask
+    attributes:
+      label: Ask
+    validations:
+      required: true

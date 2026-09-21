@@ -1,0 +1,15 @@
+name: GUI / UX
+description: Desktop analyst workflow
+title: "[gui] "
+labels: ["gui"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal

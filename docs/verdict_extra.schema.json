@@ -68,6 +68,7 @@
     "weight_script_attachment": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_disk_image": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_cloud_lure": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_yara_match": { "type": "integer", "minimum": -50, "maximum": 100 },
     "cap_headers": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_attachments": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_urls": { "type": "integer", "minimum": 0, "maximum": 100 },

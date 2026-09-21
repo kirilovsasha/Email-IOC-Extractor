@@ -46,7 +46,10 @@ Display-spoof: `weight_display_spoof` (отдельно от `weight_lookalike`)
 `tnef`, `iso`, `archive_password`, `oob_delivery`, `nested_mail`, `ru_rewrite`, …
 
 Новые веса: `weight_office_hyperlink`, `weight_script_attachment`, `weight_cloud_lure`,
-`weight_disk_image`, `weight_nested_archive`, `weight_archive_double_extension`.
+`weight_disk_image`, `weight_nested_archive`, `weight_archive_double_extension`,
+`weight_yara_match` (2.15, optional YARA).
+
+Вердикт JSON (2.15+): поля `confidence` (`high`|`medium`|`low`) и `confidence_note`.
 
 ## Calibration loop
 

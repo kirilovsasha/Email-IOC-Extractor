@@ -1,0 +1,22 @@
+name: Detection
+description: New signal / weight / corpus case
+title: "[detection] "
+labels: ["detection"]
+body:
+  - type: textarea
+    id: signal
+    attributes:
+      label: Signal
+      description: What should we detect? (headers, attachment, content, unwrap…)
+    validations:
+      required: true
+  - type: textarea
+    id: corpus
+    attributes:
+      label: Corpus / sample
+      description: Anonymized .eml sketch or path under samples/corpus
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Expected verdict band
+      options: [benign, unknown, suspicious, malicious]

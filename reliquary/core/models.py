@@ -192,6 +192,9 @@ class Verdict:
     # Analyst manual override (GUI/CLI); does not recompute score
     analyst_override: str | None = None
     analyst_note: str = ""
+    # high | medium | low — distance to band edge + risk/mitigation balance
+    confidence: str = "medium"
+    confidence_note: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -201,7 +204,10 @@ class Verdict:
             "reasons": self.reasons,
             "actions": [a.to_dict() for a in self.actions],
             "breakdown": [b.to_dict() for b in self.breakdown],
+            "confidence": self.confidence,
         }
+        if self.confidence_note:
+            data["confidence_note"] = self.confidence_note
         if self.analyst_override:
             data["analyst_override"] = self.analyst_override
         if self.analyst_note:

@@ -1,0 +1,19 @@
+Return-Path: <help@evil-support.gq>
+Received: from mail.evil-support.gq ([203.0.113.50]) by mx.company.local; Mon, 21 Sep 2026 11:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "Поддержка Microsoft" <help@evil-support.gq>
+To: user@company.local
+Subject: Re: Ваш тикет #44102
+In-Reply-To: <legit-ticket@company.local>
+References: <legit-ticket@company.local>
+Message-ID: <reply-spoof@evil-support.gq>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Здравствуйте!
+
+По вашему обращению нужно подтвердить пароль учётной записи.
+Перейдите по ссылке: http://micros0ft-login.gq/owa/auth
+
+С уважением,
+Microsoft Support

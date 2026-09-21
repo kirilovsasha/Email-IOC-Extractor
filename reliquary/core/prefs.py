@@ -50,6 +50,13 @@ _DEFAULTS: dict[str, Any] = {
     # Batch tree: last sort column / reverse
     "batch_sort_column": "score",
     "batch_sort_reverse": True,
+    # Watch-inbox: poll folder for new .eml/.msg
+    "watch_inbox_dir": "",
+    "watch_inbox_enabled": False,
+    "watch_interval_s": 3,
+    # Optional YARA (extra)
+    "yara_rules_path": "",
+    "enable_yara": False,
 }
 
 _APPEARANCE_OK = frozenset({"dark", "light", "system"})
@@ -93,7 +100,7 @@ def _coerce_value(key: str, value: Any, default: Any) -> Any:
         except (TypeError, ValueError):
             return default
         return max(0.75, min(2.0, scale))
-    if key in ("folder_warn_threshold", "max_workers"):
+    if key in ("folder_warn_threshold", "max_workers", "watch_interval_s"):
         try:
             n = int(value)
         except (TypeError, ValueError):

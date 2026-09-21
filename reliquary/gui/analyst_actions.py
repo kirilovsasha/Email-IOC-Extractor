@@ -123,3 +123,53 @@ class AnalystActionsMixin:
         except (AttributeError, ValueError, TypeError, tk.TclError):
             pass
         self._set_status(f"{t('high_contrast')}: {'вкл' if enabled else 'выкл'}")
+
+    def _record_feedback(self, kind: str) -> None:
+        """FP / FN / confirm → analyst_feedback.ndjson рядом с EXE."""
+        from reliquary.core.calibration import segment_for
+        from reliquary.core.feedback import FeedbackEvent, append_feedback
+
+        if not self.result or not self.result.verdict:
+            messagebox.showinfo(__app_name__, "Сначала разберите письмо")
+            return
+        v = self.result.verdict
+        observed = v.level.value
+        if kind == "fp":
+            expected = "benign"
+            prompt = "Ожидаемый уровень (по умолчанию benign):"
+        elif kind == "fn":
+            expected = "suspicious"
+            prompt = "Ожидаемый уровень (suspicious/malicious):"
+        else:
+            expected = observed
+            prompt = "Подтверждённый уровень:"
+        choice = simpledialog.askstring(
+            __app_name__, prompt, parent=self, initialvalue=expected
+        )
+        if choice is None:
+            return
+        expected = (choice or expected).strip().lower() or expected
+        note = simpledialog.askstring(
+            __app_name__, "Комментарий (необязательно):", parent=self
+        ) or ""
+        sha = ""
+        if self.result.meta and self.result.meta.source_sha256:
+            sha = self.result.meta.source_sha256
+        try:
+            seg = segment_for(self.result)
+        except Exception:  # noqa: BLE001
+            seg = ""
+        path = append_feedback(
+            FeedbackEvent(
+                kind=kind,
+                expected_level=expected,
+                observed_level=observed,
+                score=int(v.score),
+                source_path=self.result.source_path or "",
+                source_sha256=sha,
+                note=note.strip(),
+                segment=seg,
+            )
+        )
+        self._set_status(f"Feedback {kind} → {path.name}")
+        messagebox.showinfo(__app_name__, f"Записано в {path.name}")

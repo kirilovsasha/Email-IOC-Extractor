@@ -599,5 +599,27 @@
       "SPF",
       "none"
     ]
+  },
+  "suspicious_bec_no_url.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "fail",
+      "DMARC",
+      "реквизит",
+      "срочн"
+    ]
+  },
+  "suspicious_reply_chain_spoof.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100,
+    "reason_substrings": [
+      "fail",
+      "lookalike",
+      "micros0ft",
+      "парол"
+    ]
   }
 }

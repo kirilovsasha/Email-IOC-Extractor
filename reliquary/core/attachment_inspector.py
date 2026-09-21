@@ -7,6 +7,7 @@ import io
 import re
 import zipfile
 from pathlib import Path
+from typing import Iterable
 
 import filetype
 
@@ -549,12 +550,16 @@ def _scan_script_payload(filename: str, data: bytes) -> tuple[list[str], list[st
 
 
 def extract_nested_mail_from_archive(
-    data: bytes, *, container_name: str = "archive"
+    data: bytes,
+    *,
+    container_name: str = "archive",
+    passwords: Iterable[str] | None = None,
 ) -> tuple[list["AttachmentInfo"], list[str]]:
     """Extract .eml/.msg members from ZIP (or RAR if tool available)."""
     notes: list[str] = []
     extracted: list[AttachmentInfo] = []
     lower = container_name.lower()
+    pwds = [p for p in (passwords or []) if (p or "").strip()]
 
     def _add(name: str, payload: bytes) -> None:
         if len(payload) > MAX_NESTED_MEMBER_BYTES:
@@ -569,8 +574,20 @@ def extract_nested_mail_from_archive(
     if data[:2] == b"PK" or lower.endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                if any(zi.flag_bits & 0x1 for zi in zf.infolist()):
-                    notes.append("ZIP зашифрован — вложенные письма не извлечены")
+                encrypted = any(zi.flag_bits & 0x1 for zi in zf.infolist())
+                if encrypted:
+                    if not pwds:
+                        notes.append("ZIP зашифрован — вложенные письма не извлечены")
+                        return extracted, notes
+                    from reliquary.core.archive_unlock import extract_zip_with_passwords
+
+                    members, xnotes = extract_zip_with_passwords(data, pwds)
+                    notes.extend(xnotes)
+                    for name, payload in members:
+                        if Path(name).suffix.lower() in NESTED_MAIL_EXT:
+                            _add(name, payload)
+                        if len(extracted) >= MAX_NESTED_MEMBERS:
+                            break
                     return extracted, notes
                 for zi in zf.infolist():
                     if zi.is_dir():
@@ -601,7 +618,18 @@ def extract_nested_mail_from_archive(
         try:
             with rarfile.RarFile(io.BytesIO(data)) as rf:
                 if rf.needs_password():
-                    notes.append("RAR зашифрован — вложенные письма не извлечены")
+                    if not pwds:
+                        notes.append("RAR зашифрован — вложенные письма не извлечены")
+                        return extracted, notes
+                    from reliquary.core.archive_unlock import extract_rar_with_passwords
+
+                    members, xnotes = extract_rar_with_passwords(data, pwds)
+                    notes.extend(xnotes)
+                    for name, payload in members:
+                        if Path(name).suffix.lower() in NESTED_MAIL_EXT:
+                            _add(name, payload)
+                        if len(extracted) >= MAX_NESTED_MEMBERS:
+                            break
                     return extracted, notes
                 for info in rf.infolist():
                     name = getattr(info, "filename", "") or ""

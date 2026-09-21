@@ -562,12 +562,26 @@ def _enrich_parsed_result(
 
     # Expand nested mail from ZIP/RAR and TNEF into attachment list (bounded)
     expanded: list = []
+    passwords = tuple(opts.archive_passwords or ())
     for att in list(result.attachments):
+        if (
+            att.data
+            and passwords
+            and "encrypted_archive" in (att.risk_flags or [])
+        ):
+            try:
+                from reliquary.core.archive_unlock import unlock_attachment
+
+                _att, kids, unotes = unlock_attachment(att, passwords)
+                result.errors.extend(unotes)
+                expanded.extend(kids)
+            except (OSError, ValueError, TypeError, RuntimeError) as exc:
+                result.errors.append(f"Unlock {att.filename}: {exc}")
         if att.data and "archive_nested_email" in (att.risk_flags or []):
             from reliquary.core.attachment_inspector import extract_nested_mail_from_archive
 
             kids, knotes = extract_nested_mail_from_archive(
-                att.data, container_name=att.filename
+                att.data, container_name=att.filename, passwords=passwords
             )
             result.errors.extend(knotes)
             expanded.extend(kids)
@@ -683,6 +697,23 @@ def _enrich_parsed_result(
     result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
     if tag_filename:
         result.iocs = [_tag_file(i, tag_filename) for i in result.iocs]
+    if opts.enable_yara:
+        try:
+            from reliquary.core.yara_scan import scan_result_attachments
+
+            body_blob = f"{getattr(parsed, 'text', '')}\n{getattr(parsed, 'html', '')}"
+            hits, ynotes = scan_result_attachments(
+                result.attachments,
+                body=body_blob,
+                rules_path=opts.yara_rules_path,
+            )
+            result.errors.extend(ynotes)
+            for rule in hits:
+                sig = f"yara:{rule}"
+                if sig not in result.content_signals:
+                    result.content_signals.append(sig)
+        except (OSError, TypeError, ValueError, ImportError) as exc:
+            result.errors.append(f"YARA: {exc}")
     if result.source_kind == "email":
         cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
         allow_domains: set[str] = set()

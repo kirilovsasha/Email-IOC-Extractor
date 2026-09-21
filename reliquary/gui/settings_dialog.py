@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import customtkinter as ctk
 
+from reliquary.core.org_profile_install import install_org_profile, verify_org_profile
 from reliquary.core.prefs import load_prefs, save_prefs
 from reliquary.gui.theme import BTN_PRIMARY, BTN_SECONDARY, COLORS, ctk_font
 
@@ -150,6 +151,57 @@ def show_settings_dialog(
     _check(noise, "full_ioc_types", "Все типы IOC (registry/mutex/…)")
     _path_row(noise, "last_inbox_dir", "Папка калибровки", dir_mode=True)
 
+    watch = _section("Watch-inbox / YARA")
+    _path_row(watch, "watch_inbox_dir", "Папка watch", dir_mode=True)
+    _int_row(watch, "watch_interval_s", "Интервал опроса (сек)")
+    _check(watch, "watch_inbox_enabled", "Включать watch при старте")
+    _path_row(watch, "yara_rules_path", "YARA rules (.yar / папка)")
+    _check(watch, "enable_yara", "Сканировать YARA (нужен extra)")
+
+    profile_wiz = _section("Org profile — мастер")
+    row_p = ctk.CTkFrame(profile_wiz, fg_color="transparent")
+    row_p.pack(fill="x", pady=4)
+
+    def _install_profile() -> None:
+        chosen = filedialog.askopenfilename(
+            parent=win,
+            title="org_profile.zip или выберите папку через Отмена→askdirectory",
+            filetypes=[("ZIP", "*.zip"), ("Все", "*.*")],
+        )
+        src: str | None = chosen or None
+        if not src:
+            src = filedialog.askdirectory(parent=win, title="Папка org_profile")
+        if not src:
+            return
+        try:
+            dest, notes = install_org_profile(src)
+            sample = None
+            samples = list(Path(src).rglob("*.eml")) if Path(src).is_dir() else []
+            if not samples:
+                corp = Path.cwd() / "samples" / "corpus"
+                if corp.is_dir():
+                    samples = list(corp.glob("benign_*.eml"))[:1]
+            if samples:
+                sample = samples[0]
+            vnotes = verify_org_profile(dest, sample_eml=sample)
+            messagebox.showinfo(
+                "Org profile",
+                "\n".join(notes + vnotes),
+                parent=win,
+            )
+            entries["profile_dir"].delete(0, "end")
+            entries["profile_dir"].insert(0, str(dest))
+        except (OSError, ValueError, TypeError, RuntimeError) as exc:
+            messagebox.showerror("Org profile", str(exc), parent=win)
+
+    ctk.CTkButton(
+        row_p,
+        text="Импорт профиля…",
+        width=160,
+        command=_install_profile,
+        **BTN_SECONDARY,
+    ).pack(side="left")
+
     exp = _section("Экспорт по умолчанию")
     row_e = ctk.CTkFrame(exp, fg_color="transparent")
     row_e.pack(fill="x", pady=3)
@@ -181,7 +233,7 @@ def show_settings_dialog(
         }
         for key, ent in entries.items():
             val = ent.get().strip()
-            if key in ("max_workers", "folder_warn_threshold"):
+            if key in ("max_workers", "folder_warn_threshold", "watch_interval_s"):
                 try:
                     updates[key] = int(val or "0")
                 except ValueError:
