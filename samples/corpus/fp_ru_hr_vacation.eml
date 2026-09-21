@@ -1,0 +1,12 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: hr@company.local
+To: staff@company.local
+Subject: График отпусков на октябрь
+Message-ID: <fp_ru_hr@company.local>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+Коллеги, напоминаем согласовать отпуска в портале HR до пятницы.
+Документ во вложении PDF (только упоминание, без файла).
+https://intranet.company.local/hr/vacation

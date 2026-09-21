@@ -1,0 +1,12 @@
+From: notify@bank-secure.gq
+To: user@company.local
+Subject: Ваш кабинет Сбер заблокирован — подтвердите вход
+Message-ID: <mal_kaspersky@phish.gq>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+
+<html><body>
+<p>Срочно подтвердите личность:</p>
+<a href="https://click.kaspersky.com/link?url=https%3A%2F%2Fmicros0ft-login.xyz%2Fowa">войти</a>
+</body></html>

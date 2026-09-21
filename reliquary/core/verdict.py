@@ -48,6 +48,7 @@ class VerdictConfig:
     weight_header_low: int = 4
     weight_attachment_flag: int = 20
     weight_attachment_soft: int = 8
+    weight_encrypted_archive: int = 22
     weight_url_rewrite: int = 5
     weight_url_raw_ip: int = 18
     weight_suspicious_tld: int = 10
@@ -230,15 +231,33 @@ def _score_attachments(
         hit = high_flags.intersection(att.risk_flags) - seen_flags
         if hit:
             seen_flags |= hit
-            # Charge once per unique flag type, not per attachment×flag
-            pts = cfg.weight_attachment_flag * min(2, len(hit))
-            parts.append(
-                ScoreContribution(
-                    "attachments",
-                    pts,
-                    f"Вложение «{att.filename}»: {', '.join(sorted(hit))}",
+            if "encrypted_archive" in hit:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_encrypted_archive,
+                        f"Шифрованный архив «{att.filename}» — содержимое не извлечено офлайн",
+                    )
                 )
-            )
+                rest = hit - {"encrypted_archive"}
+                if rest:
+                    pts = cfg.weight_attachment_flag * min(2, len(rest))
+                    parts.append(
+                        ScoreContribution(
+                            "attachments",
+                            pts,
+                            f"Вложение «{att.filename}»: {', '.join(sorted(rest))}",
+                        )
+                    )
+            else:
+                pts = cfg.weight_attachment_flag * min(2, len(hit))
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        pts,
+                        f"Вложение «{att.filename}»: {', '.join(sorted(hit))}",
+                    )
+                )
         elif (
             not soft_noted
             and ("archive" in att.risk_flags or "office_macro_capable" in att.risk_flags)

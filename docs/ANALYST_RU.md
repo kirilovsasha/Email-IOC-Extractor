@@ -26,12 +26,22 @@
 
 ## Encrypted archive
 
-Если вложение с паролем — содержимое не извлекается. ПКМ → «Заметка: encrypted archive» для ITSM. Пароль запрашивайте out-of-band; не открывайте на рабочей станции без песочницы.
+Если вложение с паролем — содержимое не извлекается. ПКМ → «Заметка: шифрованный архив» для ITSM. Пароль запрашивайте out-of-band; не открывайте на рабочей станции без песочницы.
+
+## Экспорт SIEM
+
+- **ECS** — JSON Elastic Common Schema
+- **CEF** — ArcSight CEF (строки)
+- **STIX** — STIX 2.1 lite bundle
+
+CLI: `--ecs` / `--cef` / `--stix`. GUI: выбор формата в комбобоксе экспорта.
 
 ## Overrides рядом с EXE
 
 - `allowlist_extra.txt`, `verdict_extra.json`, `org_profile/`
-- `ui_prefs.json` — prefs (язык `ui_lang`, контраст `high_contrast`, hook…)
-- `update.json` — локальный манифест версии (без сети): `{"latest":"2.6.0"}`
+- `ui_prefs.json` — prefs (контраст `high_contrast`, hook…)
+- `update.json` — локальный манифест версии (без сети): `{"latest":"2.7.0"}`
+
+UI только на русском.
 
 См. также `docs/TUNING.md`, `SECURITY.md`, `docs/SIGNING.md`.

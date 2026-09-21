@@ -9,6 +9,7 @@
   "weight_header_low": 4,
   "weight_attachment_flag": 20,
   "weight_attachment_soft": 8,
+  "weight_encrypted_archive": 22,
   "weight_url_rewrite": 5,
   "weight_url_raw_ip": 18,
   "weight_suspicious_tld": 10,

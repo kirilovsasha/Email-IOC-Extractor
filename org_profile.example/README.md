@@ -1,37 +1,41 @@
 # Org profile pack
 
-Drop this folder next to the Reliquary exe as `org_profile/`, or point prefs `profile_dir` / CLI at a folder or `.zip`. Files are optional local overrides — no rebuild required.
+Положите эту папку рядом с exe как `org_profile/` или укажите prefs `profile_dir` / CLI на папку или `.zip`. Файлы — локальные overrides без пересборки.
 
-## Files
+## Файлы
 
-| File | Purpose |
-|------|---------|
-| `allowlist_extra.txt` | Extra allowlisted hosts/domains (one per line). Merged with built-in allowlist. |
-| `verdict_extra.json` | Override `VerdictConfig` thresholds, weights, and per-category caps. See [`docs/TUNING.md`](../docs/TUNING.md). |
-| `handoff_extra.txt` | Default ITSM handoff template. |
-| `handoff_{level}.txt` | Level-specific handoff (`malicious` / `suspicious` / `unknown` / `benign`). |
-| `brands.txt` | Brand / lookalike watchlist. |
+| Файл | Назначение |
+|------|------------|
+| `allowlist_extra.txt` | Доп. allowlist хостов/доменов (по строке). Мержится со встроенным. |
+| `verdict_extra.json` | Пороги/веса/caps `VerdictConfig`. См. [`docs/TUNING.md`](../docs/TUNING.md). |
+| `handoff_extra.txt` | Шаблон ITSM handoff по умолчанию. |
+| `handoff_{level}.txt` | Handoff по уровню (`malicious` / `suspicious` / `unknown` / `benign`). |
+| `brands.txt` | Бренды для lookalike. |
 
-## Ready-made presets
+## Готовые пресеты
 
-| Preset | Path | Focus |
+| Пресет | Путь | Фокус |
 |--------|------|--------|
-| Microsoft 365 | [`m365/`](m365/) | SafeLinks / Outlook / Graph / CDN allowlist + brands |
-| Google Workspace | [`google/`](google/) | Google mail / Drive / CDN allowlist + brands |
-| Banking / finance | [`banking/`](banking/) | Stricter thresholds, bank brand watchlist |
+| Microsoft 365 | [`m365/`](m365/) | SafeLinks / Outlook / Graph / CDN |
+| Google Workspace | [`google/`](google/) | Google mail / Drive / CDN |
+| Banking / finance | [`banking/`](banking/) | Жёстче пороги + банк-бренды |
+| ProxySG / Blue Coat | [`proxysg/`](proxysg/) | rewrite-шум SG, корпоративный proxy |
+| Kaspersky | [`kaspersky/`](kaspersky/) | KL click-wrap + RU-бренды |
+| Dr.Web | [`drweb/`](drweb/) | Dr.Web link wrap |
+| Local MX | [`local_mx/`](local_mx/) | Внутренний MX, сильнее mitigations |
 
-Copy a preset to `org_profile/` next to the exe, or: `reliquary mail.eml --profile org_profile.example/m365`
+Скопируйте пресет в `org_profile/` рядом с exe или: `reliquary mail.eml --profile org_profile.example/m365`
 
-## Resolution order for handoff templates
+## Порядок шаблонов handoff
 
-1. Explicit `handoff_template_path` (CLI / prefs) if set.
-2. Matching entry from an in-memory `handoff_by_level` map (profile pack).
-3. `handoff_{level}.txt` next to the app or inside the profile folder.
+1. Явный `handoff_template_path` (CLI / prefs), если задан.
+2. Запись из `handoff_by_level` (profile pack).
+3. `handoff_{level}.txt` рядом с приложением или в профиле.
 4. `handoff_extra.txt`.
-5. Built-in compact default block.
+5. Встроенный компактный блок.
 
-Repo-root examples: `allowlist_extra.example.txt`, `verdict_extra.example.json`, `handoff_extra.example.txt`, `handoff_malicious.example.txt`.
+Примеры в корне: `allowlist_extra.example.txt`, `verdict_extra.example.json`, `handoff_extra.example.txt`, `handoff_malicious.example.txt`.
 
-## Zip packs
+## Zip-пакеты
 
-A `.zip` may contain the files at the archive root or inside a single top-level folder.
+В `.zip` файлы могут лежать в корне архива или в одной верхней папке.

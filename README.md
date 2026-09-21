@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.6.0
+**Mail. Extract. Decide.** · v2.7.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
@@ -9,7 +9,7 @@ URL rewrite, IOC как доказательства и **вердикт**
 
 📡 Сеть не используется. Пакет Python — `reliquary`; продукт — **Email IOC Extractor**.
 
-📦 Экспорт: JSON (`schema_version`) · CSV · Batch CSV · Handoff (ITSM).
+📦 Экспорт: JSON (`schema_version`) · CSV · Batch CSV · Handoff · ECS · CEF · STIX.
 
 | 🖥️ GUI | ⌨️ CLI | 📁 Batch | 🎫 Handoff | 🧩 Org profile | 🏗️ EXE |
 
@@ -112,6 +112,9 @@ reliquary mail.eml
 reliquary mail.eml --csv out.csv
 reliquary mail.eml --handoff ticket.txt
 reliquary mail.eml --json report.json
+reliquary mail.eml --ecs report.ecs.json
+reliquary mail.eml --cef report.cef
+reliquary mail.eml --stix report.stix.json
 
 # папка / пакет
 reliquary ./inbox --json report.json --batch-csv triage.csv --workers 4
@@ -189,7 +192,11 @@ Mitigations не применяются при auth fail/softfail/none, HIGH-а�
 
 **Пресеты:** [`org_profile.example/m365`](org_profile.example/m365) ·
 [`google`](org_profile.example/google) ·
-[`banking`](org_profile.example/banking) —
+[`banking`](org_profile.example/banking) ·
+[`proxysg`](org_profile.example/proxysg) ·
+[`kaspersky`](org_profile.example/kaspersky) ·
+[`drweb`](org_profile.example/drweb) ·
+[`local_mx`](org_profile.example/local_mx) —
 см. [`org_profile.example/README.md`](org_profile.example/README.md).
 
 CLI: `--allowlist` · `--verdict` · `--handoff-template` · `--profile` · `--post-export-hook`  
@@ -209,7 +216,7 @@ Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`,
 
 ## 🧪 Корпус и тесты
 
-Golden corpus: `samples/corpus/` + `expected.json` (**40** писем по всем уровням).
+Golden corpus: `samples/corpus/` + `expected.json` (**~46** писем по всем уровням).
 
 ```bash
 pip install -r requirements-dev.txt

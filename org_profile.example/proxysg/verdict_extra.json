@@ -1,0 +1,5 @@
+{
+  "_comment": "ProxySG: rewrite unwraps локально; снизить вес rewrite как шума",
+  "weight_url_rewrite": 2,
+  "weight_lookalike": 22
+}

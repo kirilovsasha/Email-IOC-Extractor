@@ -106,3 +106,19 @@ def test_ioc_type_colors_are_distinct():
         assert itype.value in IOC_TYPE_COLORS
     colors = list(IOC_TYPE_COLORS.values())
     assert len(set(colors)) == len(colors)
+
+
+def test_i18n_ru_only():
+    from reliquary.gui import i18n
+
+    assert i18n.t("tab_verdict") == "Вердикт"
+    assert i18n.t("btn_copy_enc_note").startswith("Заметка")
+    assert not hasattr(i18n, "set_ui_lang")
+
+
+def test_export_choices_include_siem():
+    from reliquary.gui.export_actions import EXPORT_CHOICES, normalize_export_kind
+
+    assert normalize_export_kind("Batch CSV") == "batch_csv"
+    for kind in ("ECS", "CEF", "STIX"):
+        assert kind in EXPORT_CHOICES

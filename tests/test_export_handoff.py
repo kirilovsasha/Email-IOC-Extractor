@@ -38,7 +38,31 @@ def test_handoff_and_batch_export(tmp_path: Path):
     assert payload.get("schema_version") == SCHEMA_VERSION
 
     assert "Handoff" in EXPORT_CHOICES
+    assert "ECS" in EXPORT_CHOICES
+    assert "CEF" in EXPORT_CHOICES
+    assert "STIX" in EXPORT_CHOICES
     assert default_export_filename("Batch CSV").endswith(".csv")
+    assert default_export_filename("ECS").endswith(".json")
+    assert default_export_filename("CEF").endswith(".cef")
+    assert default_export_filename("STIX").endswith(".json")
+
+
+def test_siem_exports(tmp_path: Path) -> None:
+    result = analyze_file(CORPUS / "malicious_exe_ip_url.eml")
+    ecs = run_export("ecs", result, tmp_path / "e.json")
+    payload = json.loads(ecs.read_text(encoding="utf-8"))
+    assert payload["event"]["dataset"] == "reliquary.email_ioc"
+    assert "threat" in payload
+
+    cef = run_export("cef", result, tmp_path / "c.cef")
+    text = cef.read_text(encoding="utf-8")
+    assert text.startswith("CEF:0|")
+    assert "EmailIOCExtractor" in text
+
+    stix = run_export("stix", result, tmp_path / "s.json")
+    bundle = json.loads(stix.read_text(encoding="utf-8"))
+    assert bundle["type"] == "bundle"
+    assert any(o.get("type") == "indicator" for o in bundle["objects"])
 
 
 def test_handoff_template_placeholders() -> None:

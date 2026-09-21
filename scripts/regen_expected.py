@@ -40,7 +40,10 @@ NEEDLES = {
     ],
     "malicious_exe_ip_url.eml": ["double_extension", "IP"],
     "suspicious_nested_eml.eml": ["nested", "evil.top"],
-    "malicious_encrypted_zip.eml": ["encrypted", "archive", "fail"],
+    "malicious_encrypted_zip.eml": ["encrypted", "archive", "fail", "шифр"],
+    "malicious_kaspersky_wrap.eml": ["lookalike", "micros0ft", "fail"],
+    "suspicious_drweb_wrap.eml": [".club", "softfail", "password", "urgent"],
+    "fn_bec_ru_wire.eml": ["IP", "fail"],
     "campaign_a1.eml": [".xyz"],
     "campaign_a2.eml": [".xyz"],
 }

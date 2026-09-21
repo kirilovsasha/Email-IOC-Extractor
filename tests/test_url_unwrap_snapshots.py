@@ -63,6 +63,24 @@ CASES = [
         "https://evil.example.com/atp",
     ),
     (
+        "proxysg",
+        "http://sg.company.local:8080/*,1,/https://evil.example.com/sg",
+        "proxysg",
+        "https://evil.example.com/sg",
+    ),
+    (
+        "kaspersky",
+        "https://click.kaspersky.com/link?url=https%3A%2F%2Fevil.example.com%2Fk",
+        "kaspersky",
+        "https://evil.example.com/k",
+    ),
+    (
+        "drweb",
+        "https://link.drweb.com/go?url=https%3A%2F%2Fevil.example.com%2Fd",
+        "drweb",
+        "https://evil.example.com/d",
+    ),
+    (
         "generic_redirect",
         "https://tracker.mail.example/click?url=https%3A%2F%2Fevil.example.com%2Fq",
         "generic_redirect",

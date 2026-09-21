@@ -12,7 +12,14 @@ from reliquary import __app_name__, __version__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, run_batch
 from reliquary.core.export_hook import run_post_export_hook
-from reliquary.core.exporters import export_batch_csv, export_csv, export_report_json
+from reliquary.core.exporters import (
+    export_batch_csv,
+    export_cef,
+    export_csv,
+    export_ecs_json,
+    export_report_json,
+    export_stix_lite,
+)
 from reliquary.core.filter_state import FilterState
 from reliquary.core.formats import collect_supported, formats_help_line, is_supported
 from reliquary.core.handoff import export_handoff
@@ -246,6 +253,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Текстовый handoff для тикета (ITSM)",
     )
     exp.add_argument(
+        "--ecs",
+        dest="ecs_out",
+        help="JSON в форме Elastic Common Schema (SIEM)",
+    )
+    exp.add_argument(
+        "--cef",
+        dest="cef_out",
+        help="ArcSight CEF (по строке на IOC + вердикт)",
+    )
+    exp.add_argument(
+        "--stix",
+        dest="stix_out",
+        help="STIX 2.1 lite bundle (indicators)",
+    )
+    exp.add_argument(
         "--post-export-hook",
         dest="post_export_hook",
         default=str(load_prefs().get("post_export_hook") or ""),
@@ -428,6 +450,39 @@ def main(argv: list[str] | None = None) -> int:
             )
             if msg:
                 print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "ecs_out", None):
+            export_ecs_json(filtered, args.ecs_out)
+            print(f"ECS → {args.ecs_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.ecs_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "cef_out", None):
+            export_cef(filtered, args.cef_out)
+            print(f"CEF → {args.cef_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.cef_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
+        if getattr(args, "stix_out", None):
+            export_stix_lite(filtered, args.stix_out)
+            print(f"STIX → {args.stix_out}", file=sys.stderr)
+            msg = run_post_export_hook(
+                hook,
+                args.stix_out,
+                allow_external=hook_external,
+                disabled=hook_disabled,
+            )
+            if msg:
+                print(f"  {msg}", file=sys.stderr)
 
         if result.meta and result.meta.overrides_loaded:
             ov = ", ".join(
@@ -454,6 +509,9 @@ def main(argv: list[str] | None = None) -> int:
                 args.json_out,
                 args.batch_csv_out,
                 args.handoff_out,
+                getattr(args, "ecs_out", None),
+                getattr(args, "cef_out", None),
+                getattr(args, "stix_out", None),
                 args.iocs_only,
             )
         )

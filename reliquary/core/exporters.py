@@ -271,3 +271,195 @@ def export_report_json(
         ]
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
+
+
+def _verdict_fields(result: AnalysisResult) -> tuple[str, int, str]:
+    if not result.verdict:
+        return "", 0, ""
+    return (
+        result.verdict.level.value,
+        int(result.verdict.score),
+        result.verdict.summary or "",
+    )
+
+
+def export_ecs_json(result: AnalysisResult, path: str | Path) -> Path:
+    """Elastic Common Schema–shaped JSON for SIEM ingest (offline file only)."""
+    out = Path(path)
+    level, score, summary = _verdict_fields(result)
+    threat_objects = []
+    for ioc in result.iocs:
+        entry: dict = {
+            "indicator": {
+                "type": ioc.ioc_type.value,
+                "description": ioc.context or "",
+                "marking": {"tlp": "amber"},
+            },
+            "tags": list(ioc.tags),
+        }
+        t = ioc.ioc_type.value
+        if t == "url":
+            entry["url"] = {"full": ioc.value}
+        elif t == "domain":
+            entry["dns"] = {"question": {"name": ioc.value}}
+        elif t in ("ipv4", "ipv6", "ip_port"):
+            entry["ip"] = ioc.value
+        elif t in ("md5", "sha1", "sha256"):
+            entry["hash"] = {t: ioc.value}
+        elif t == "email":
+            entry["email"] = {"address": ioc.value}
+        else:
+            entry["indicator"]["name"] = ioc.value
+        threat_objects.append(entry)
+
+    payload = {
+        "@timestamp": None,
+        "event": {
+            "kind": "alert",
+            "category": ["email"],
+            "type": ["info"],
+            "dataset": "reliquary.email_ioc",
+            "severity": level or "unknown",
+            "risk_score": score,
+            "reason": summary,
+        },
+        "email": {
+            "subject": result.subject,
+            "from": {"address": result.sender},
+            "message_id": (
+                result.mail_identity.message_id if result.mail_identity else ""
+            ),
+        },
+        "file": {"path": result.source_path, "name": Path(result.source_path).name},
+        "threat": {"indicator": threat_objects},
+        "reliquary": {
+            "schema_version": result.to_dict().get("schema_version"),
+            "verdict": result.verdict.to_dict() if result.verdict else None,
+            "url_rewrites": [u.to_dict() for u in result.url_rewrites],
+        },
+    }
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
+_CEF_SEV = {
+    "benign": 1,
+    "unknown": 3,
+    "suspicious": 6,
+    "malicious": 9,
+}
+
+
+def export_cef(result: AnalysisResult, path: str | Path) -> Path:
+    """ArcSight CEF lines (one per IOC + header summary line)."""
+    out = Path(path)
+    level, score, summary = _verdict_fields(result)
+    sev = _CEF_SEV.get(level, 3)
+    vendor = "Reliquary"
+    product = "EmailIOCExtractor"
+    version = "1.0"
+    msg_id = result.mail_identity.message_id if result.mail_identity else ""
+    lines: list[str] = []
+
+    def _esc(value: str) -> str:
+        return (
+            (value or "")
+            .replace("\\", "\\\\")
+            .replace("=", "\\=")
+            .replace("\n", " ")
+            .replace("\r", " ")
+        )
+
+    header = (
+        f"CEF:0|{vendor}|{product}|{version}|verdict|{_esc(level or 'none')}|{sev}|"
+        f"msg={_esc(summary)} cs1={_esc(result.subject)} "
+        f"cs1Label=Subject suser={_esc(result.sender)} "
+        f"filePath={_esc(result.source_path)} cn1={score} cn1Label=Score "
+        f"cs2={_esc(msg_id)} cs2Label=MessageId"
+    )
+    lines.append(header)
+    for ioc in result.iocs:
+        itype = ioc.ioc_type.value
+        ext = f"cs3={_esc(itype)} cs3Label=IocType cs4={_esc('|'.join(ioc.tags))} cs4Label=Tags"
+        if itype == "url":
+            ext = f"request={_esc(ioc.value)} {ext}"
+        elif itype in ("ipv4", "ipv6", "ip_port"):
+            ext = f"src={_esc(ioc.value)} {ext}"
+        elif itype == "domain":
+            ext = f"dhost={_esc(ioc.value)} {ext}"
+        elif itype in ("md5", "sha1", "sha256"):
+            ext = f"fileHash={_esc(ioc.value)} {ext}"
+        else:
+            ext = f"cs5={_esc(ioc.value)} cs5Label=Value {ext}"
+        lines.append(
+            f"CEF:0|{vendor}|{product}|{version}|ioc|{_esc(itype)}|{sev}|{ext}"
+        )
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out
+
+
+def export_stix_lite(result: AnalysisResult, path: str | Path) -> Path:
+    """Minimal STIX 2.1 bundle (indicators + email-message observed context)."""
+    out = Path(path)
+    level, score, summary = _verdict_fields(result)
+    objects: list[dict] = []
+    bundle_id = "bundle--reliquary-offline"
+    email_id = "email-message--reliquary-source"
+    objects.append(
+        {
+            "type": "email-message",
+            "id": email_id,
+            "spec_version": "2.1",
+            "is_multipart": False,
+            "subject": result.subject,
+            "from_ref": result.sender,
+            "additional_header_fields": {
+                "Message-ID": (
+                    result.mail_identity.message_id if result.mail_identity else ""
+                )
+            },
+            "x_reliquary_verdict": level,
+            "x_reliquary_score": score,
+            "x_reliquary_summary": summary,
+            "x_reliquary_source_path": result.source_path,
+        }
+    )
+    for idx, ioc in enumerate(result.iocs):
+        pattern = _stix_pattern(ioc.ioc_type.value, ioc.value)
+        if not pattern:
+            continue
+        objects.append(
+            {
+                "type": "indicator",
+                "id": f"indicator--reliquary-{idx}",
+                "spec_version": "2.1",
+                "name": f"{ioc.ioc_type.value}:{ioc.value[:80]}",
+                "pattern": pattern,
+                "pattern_type": "stix",
+                "valid_from": "1970-01-01T00:00:00.000Z",
+                "labels": [level or "unknown", *list(ioc.tags)[:8]],
+                "description": ioc.context or summary,
+            }
+        )
+    payload = {
+        "type": "bundle",
+        "id": bundle_id,
+        "objects": objects,
+    }
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
+def _stix_pattern(ioc_type: str, value: str) -> str | None:
+    esc = value.replace("\\", "\\\\").replace("'", "\\'")
+    mapping = {
+        "url": f"[url:value = '{esc}']",
+        "domain": f"[domain-name:value = '{esc}']",
+        "ipv4": f"[ipv4-addr:value = '{esc}']",
+        "ipv6": f"[ipv6-addr:value = '{esc}']",
+        "email": f"[email-addr:value = '{esc}']",
+        "md5": f"[file:hashes.MD5 = '{esc}']",
+        "sha1": f"[file:hashes.'SHA-1' = '{esc}']",
+        "sha256": f"[file:hashes.'SHA-256' = '{esc}']",
+    }
+    return mapping.get(ioc_type)

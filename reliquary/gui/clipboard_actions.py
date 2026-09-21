@@ -136,6 +136,9 @@ class ClipboardActionsMixin:
             "batch_csv": [("CSV", "*.csv")],
             "json": [("JSON", "*.json")],
             "handoff": [("Text", "*.txt")],
+            "ecs": [("ECS JSON", "*.json")],
+            "cef": [("CEF", "*.cef"), ("Text", "*.txt")],
+            "stix": [("STIX JSON", "*.json")],
         }.get(kind_n, [("All", "*.*")])
 
         path = filedialog.asksaveasfilename(

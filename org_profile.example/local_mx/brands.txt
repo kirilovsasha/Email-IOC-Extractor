@@ -1,0 +1,6 @@
+company.local
+contoso.com
+microsoft.com
+sberbank.ru
+gosuslugi.ru
+yandex.ru

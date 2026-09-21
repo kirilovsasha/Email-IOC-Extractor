@@ -5,6 +5,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.org_profile import load_org_profile
 from reliquary.core.pipeline import analyze_file, campaign_key_for, merge_results
@@ -52,6 +54,17 @@ def test_org_profile_m365_preset() -> None:
     # allowlist_extra.txt is part of the preset pack (must be tracked in git)
     assert profile.allowlist_path is not None
     assert Path(profile.allowlist_path).is_file()
+
+
+@pytest.mark.parametrize(
+    "preset",
+    ["proxysg", "kaspersky", "drweb", "local_mx", "google", "banking"],
+)
+def test_org_profile_new_presets(preset: str) -> None:
+    profile = load_org_profile(PRESETS / preset)
+    assert profile is not None
+    assert profile.brands_path is not None
+    assert Path(profile.brands_path).is_file()
 
 
 def test_campaign_key_grouping() -> None:

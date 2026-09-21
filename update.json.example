@@ -1,4 +1,1 @@
-{
-  "latest": "2.6.0",
-  "notes": "Drop this file next to the EXE to flag stale builds (offline)."
-}
+{"latest":"2.7.0","notes":"RU-only UI, SIEM export, ProxySG/Kaspersky unwrap"}

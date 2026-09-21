@@ -1,0 +1,13 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+From: news@vendor.example
+To: user@company.local
+Subject: Обновление продукта — сентябрь
+Message-ID: <fp_utm@vendor.example>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+<html><body>
+<p>Смотрите changelog на сайте партнёра:</p>
+<a href="https://proxy.company.local:8080/*,1,/https://notes.partner.example/read?utm_source=mail&utm_medium=email">читать</a>
+</body></html>

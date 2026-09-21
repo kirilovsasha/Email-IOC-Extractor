@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.7.0
+
+### Product / RU-only
+- UI только на русском: убран EN-каталог и prefs `ui_lang`
+- Экспорт SIEM: ECS JSON, ArcSight CEF, STIX 2.1 lite (CLI `--ecs` / `--cef` / `--stix`, GUI)
+- Org profile пресеты: ProxySG, Kaspersky, Dr.Web, local MX
+- Заметка о шифрованном архиве и About — на русском
+
+### Detection / unwrap
+- URL unwrap: ProxySG (`/*,N,/`), Kaspersky click, Dr.Web link
+- Отдельный вес `weight_encrypted_archive` + явная причина в вердикте
+- Расширен FP/FN corpus (RU HR/calendar, BEC, Kaspersky/Dr.Web wraps)
+
+### Hardening / DX
+- Post-export hook: блок shell/bash/node/perl/ruby и метасимволов
+- CI Release: Lite + Full EXE с SHA256
+- mypy шире; тесты переименованы с versioned → доменные
+
 ## 2.6.0
 
 ### Hardening / core

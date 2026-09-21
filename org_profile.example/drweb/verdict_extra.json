@@ -1,0 +1,5 @@
+{
+  "_comment": "Dr.Web: аналогично AV-периметру",
+  "weight_url_rewrite": 3,
+  "weight_lookalike": 24
+}

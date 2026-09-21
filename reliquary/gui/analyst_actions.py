@@ -1,7 +1,8 @@
-"""Analyst triage actions — allowlist, verdict override, encrypted-archive note."""
+"""Действия аналитика — allowlist, override вердикта, заметка о шифрованном архиве."""
 
 from __future__ import annotations
 
+import tkinter as tk
 from tkinter import messagebox, simpledialog
 
 from reliquary import __app_name__
@@ -14,7 +15,7 @@ from reliquary.gui.i18n import t
 
 
 class AnalystActionsMixin:
-    """Requires ExtractorApp result, clipboard helpers, status."""
+    """Требует ExtractorApp: result, clipboard, status."""
 
     def _allowlist_host_from_ioc(self, ioc: Ioc | None = None) -> None:
         target = ioc
@@ -23,10 +24,9 @@ class AnalystActionsMixin:
                 self.ioc_table, "_selected", None
             )
         if target is None and self.result and self.result.iocs:
-            # fall back: ask
             value = simpledialog.askstring(
                 __app_name__,
-                "Domain / IP / URL / email for allowlist:",
+                "Домен / IP / URL / email для allowlist:",
                 parent=self,
             )
             if not value:
@@ -47,7 +47,7 @@ class AnalystActionsMixin:
                 f"Добавлено в {written.name}.\n"
                 "Переразберите письмо, чтобы тег allowlisted применился.",
             )
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, ValueError, TypeError) as exc:
             append_error_log("allowlist append failed", exc=exc)
             messagebox.showerror(__app_name__, str(exc))
 
@@ -57,7 +57,7 @@ class AnalystActionsMixin:
             return
         choice = simpledialog.askstring(
             t("btn_override"),
-            "New level: benign / unknown / suspicious / malicious",
+            "Новый уровень: benign / unknown / suspicious / malicious",
             parent=self,
             initialvalue=self.result.verdict.level.value,
         )
@@ -67,11 +67,11 @@ class AnalystActionsMixin:
         try:
             new_level = VerdictLevel(level)
         except ValueError:
-            messagebox.showerror(__app_name__, f"Unknown level: {choice}")
+            messagebox.showerror(__app_name__, f"Неизвестный уровень: {choice}")
             return
         note = simpledialog.askstring(
             t("btn_override"),
-            "Analyst note (optional):",
+            "Заметка аналитика (необязательно):",
             parent=self,
         ) or ""
         v = self.result.verdict
@@ -79,9 +79,9 @@ class AnalystActionsMixin:
         v.analyst_override = new_level.value
         v.analyst_note = note.strip()
         v.level = new_level
-        v.summary = f"[analyst override {old}→{new_level.value}] {v.summary}"
+        v.summary = f"[override аналитика {old}→{new_level.value}] {v.summary}"
         if note.strip():
-            v.reasons = [f"Analyst: {note.strip()}"] + list(v.reasons)
+            v.reasons = [f"Аналитик: {note.strip()}"] + list(v.reasons)
         self._refresh_views(full=True)
         self._set_status(f"Override: {old} → {new_level.value}")
 
@@ -97,22 +97,8 @@ class AnalystActionsMixin:
             self.clipboard_clear()
             self.clipboard_append(note)
             self._set_status(t("btn_copy_enc_note"))
-        except Exception as exc:  # noqa: BLE001
+        except tk.TclError as exc:
             append_error_log("clipboard encrypted note failed", exc=exc)
-
-    def _toggle_ui_lang(self) -> None:
-        from reliquary.gui.i18n import get_ui_lang, set_ui_lang
-
-        nxt = "en" if get_ui_lang() == "ru" else "ru"
-        set_ui_lang(nxt)
-        save_prefs({"ui_lang": nxt})
-        self._prefs["ui_lang"] = nxt
-        self._set_status(f"UI language: {nxt}")
-        messagebox.showinfo(
-            __app_name__,
-            "Language preference saved. Restart UI chrome labels on next rebuild "
-            f"(prefs ui_lang={nxt}).",
-        )
 
     def _toggle_high_contrast(self) -> None:
         from reliquary.gui.theme import apply_appearance, set_high_contrast
@@ -123,6 +109,6 @@ class AnalystActionsMixin:
         try:
             set_high_contrast(enabled)
             apply_appearance(str(self._prefs.get("appearance_mode") or "dark"))
-        except Exception:  # noqa: BLE001
+        except (AttributeError, ValueError, TypeError):
             pass
-        self._set_status(f"{t('high_contrast')}: {'on' if enabled else 'off'}")
+        self._set_status(f"{t('high_contrast')}: {'вкл' if enabled else 'выкл'}")
