@@ -282,6 +282,7 @@ class IocTable(ctk.CTkFrame):
             command=self._copy_selected,
             fg_color=COLORS["accent"],
             hover_color=COLORS["accent_dim"],
+            text_color=COLORS["on_accent"],
             state="disabled",
         )
         self._btn_copy.pack(side="left", padx=(0, 3))
@@ -298,6 +299,7 @@ class IocTable(ctk.CTkFrame):
             hover_color=COLORS["border"],
             border_width=1,
             border_color=COLORS["border"],
+            text_color=COLORS["text"],
             state="disabled",
         )
         self._btn_goto.pack(side="left", padx=(0, 3))
@@ -314,6 +316,7 @@ class IocTable(ctk.CTkFrame):
             hover_color=COLORS["border"],
             border_width=1,
             border_color=COLORS["border"],
+            text_color=COLORS["text"],
             state="disabled",
         )
         self._btn_defang.pack(side="left")

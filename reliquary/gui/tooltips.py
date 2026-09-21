@@ -309,6 +309,15 @@ class FilterChip:
             self.var.trace_add("write", lambda *_: self._sync())
         except Exception:  # noqa: BLE001
             pass
+        try:
+            root = parent.winfo_toplevel()  # type: ignore[attr-defined]
+            chips = getattr(root, "_filter_chips", None)
+            if chips is None:
+                chips = []
+                root._filter_chips = chips  # type: ignore[attr-defined]
+            chips.append(self)
+        except Exception:  # noqa: BLE001
+            pass
         if tip:
             HoverTip(self.btn, tip)
 
@@ -330,7 +339,7 @@ class FilterChip:
                 fg_color=COLORS["accent"] if self._primary else COLORS["accent_dim"],
                 hover_color=COLORS["accent"],
                 border_color=COLORS["accent"],
-                text_color=COLORS["text"],
+                text_color=COLORS["on_accent"],
             )
         else:
             self.btn.configure(

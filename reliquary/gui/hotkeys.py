@@ -59,6 +59,11 @@ class HotkeysMixin:
             self.configure(fg_color=COLORS["bg"])
         except (AttributeError, tk.TclError, ValueError, TypeError):
             pass
+        for chip in getattr(self, "_filter_chips", None) or []:
+            try:
+                chip._sync()
+            except (AttributeError, tk.TclError, ValueError, TypeError):
+                pass
         try:
             table = getattr(self, "ioc_table", None)
             if table is not None:
@@ -68,6 +73,11 @@ class HotkeysMixin:
             pass
         try:
             self._apply_panel_fonts()
+        except (AttributeError, tk.TclError):
+            pass
+        try:
+            if self._placeholder_active:
+                self.input_box.configure(text_color=COLORS["muted"])
         except (AttributeError, tk.TclError):
             pass
         try:

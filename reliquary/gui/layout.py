@@ -153,6 +153,8 @@ class LayoutMixin:
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
+            text_color=COLORS["text"],
+            dropdown_text_color=COLORS["text"],
         ).pack(side="left", padx=(0, 4))
         btn_copy = ctk.CTkButton(
             hand, text="IOC", width=52, font=btn_font, command=self.copy_iocs, **BTN_PRIMARY
@@ -174,6 +176,8 @@ class LayoutMixin:
             button_color=COLORS["border"],
             button_hover_color=COLORS["accent_dim"],
             dropdown_fg_color=COLORS["surface"],
+            text_color=COLORS["text"],
+            dropdown_text_color=COLORS["text"],
         ).pack(side="left", padx=(0, 4))
         btn_export = ctk.CTkButton(
             exp,
@@ -230,6 +234,7 @@ class LayoutMixin:
             hover_color=COLORS["border"],
             border_width=1,
             border_color=COLORS["border"],
+            text_color=COLORS["text"],
             corner_radius=8,
             font=ctk_font("dense"),
         )
@@ -249,6 +254,7 @@ class LayoutMixin:
             hover_color=COLORS["border"],
             border_width=1,
             border_color=COLORS["border"],
+            text_color=COLORS["text"],
             corner_radius=8,
             font=ctk_font("dense"),
         ).pack(side="left")
@@ -474,7 +480,8 @@ class LayoutMixin:
             font=ctk_font("body"),
             command=self.cancel_batch,
             fg_color=COLORS["danger"],
-            hover_color="#a33c3c",
+            hover_color=COLORS["danger_hover"],
+            text_color=COLORS["on_accent"],
             state="disabled",
         )
         self._retry_btn = ctk.CTkButton(
@@ -488,6 +495,7 @@ class LayoutMixin:
             hover_color=COLORS["border"],
             border_width=1,
             border_color=COLORS["border"],
+            text_color=COLORS["text"],
             state="disabled",
         )
 
@@ -516,7 +524,7 @@ class LayoutMixin:
             variable=self._tab_var,
             command=self._on_tab_selected,
             fg_color=COLORS["surface_alt"],
-            selected_color=COLORS["accent"],
+            selected_color=COLORS["seg_selected"],
             selected_hover_color=COLORS["accent_dim"],
             unselected_color=COLORS["surface_alt"],
             unselected_hover_color=COLORS["border"],
@@ -613,6 +621,7 @@ class LayoutMixin:
                 hover_color=COLORS["border"],
                 border_width=1,
                 border_color=COLORS["border"],
+                text_color=COLORS["text"],
             )
             btn.pack(side="left", padx=2)
             HoverTip(btn, tip)
@@ -629,6 +638,7 @@ class LayoutMixin:
             text="← К пакету",
             width=120,
             command=self._restore_batch_tree,
+            **BTN_SECONDARY,
         )
         # packed only during campaign diff
 
