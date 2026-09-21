@@ -1,0 +1,3 @@
+# Корпоративные / гос. MX — подставьте свои домены
+# example.gov.ru
+# mail.company.local

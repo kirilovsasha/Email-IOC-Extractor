@@ -31,10 +31,33 @@ class PrefsMixin:
             )
             self._brands_path = str(fresh.get("brands_path") or "") or None
             self._profile_dir = str(fresh.get("profile_dir") or "") or None
+            self._appearance_mode = str(fresh.get("appearance_mode") or "dark")
+            self._ioc_density = str(fresh.get("ioc_density") or "normal")
+            self._verdict_compact = bool(fresh.get("verdict_compact"))
+            try:
+                from reliquary.gui.theme import apply_appearance, set_high_contrast
+
+                set_high_contrast(bool(fresh.get("high_contrast")))
+                apply_appearance(self._appearance_mode)
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 self._export_choice.set(str(fresh.get("export_choice") or "JSON"))
             except Exception:  # noqa: BLE001
                 pass
+            for attr, key in (
+                ("actionable_only", "actionable_only"),
+                ("hide_rewriter", "hide_rewriter"),
+                ("hide_allowlisted", "hide_allowlisted"),
+                ("hide_private", "hide_private"),
+                ("full_ioc_types", "full_ioc_types"),
+            ):
+                var = getattr(self, attr, None)
+                if var is not None:
+                    try:
+                        var.set(bool(fresh.get(key)))
+                    except Exception:  # noqa: BLE001
+                        pass
             try:
                 self._set_status("Настройки сохранены (ui_prefs.json)")
             except Exception:  # noqa: BLE001

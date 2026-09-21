@@ -24,6 +24,7 @@
 | Dr.Web | [`drweb/`](drweb/) | Dr.Web link wrap |
 | Local MX | [`local_mx/`](local_mx/) | Внутренний MX, сильнее mitigations |
 | RU mail stack | [`ru_mail/`](ru_mail/) | Mail.ru/Yandex/VK unwrap + RU brands |
+| RU bank / gov | [`ru_gov/`](ru_gov/) | ФНС/ЦБ/Почта/Госуслуги brands + веса spoof/cloud |
 
 Скопируйте пресет в `org_profile/` рядом с exe или: `reliquary mail.eml --profile org_profile.example/m365`
 

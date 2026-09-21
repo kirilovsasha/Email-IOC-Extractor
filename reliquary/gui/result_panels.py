@@ -80,8 +80,18 @@ class ResultPanelsMixin:
             return Path(row.path).name.lower()
 
         ordered = sorted(rows, key=_key, reverse=reverse)
+        chip = ""
+        if hasattr(self, "_batch_verdict_chip"):
+            chip = str(self._batch_verdict_chip.get() or "все").strip().lower()
         for row in ordered:
             name = Path(row.path).name
+            level_raw = (row.verdict_level or "").lower()
+            if chip in {"подозр.+", "подозр+", "suspicious+"}:
+                if level_raw not in {"suspicious", "malicious"}:
+                    continue
+            elif chip in {"вред.", "вред", "malicious"}:
+                if level_raw != "malicious":
+                    continue
             level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
             score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
             reason = (row.top_reason or "—")[:60]
@@ -90,6 +100,83 @@ class ResultPanelsMixin:
                 continue
             iid = tree.insert("", "end", values=(name, level, score, reason, peers))
             self._batch_row_map[iid] = row
+
+    def _set_batch_verdict_chip(self, value: str) -> None:
+        if hasattr(self, "_batch_verdict_chip"):
+            self._batch_verdict_chip.set(value)
+        self._on_batch_filter_change()
+
+    def _visible_batch_results(self) -> list:
+        """AnalysisResult subset matching current batch filter/chip (for export)."""
+        rows = getattr(self, "_batch_all_rows", None) or []
+        if not rows:
+            return list(getattr(self, "_batch_results", None) or [])
+        chip = ""
+        if hasattr(self, "_batch_verdict_chip"):
+            chip = str(self._batch_verdict_chip.get() or "все").strip().lower()
+        filt = ""
+        if hasattr(self, "_batch_filter_var"):
+            filt = str(self._batch_filter_var.get() or "").strip().lower()
+        wanted_paths: set[str] = set()
+        for row in rows:
+            level_raw = (row.verdict_level or "").lower()
+            if chip in {"подозр.+", "подозр+", "suspicious+"}:
+                if level_raw not in {"suspicious", "malicious"}:
+                    continue
+            elif chip in {"вред.", "вред", "malicious"}:
+                if level_raw != "malicious":
+                    continue
+            name = Path(row.path).name
+            level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
+            score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
+            reason = (row.top_reason or "—")[:60]
+            peers = ", ".join(row.campaign_peers[:3]) if row.campaign_peers else ""
+            if filt and filt not in f"{name} {level} {score} {reason} {peers}".lower():
+                continue
+            wanted_paths.add(str(Path(row.path)))
+        batch = list(getattr(self, "_batch_results", None) or [])
+        if not wanted_paths:
+            return []
+        out = []
+        for r in batch:
+            src = str(Path(getattr(r, "source_path", None) or getattr(r, "path", "") or ""))
+            if src in wanted_paths or Path(src).name in {Path(p).name for p in wanted_paths}:
+                out.append(r)
+        return out
+
+    def _export_batch_filtered(self) -> None:
+        from tkinter import filedialog, messagebox
+
+        from reliquary import __app_name__
+        from reliquary.gui.export_actions import run_export
+
+        subset = self._visible_batch_results()
+        if not subset:
+            messagebox.showinfo(__app_name__, "Нет писем в текущем срезе пакета")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("Batch CSV", "*.csv"), ("Campaign pack NDJSON", "*.ndjson")],
+            initialfile="batch_filtered.csv",
+            initialdir=getattr(self, "_last_export_dir", None) or None,
+        )
+        if not path:
+            return
+        kind = "campaign_pack" if path.lower().endswith(".ndjson") else "batch_csv"
+        try:
+            out = run_export(
+                kind,
+                subset[0],
+                path,
+                batch_results=subset,
+            )
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(__app_name__, f"Экспорт среза не удался:\n{exc}")
+            return
+        try:
+            self._set_status(f"Срез пакета ({len(subset)}): {out}")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_batch_heading_click(self, col: str) -> None:
         mapping = {

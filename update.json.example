@@ -1,1 +1,1 @@
-{"latest":"2.13.0","channel":"lite","sha256":"","notes":"MSG/TNEF/ISO/nested-mail, QR CID/PDF, allowlist mitigation, campaign pack"}
+{"latest":"2.14.0","channel":"lite","sha256":"","notes":"score wiring TNEF/ISO/scripts, cloud lure, Bitrix unwrap, CLI self-check, ru_gov profile"}

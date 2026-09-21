@@ -1,4 +1,4 @@
-"""README golden verdict corpus (79 cases).
+"""README golden verdict corpus (85 cases).
 
 Добавить кейс
 --------------

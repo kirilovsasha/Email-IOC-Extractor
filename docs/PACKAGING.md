@@ -29,7 +29,7 @@ build_exe.bat --full
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.13.0
+PackageVersion: 2.14.0
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -42,7 +42,7 @@ Installers:
 ## Офлайн-флаг версии
 
 Положите `update.json` рядом с EXE
-(`{"latest":"2.13.0","channel":"lite","sha256":"…","notes":"..."}`).
+(`{"latest":"2.14.0","channel":"lite","sha256":"…","notes":"..."}`).
 Диалог «О программе» покажет канал Lite/Full и сверку SHA256 — без сети.
 
 Предпочтительно один файл **`org_profile.zip`** рядом с EXE (подхватывается автоматически);

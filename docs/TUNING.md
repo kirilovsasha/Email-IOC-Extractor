@@ -42,11 +42,11 @@ HTML/PDF вложения: `weight_html_smuggling`, `weight_pdf_javascript`, `we
 LNK/CAB/RAR: `weight_attachment_lnk`, `weight_lnk_dangerous`, `weight_cab_archive`, `weight_unrar_missing`, `weight_archive_nested_email`, `weight_zip_bomb`.
 Display-spoof: `weight_display_spoof` (отдельно от `weight_lookalike`).
 
-Сегменты калибровки (2.13+): `display_spoof`, `shortener`, `messenger`, `html_smuggling`,
-`cab`, `tnef`, `iso`, `archive_password`, `oob_delivery`, `nested_mail`, `ru_rewrite`, …
+Сегменты калибровки (2.14+): `display_spoof`, `office_link`, `script_att`, `cloud_lure`,
+`tnef`, `iso`, `archive_password`, `oob_delivery`, `nested_mail`, `ru_rewrite`, …
 
-Новые веса: `weight_archive_password` / `_match`, `weight_oob_delivery`, `weight_tnef`,
-`weight_iso_lnk`, `weight_allowlisted_from`.
+Новые веса: `weight_office_hyperlink`, `weight_script_attachment`, `weight_cloud_lure`,
+`weight_disk_image`, `weight_nested_archive`, `weight_archive_double_extension`.
 
 ## Calibration loop
 

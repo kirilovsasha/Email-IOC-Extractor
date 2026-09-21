@@ -1,0 +1,27 @@
+Return-Path: <bounce@bad.gq>
+Received: from mail.bad.gq (unknown [203.0.113.88]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "Docs" <docs@bad.gq>
+To: victim@company.local
+Subject: Nested zip
+Message-ID: <nestarch@bad.gq>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="NA"
+
+--NA
+Content-Type: text/plain; charset=utf-8
+
+See zip.
+--NA
+Content-Type: application/zip; name="docs.zip"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="docs.zip"
+
+UEsDBBQAAAAAALVpNV3pyg/cjgAAAI4AAAAJAAAAaW5uZXIuemlwUEsDBBQAAAAAALVpNV3xFJ7u
+FgAAABYAAAALAAAAcGF5bG9hZC5leGVNWgAAAAAAAAAAAAAAAAAAAAAAAAAAUEsBAhQDFAAAAAAA
+tWk1XfEUnu4WAAAAFgAAAAsAAAAAAAAAAAAAAIABAAAAAHBheWxvYWQuZXhlUEsFBgAAAAABAAEA
+OQAAAD8AAAAAAFBLAwQUAAAAAAC1aTVdwd8dwgkAAAAJAAAACgAAAHJlYWRtZS50eHRzZWUgaW5u
+ZXJQSwECFAMUAAAAAAC1aTVd6coP3I4AAACOAAAACQAAAAAAAAAAAAAAgAEAAAAAaW5uZXIuemlw
+UEsBAhQDFAAAAAAAtWk1XcHfHcIJAAAACQAAAAoAAAAAAAAAAAAAAIABtQAAAHJlYWRtZS50eHRQ
+SwUGAAAAAAIAAgBvAAAA5gAAAAAA
+--NA--

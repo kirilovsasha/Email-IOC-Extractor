@@ -590,12 +590,41 @@ class LayoutMixin:
         import tkinter.ttk as ttk
 
         self._batch_filter_var = ctk.StringVar(value="")
+        self._batch_verdict_chip = ctk.StringVar(value="все")
         filter_row = ctk.CTkFrame(batch_frame, fg_color="transparent")
         filter_row.pack(fill="x", padx=4, pady=(4, 0))
         ctk.CTkLabel(filter_row, text="Фильтр:", font=ctk_font("small")).pack(side="left")
-        filt_entry = ctk.CTkEntry(filter_row, textvariable=self._batch_filter_var, width=220)
+        filt_entry = ctk.CTkEntry(filter_row, textvariable=self._batch_filter_var, width=160)
         filt_entry.pack(side="left", padx=6)
         filt_entry.bind("<KeyRelease>", lambda _e: self._on_batch_filter_change())
+        for label, tip in (
+            ("все", "Все письма пакета"),
+            ("подозр.+", "suspicious + malicious"),
+            ("вред.", "только malicious"),
+        ):
+            btn = ctk.CTkButton(
+                filter_row,
+                text=label,
+                width=72 if label != "подозр.+" else 80,
+                height=26,
+                font=ctk_font("dense"),
+                command=lambda v=label: self._set_batch_verdict_chip(v),
+                fg_color=COLORS["surface_alt"],
+                hover_color=COLORS["border"],
+                border_width=1,
+                border_color=COLORS["border"],
+            )
+            btn.pack(side="left", padx=2)
+            HoverTip(btn, tip)
+        ctk.CTkButton(
+            filter_row,
+            text="Экспорт среза",
+            width=110,
+            height=26,
+            font=ctk_font("dense"),
+            command=self._export_batch_filtered,
+            **BTN_SECONDARY,
+        ).pack(side="left", padx=(8, 0))
         self._batch_restore_btn = ctk.CTkButton(
             batch_frame,
             text="← К пакету",

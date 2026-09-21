@@ -112,6 +112,44 @@ def show_settings_dialog(
     _check(hook, "post_export_hook_allow_external", "Разрешить hook вне каталога EXE")
     _check(hook, "disable_post_export_hook", "Отключить hook (корпоративный lock)")
 
+    ui = _section("Интерфейс")
+    row_a = ctk.CTkFrame(ui, fg_color="transparent")
+    row_a.pack(fill="x", pady=3)
+    ctk.CTkLabel(row_a, text="Тема", width=160, anchor="w", font=ctk_font("caption")).pack(
+        side="left"
+    )
+    appearance_var = ctk.StringVar(value=str(data.get("appearance_mode") or "dark"))
+    ctk.CTkOptionMenu(
+        row_a,
+        variable=appearance_var,
+        values=["dark", "light", "system"],
+        width=120,
+        font=ctk_font("caption"),
+    ).pack(side="left", padx=6)
+    row_d = ctk.CTkFrame(ui, fg_color="transparent")
+    row_d.pack(fill="x", pady=3)
+    ctk.CTkLabel(row_d, text="Плотность IOC", width=160, anchor="w", font=ctk_font("caption")).pack(
+        side="left"
+    )
+    density_var = ctk.StringVar(value=str(data.get("ioc_density") or "normal"))
+    ctk.CTkOptionMenu(
+        row_d,
+        variable=density_var,
+        values=["compact", "normal", "comfortable"],
+        width=140,
+        font=ctk_font("caption"),
+    ).pack(side="left", padx=6)
+    _check(ui, "high_contrast", "Высокий контраст")
+    _check(ui, "verdict_compact", "Компактный вердикт (скрыть исходник)")
+
+    noise = _section("Фильтры IOC по умолчанию")
+    _check(noise, "actionable_only", "Только «к разбору»")
+    _check(noise, "hide_rewriter", "Скрыть rewriter URL")
+    _check(noise, "hide_allowlisted", "Скрыть allowlisted")
+    _check(noise, "hide_private", "Скрыть private/local")
+    _check(noise, "full_ioc_types", "Все типы IOC (registry/mutex/…)")
+    _path_row(noise, "last_inbox_dir", "Папка калибровки", dir_mode=True)
+
     exp = _section("Экспорт по умолчанию")
     row_e = ctk.CTkFrame(exp, fg_color="transparent")
     row_e.pack(fill="x", pady=3)
@@ -146,6 +184,8 @@ def show_settings_dialog(
     def _save() -> None:
         updates: dict[str, Any] = {
             "export_choice": export_var.get(),
+            "appearance_mode": appearance_var.get(),
+            "ioc_density": density_var.get(),
         }
         for key, ent in entries.items():
             val = ent.get().strip()

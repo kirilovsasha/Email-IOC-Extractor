@@ -204,6 +204,11 @@
       "archive"
     ]
   },
+  "suspicious_allowlist_spoof.eml": {
+    "level": "suspicious",
+    "score_min": 25,
+    "score_max": 63
+  },
   "suspicious_arc_auth_fail.eml": {
     "level": "suspicious",
     "score_min": 30,
@@ -218,6 +223,11 @@
     "level": "malicious",
     "score_min": 60,
     "score_max": 100
+  },
+  "suspicious_bitrix_redir.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 80
   },
   "suspicious_brand_spoof.eml": {
     "level": "malicious",
@@ -238,6 +248,11 @@
       "cab",
       "архив"
     ]
+  },
+  "suspicious_cloud_lure.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 95
   },
   "suspicious_credential_owa.eml": {
     "level": "suspicious",
@@ -388,6 +403,11 @@
       "t.me"
     ]
   },
+  "suspicious_nested_archive.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 99
+  },
   "suspicious_nested_depth2.eml": {
     "level": "malicious",
     "score_min": 60,
@@ -484,6 +504,11 @@
     "score_min": 10,
     "score_max": 29
   },
+  "suspicious_script_js.eml": {
+    "level": "malicious",
+    "score_min": 55,
+    "score_max": 85
+  },
   "suspicious_shortener_only.eml": {
     "level": "suspicious",
     "score_min": 31,
@@ -506,6 +531,11 @@
     "level": "malicious",
     "score_min": 55,
     "score_max": 85
+  },
+  "suspicious_vhd_lnk.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 100
   },
   "suspicious_vk_away.eml": {
     "level": "suspicious",

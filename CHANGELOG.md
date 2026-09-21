@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.14.0
+
+### Детекция
+- `high_flags`: TNEF / ISO+LNK реально дают dedicated score (`weight_tnef` / `weight_iso_lnk`)
+- Веса: `office_hyperlink`, `nested_archive`, `archive_double_extension`
+- Скрипты HTA/JS/VBS/WSF/PS1: разбор URL/LOLBin (`script_attachment` / `script_url`)
+- Inventory VHD/VHDX/WIM (`disk_image`)
+- Сигнал `cloud_lure` (Я.Диск / Mail.ru Cloud / Drive без вложения)
+- RU unwrap: Bitrix24 / amoCRM / 1C redirect
+- Allowlist-From mitigation не применяется при display-spoof
+
+### Продукт / EXE
+- `update.json`: сверка канала Lite↔Full с rarfile/pyzbar/UnRAR
+- CLI `--self-check` / `--calibrate DIR`
+- «Настройки»: тема, contrast, compact, фильтры IOC, last_inbox_dir
+- Пакет: чипы вердикта + «Экспорт среза» (suspicious+/malicious)
+- Пресет `org_profile.example/ru_gov/`
+
+### Качество
+- Калибровка: `office_link` / `script_att` / `cloud_lure`
+- Schema drift-gate + corpus (JS/VHD/cloud/Bitrix/nested-archive/spoof-allowlist)
+- Docs / example weights 2.14
+
 ## 2.13.0
 
 ### Детекция

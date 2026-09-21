@@ -133,10 +133,22 @@ def main(argv: list[str] | None = None) -> int:
             "  reliquary mail.eml --csv out.csv\n"
             "  reliquary mail.eml --no-actionable --handoff ticket.txt\n"
             "  reliquary ./inbox --json report.json --workers 4\n"
+            "  reliquary --self-check\n"
+            "  reliquary --calibrate ./inbox\n"
             "  reliquary mail.eml --allowlist allowlist_extra.txt\n"
             "  reliquary mail.eml --verdict verdict_extra.json\n"
             "  reliquary mail.eml --full-ioc-types\n"
         ),
+    )
+    parser.add_argument(
+        "--self-check",
+        action="store_true",
+        help="Офлайн self-check (Lite/Full, конфиги рядом с EXE) и выход",
+    )
+    parser.add_argument(
+        "--calibrate",
+        metavar="DIR",
+        help="Калибровка inbox: сегменты FP/FN по папке .eml/.msg (без БД)",
     )
     parser.add_argument(
         "path",
@@ -322,6 +334,25 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    if args.self_check:
+        from reliquary.core.self_check import format_self_check
+        from reliquary.core.update_check import check_update_manifest
+
+        print(format_self_check())
+        upd = check_update_manifest()
+        if upd:
+            print(upd)
+        return 0
+
+    if args.calibrate:
+        from pathlib import Path as _P
+
+        from reliquary.core.calibration import calibrate_inbox
+
+        report = calibrate_inbox(_P(args.calibrate))
+        print(report.to_text())
+        return 0 if report.file_count else 1
 
     if not args.path and not args.text and not args.files:
         parser.print_help()

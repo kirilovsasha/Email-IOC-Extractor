@@ -58,5 +58,11 @@
   "weight_oob_delivery": 16,
   "weight_tnef": 10,
   "weight_iso_lnk": 18,
-  "weight_allowlisted_from": -10
+  "weight_allowlisted_from": -10,
+  "weight_office_hyperlink": 12,
+  "weight_nested_archive": 14,
+  "weight_archive_double_extension": 16,
+  "weight_script_attachment": 20,
+  "weight_disk_image": 16,
+  "weight_cloud_lure": 14
 }

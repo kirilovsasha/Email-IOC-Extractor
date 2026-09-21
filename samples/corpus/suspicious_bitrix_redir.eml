@@ -1,0 +1,11 @@
+Return-Path: <bounce@bad.gq>
+Received: from mail.bad.gq (unknown [203.0.113.88]) by mx.company.local; Wed, 17 Sep 2025 10:00:00 +0000
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+From: "Portal" <portal@bad.gq>
+To: victim@company.local
+Subject: Bitrix notice
+Message-ID: <bx@bad.gq>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Open https://company.bitrix24.ru/bitrix/redirect.php?goto=https%3A%2F%2Fevil-phish.top%2Flogin
