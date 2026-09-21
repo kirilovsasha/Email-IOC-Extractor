@@ -103,41 +103,8 @@ class LayoutMixin:
         btn_folder = ctk.CTkButton(
             src, text="Папка", width=64, font=btn_font, command=self.open_folder, **BTN_SECONDARY
         )
-        btn_folder.pack(side="left", padx=(0, 4))
-        HoverTip(btn_folder, "Рекурсивно разобрать все .eml / .msg в папке")
-        btn_cal = ctk.CTkButton(
-            src,
-            text="Калибр.",
-            width=64,
-            font=btn_font,
-            command=self.calibrate_inbox_folder,
-            **BTN_SECONDARY,
-        )
-        btn_cal.pack(side="left", padx=(0, 4))
-        HoverTip(
-            btn_cal,
-            "Калибровка inbox: сегменты FP/FN без БД (отчёт → файл рядом с EXE)",
-        )
-        btn_watch = ctk.CTkButton(
-            src,
-            text="Watch",
-            width=56,
-            font=btn_font,
-            command=self.toggle_watch_inbox,
-            **BTN_SECONDARY,
-        )
-        btn_watch.pack(side="left", padx=(0, 4))
-        HoverTip(btn_watch, "Опрос папки watch-inbox на новые письма")
-        btn_wcmp = ctk.CTkButton(
-            src,
-            text="A/B",
-            width=44,
-            font=btn_font,
-            command=self.compare_weights_folder,
-            **BTN_SECONDARY,
-        )
-        btn_wcmp.pack(side="left")
-        HoverTip(btn_wcmp, "Сравнение двух verdict_extra по папке")
+        btn_folder.pack(side="left")
+        HoverTip(btn_folder, "Рекурсивно разобрать все .eml / .msg / .mbox в папке")
 
         hand_shell, hand = toolbar_group(actions, "Буфер", compact=True)
         self._hand_shell = hand_shell

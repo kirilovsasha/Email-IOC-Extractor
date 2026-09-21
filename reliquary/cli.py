@@ -144,7 +144,6 @@ def main(argv: list[str] | None = None) -> int:
             "  reliquary mail.eml --no-actionable --handoff ticket.txt\n"
             "  reliquary ./inbox --json report.json --workers 4\n"
             "  reliquary --self-check\n"
-            "  reliquary --calibrate ./inbox\n"
             "  reliquary mail.eml --allowlist allowlist_extra.txt\n"
             "  reliquary mail.eml --verdict verdict_extra.json\n"
             "  reliquary mail.eml --full-ioc-types\n"
@@ -154,17 +153,6 @@ def main(argv: list[str] | None = None) -> int:
         "--self-check",
         action="store_true",
         help="Офлайн self-check (Lite/Full, конфиги рядом с EXE) и выход",
-    )
-    parser.add_argument(
-        "--calibrate",
-        metavar="DIR",
-        help="Калибровка inbox: сегменты FP/FN по папке .eml/.msg (без БД)",
-    )
-    parser.add_argument(
-        "--compare-weights",
-        nargs=3,
-        metavar=("DIR", "VERDICT_A", "VERDICT_B"),
-        help="A/B сравнение двух verdict_extra.json по папке",
     )
     parser.add_argument(
         "--feedback-summary",
@@ -384,28 +372,11 @@ def main(argv: list[str] | None = None) -> int:
             print(upd)
         return 0
 
-    if args.calibrate:
-        from pathlib import Path as _P
-
-        from reliquary.core.calibration import calibrate_inbox
-
-        report = calibrate_inbox(_P(args.calibrate))
-        print(report.to_text())
-        return 0 if report.file_count else 1
-
     if getattr(args, "feedback_summary", False):
         from reliquary.core.feedback import feedback_summary
 
         print(feedback_summary())
         return 0
-
-    if getattr(args, "compare_weights", None):
-        from reliquary.core.weight_compare import compare_verdict_weights
-
-        folder, va, vb = args.compare_weights
-        report = compare_verdict_weights(folder, verdict_a=va, verdict_b=vb)
-        print(report.to_text())
-        return 0 if report.rows else 1
 
     if not args.path and not args.text and not args.files:
         parser.print_help()

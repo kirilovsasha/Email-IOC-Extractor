@@ -136,7 +136,6 @@ class PrefsMixin:
         updates = {
             "last_dir": self._last_dir,
             "last_export_dir": self._last_export_dir,
-            "last_inbox_dir": str(self._prefs.get("last_inbox_dir") or ""),
             "copy_format": self._copy_format.get(),
             "export_choice": self._export_choice.get(),
             "ui_scale": self._ui_scale,
@@ -176,13 +175,6 @@ class PrefsMixin:
             append_error_log("failed to save ui_prefs.json")
 
     def _on_close(self) -> None:
-        watcher = getattr(self, "_inbox_watcher", None)
-        if watcher is not None:
-            try:
-                watcher.stop()
-            except (AttributeError, RuntimeError):
-                pass
-            self._inbox_watcher = None
         try:
             self._persist_prefs()
         except OSError as exc:

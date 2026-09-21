@@ -10,8 +10,6 @@
 
 ### Продукт / EXE
 - FP/FN feedback → `analyst_feedback.ndjson` (GUI ПКМ + `--feedback-summary`)
-- Watch-inbox: опрос папки на новые письма
-- A/B сравнение весов (`--compare-weights`, кнопка «A/B»)
 - Вход `.mbox` (разворот во временные `.eml`)
 - Мастер импорта org_profile в «Настройки»
 - CLI: `--archive-password`, `--enable-yara`, `--yara-rules`

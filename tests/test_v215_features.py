@@ -13,13 +13,11 @@ from reliquary.core.archive_unlock import extract_zip_with_passwords, unlock_att
 from reliquary.core.attachment_inspector import inspect_bytes
 from reliquary.core.feedback import FeedbackEvent, append_feedback, feedback_summary, load_feedback
 from reliquary.core.formats import expand_input_paths, is_supported
-from reliquary.core.inbox_watch import InboxWatcher
 from reliquary.core.mbox_ingest import expand_mbox_to_emls
 from reliquary.core.models import ScoreContribution, VerdictLevel
 from reliquary.core.pipeline import analyze_file
 from reliquary.core.verdict import VerdictConfig
 from reliquary.core.verdict_confidence import compute_confidence
-from reliquary.core.weight_compare import compare_verdict_weights
 
 CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
@@ -126,22 +124,6 @@ def test_pipeline_archive_password_option() -> None:
     assert r.verdict is not None
     # Password may or may not decrypt corpus zip depending on encoding; no crash
     assert r.source_kind == "email"
-
-
-def test_weight_compare_smoke() -> None:
-    report = compare_verdict_weights(CORPUS, verdict_a=None, verdict_b=None, limit=5)
-    assert len(report.rows) >= 1
-    text = report.to_text()
-    assert "Сравнение" in text
-
-
-def test_inbox_watcher_seed(tmp_path: Path) -> None:
-    (tmp_path / "a.eml").write_text("From: a@b.c\nSubject: t\n\nx\n", encoding="utf-8")
-    seen: list[list[str]] = []
-    w = InboxWatcher(tmp_path, on_new=lambda p: seen.append(p), interval_s=1.0)
-    w.seed()
-    assert str(tmp_path / "a.eml") in w._seen or any("a.eml" in s for s in w._seen)
-    w.stop()
 
 
 def test_yara_scan_graceful_without_package() -> None:

@@ -9,14 +9,11 @@ from tkinter import filedialog, messagebox
 from reliquary import __app_name__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, format_eta, run_batch
-from reliquary.core.calibration import calibrate_inbox
 from reliquary.core.error_log import append_error_log
 from reliquary.core.formats import collect_supported, expand_input_paths, tk_filetypes
 from reliquary.core.models import AnalysisResult
 from reliquary.core.org_profile import load_org_profile
-from reliquary.core.paths import app_dir
 from reliquary.core.pipeline import analyze_text
-from reliquary.core.weight_compare import compare_verdict_weights
 
 
 class AnalysisActionsMixin:
@@ -58,60 +55,6 @@ class AnalysisActionsMixin:
             if not getattr(self, "_profile_dir", None):
                 self._profile_dir = str(profile.root)
         return opts
-
-    def calibrate_inbox_folder(self) -> None:
-        """Калибровка папки inbox → текстовый отчёт рядом с EXE (без БД)."""
-        initial = str(self._prefs.get("last_inbox_dir") or self._last_dir or "") or None
-        folder = filedialog.askdirectory(
-            title=f"{__app_name__} — папка inbox для калибровки",
-            initialdir=initial,
-        )
-        if not folder:
-            return
-        self._last_dir = folder
-        self._prefs["last_inbox_dir"] = folder
-        self._persist_prefs()
-        self._sync_job_row(busy=True)
-        self._set_status("Калибровка inbox…")
-
-        def _run() -> None:
-            try:
-                report = calibrate_inbox(folder)
-                out = app_dir() / "calibration_inbox_report.txt"
-                out.write_text(report.to_text(), encoding="utf-8")
-
-                def _ok() -> None:
-                    self._sync_job_row(busy=False)
-                    # Show in errors / status
-                    if hasattr(self, "err_box"):
-                        self._clear_box(self.err_box)
-                        self._put(self.err_box, report.to_text(), "value")
-                        if "err" in getattr(self, "_tab_label_by_key", {}):
-                            label = self._tab_label_by_key["err"]
-                            self._tab_var.set(label)
-                            self._tab_seg.set(label)
-                            self._show_tab_frame("err")
-                    self._set_status(f"Калибровка: {out.name} ({report.scored}/{report.file_count})")
-                    messagebox.showinfo(
-                        __app_name__,
-                        f"Калибровка завершена.\n"
-                        f"Файлов: {report.file_count}, со score: {report.scored}\n"
-                        f"Отчёт: {out}",
-                    )
-
-                self.after(0, _ok)
-            except Exception as exc:  # noqa: BLE001
-                append_error_log("inbox calibration failed", exc=exc)
-                msg = str(exc)
-
-                def _fail() -> None:
-                    self._sync_job_row(busy=False)
-                    messagebox.showerror("Ошибка", msg)
-                    self._set_status("Ошибка калибровки")
-
-                self.after(0, _fail)
-
-        threading.Thread(target=_run, daemon=True).start()
 
     def cancel_batch(self) -> None:
         self._cancel_batch = True
@@ -204,103 +147,6 @@ class AnalysisActionsMixin:
             ):
                 return
         self._analyze_paths(paths)
-
-    def compare_weights_folder(self) -> None:
-        """A/B сравнение двух verdict_extra по папке inbox."""
-        folder = filedialog.askdirectory(
-            title=f"{__app_name__} — папка для сравнения весов",
-            initialdir=str(self._prefs.get("last_inbox_dir") or self._last_dir or "")
-            or None,
-        )
-        if not folder:
-            return
-        path_a = filedialog.askopenfilename(
-            title="verdict_extra A (пусто = defaults рядом с EXE)",
-            filetypes=[("JSON", "*.json"), ("Все", "*.*")],
-        )
-        path_b = filedialog.askopenfilename(
-            title="verdict_extra B",
-            filetypes=[("JSON", "*.json"), ("Все", "*.*")],
-        )
-        if not path_b:
-            messagebox.showinfo(__app_name__, "Нужен файл B для сравнения")
-            return
-        self._sync_job_row(busy=True)
-        self._set_status("Сравнение весов…")
-
-        def _run() -> None:
-            try:
-                report = compare_verdict_weights(
-                    folder,
-                    verdict_a=path_a or None,
-                    verdict_b=path_b,
-                )
-                out = app_dir() / "weight_compare_report.txt"
-                out.write_text(report.to_text(), encoding="utf-8")
-
-                def _ok() -> None:
-                    self._sync_job_row(busy=False)
-                    if hasattr(self, "err_box"):
-                        self._clear_box(self.err_box)
-                        self._put(self.err_box, report.to_text(), "value")
-                        if "err" in getattr(self, "_tab_label_by_key", {}):
-                            label = self._tab_label_by_key["err"]
-                            self._tab_var.set(label)
-                            self._tab_seg.set(label)
-                            self._show_tab_frame("err")
-                    self._set_status(
-                        f"Сравнение весов: изменено {report.changed_count}/{len(report.rows)}"
-                    )
-                    messagebox.showinfo(
-                        __app_name__,
-                        f"Изменилось: {report.changed_count} из {len(report.rows)}\n"
-                        f"Отчёт: {out}",
-                    )
-
-                self.after(0, _ok)
-            except Exception as exc:  # noqa: BLE001
-                append_error_log("weight compare failed", exc=exc)
-                msg = str(exc)
-
-                def _fail() -> None:
-                    self._sync_job_row(busy=False)
-                    messagebox.showerror("Ошибка", msg)
-
-                self.after(0, _fail)
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    def toggle_watch_inbox(self) -> None:
-        """Вкл/выкл опрос папки watch-inbox."""
-        from reliquary.core.inbox_watch import InboxWatcher
-
-        watcher = getattr(self, "_inbox_watcher", None)
-        if watcher is not None and watcher.running:
-            watcher.stop()
-            self._inbox_watcher = None
-            self._prefs["watch_inbox_enabled"] = False
-            self._persist_prefs()
-            self._set_status("Watch-inbox: выкл")
-            return
-        folder = str(self._prefs.get("watch_inbox_dir") or "").strip()
-        if not folder:
-            folder = filedialog.askdirectory(
-                title=f"{__app_name__} — папка watch-inbox",
-                initialdir=self._last_dir or None,
-            )
-            if not folder:
-                return
-            self._prefs["watch_inbox_dir"] = folder
-        interval = float(self._prefs.get("watch_interval_s") or 3)
-        self._inbox_watcher = InboxWatcher(
-            folder,
-            on_new=lambda paths: self.after(0, lambda: self._analyze_paths(list(paths))),
-            interval_s=interval,
-        )
-        self._inbox_watcher.start()
-        self._prefs["watch_inbox_enabled"] = True
-        self._persist_prefs()
-        self._set_status(f"Watch-inbox: {folder}")
 
     def unlock_encrypted_and_reanalyze(self) -> None:
         """Запросить пароль архива и переразобрать текущее письмо."""

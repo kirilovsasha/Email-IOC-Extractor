@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from reliquary import __version__
 from reliquary.core.attachment_inspector import inspect_bytes
 from reliquary.core.calibration import segment_for
-from reliquary.core.content_signals import CLOUD_LURE_RE, analyze_content_signals
+from reliquary.core.content_signals import CLOUD_LURE_RE
 from reliquary.core.pipeline import analyze_file
 from reliquary.core.update_check import check_update_manifest, detect_runtime_channel
 from reliquary.core.url_rewrite import unwrap_url
 from reliquary.core.verdict import VerdictConfig, render_verdict
-from reliquary import __version__
 
 CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
@@ -105,21 +105,16 @@ def test_detect_runtime_channel() -> None:
     assert ch in {"lite", "full", "partial"}
 
 
-def test_cli_self_check_and_calibrate(tmp_path: Path) -> None:
+def test_cli_self_check(tmp_path: Path) -> None:
     from reliquary.cli import main
 
     assert main(["--self-check"]) == 0
-    # empty calibrate dir
-    empty = tmp_path / "inbox"
-    empty.mkdir()
-    assert main(["--calibrate", str(empty)]) == 1
 
 
 def test_schema_weight_drift() -> None:
     """All VerdictConfig weight_* keys must appear in schema + example."""
-    from dataclasses import fields
-
     import json as _json
+    from dataclasses import fields
 
     cfg_keys = {
         f.name
@@ -138,11 +133,8 @@ def test_schema_weight_drift() -> None:
     )
     props = set(schema.get("properties") or {})
     missing_schema = sorted(k for k in cfg_keys if k not in props)
-    missing_example = sorted(
-        k for k in cfg_keys if k.startswith("weight_") and k not in example and not k.startswith("_")
-    )
     assert not missing_schema, f"schema missing: {missing_schema}"
-    # example may omit some; require new 2.14 weights at least
+    # example may omit some; require new 2.14+ weights at least
     for key in (
         "weight_office_hyperlink",
         "weight_script_attachment",

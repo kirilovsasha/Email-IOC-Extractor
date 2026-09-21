@@ -16,7 +16,6 @@ _STRINGS: dict[str, str] = {
     "btn_cancel": "Стоп",
     "btn_export": "Экспорт",
     "btn_handoff": "В тикет",
-    "btn_calibrate": "Калибровка",
     "btn_allowlist": "В allowlist",
     "btn_override": "Сменить вердикт",
     "btn_copy_enc_note": "Заметка: шифрованный архив",

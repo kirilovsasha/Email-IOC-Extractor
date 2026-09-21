@@ -118,7 +118,6 @@ class ExtractorApp(
         self._profile_dir = str(self._prefs.get("profile_dir") or "") or None
         self._handoff_by_level: dict[str, str] | None = None
         self._archive_passwords: tuple[str, ...] = ()
-        self._inbox_watcher = None
         self._job_busy = False
         self._hint_default = "Откройте письмо или вставьте RFC822 · затем вкладка «Вердикт»"
         self._flash_after_id: str | None = None
@@ -178,10 +177,6 @@ class ExtractorApp(
             self.after(200, lambda: self._set_status(short[:180]))
         except (OSError, AttributeError, TypeError, ValueError):
             pass
-        if bool(self._prefs.get("watch_inbox_enabled")) and str(
-            self._prefs.get("watch_inbox_dir") or ""
-        ).strip():
-            self.after(500, self.toggle_watch_inbox)
 
     # ------------------------------------------------------------------ UI
     def _on_window_configure(self, event: tk.Event) -> None:  # type: ignore[type-arg]

@@ -8,8 +8,6 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - Module split: `verdict_config` / `verdict_scoring` / `verdict_confidence`
 - Encrypted archive session password + re-extract (`--archive-password`, GUI)
 - Analyst FP/FN feedback → `analyst_feedback.ndjson`
-- Watch-inbox folder poller
-- Weight A/B compare (`--compare-weights`, GUI «A/B»)
 - `.mbox` ingest
 - Org profile import wizard (Settings)
 - Optional YARA (`pip install .[yara]`)

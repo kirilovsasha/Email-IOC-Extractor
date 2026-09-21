@@ -129,7 +129,7 @@ def test_update_manifest_channel_sha(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_prefs_export_ui_and_sidecar_defaults() -> None:
-    from reliquary.core.prefs import _EXPORT_OK, _EXPORT_LEGACY, _coerce_value
+    from reliquary.core.prefs import _EXPORT_LEGACY, _EXPORT_OK, _coerce_value
 
     assert _EXPORT_OK == frozenset({"JSON", "CSV", "Batch CSV", "Тикет"})
     assert _coerce_value("export_choice", "Campaign pack", "JSON") == "Batch CSV"

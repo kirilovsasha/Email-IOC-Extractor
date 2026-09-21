@@ -149,14 +149,10 @@ def show_settings_dialog(
     _check(noise, "hide_allowlisted", "Скрыть allowlisted")
     _check(noise, "hide_private", "Скрыть private/local")
     _check(noise, "full_ioc_types", "Все типы IOC (registry/mutex/…)")
-    _path_row(noise, "last_inbox_dir", "Папка калибровки", dir_mode=True)
 
-    watch = _section("Watch-inbox / YARA")
-    _path_row(watch, "watch_inbox_dir", "Папка watch", dir_mode=True)
-    _int_row(watch, "watch_interval_s", "Интервал опроса (сек)")
-    _check(watch, "watch_inbox_enabled", "Включать watch при старте")
-    _path_row(watch, "yara_rules_path", "YARA rules (.yar / папка)")
-    _check(watch, "enable_yara", "Сканировать YARA (нужен extra)")
+    yara = _section("YARA (optional extra)")
+    _path_row(yara, "yara_rules_path", "YARA rules (.yar / папка)")
+    _check(yara, "enable_yara", "Сканировать YARA (нужен extra)")
 
     profile_wiz = _section("Org profile — мастер")
     row_p = ctk.CTkFrame(profile_wiz, fg_color="transparent")
@@ -233,7 +229,7 @@ def show_settings_dialog(
         }
         for key, ent in entries.items():
             val = ent.get().strip()
-            if key in ("max_workers", "folder_warn_threshold", "watch_interval_s"):
+            if key in ("max_workers", "folder_warn_threshold"):
                 try:
                     updates[key] = int(val or "0")
                 except ValueError:

@@ -12,7 +12,6 @@ _PREFS_NAME = "ui_prefs.json"
 _DEFAULTS: dict[str, Any] = {
     "last_dir": "",
     "last_export_dir": "",
-    "last_inbox_dir": "",  # last folder used for inbox calibration
     "copy_format": "type|value",
     "export_choice": "JSON",
     "ui_scale": 1.0,
@@ -50,10 +49,6 @@ _DEFAULTS: dict[str, Any] = {
     # Batch tree: last sort column / reverse
     "batch_sort_column": "score",
     "batch_sort_reverse": True,
-    # Watch-inbox: poll folder for new .eml/.msg
-    "watch_inbox_dir": "",
-    "watch_inbox_enabled": False,
-    "watch_interval_s": 3,
     # Optional YARA (extra)
     "yara_rules_path": "",
     "enable_yara": False,
@@ -100,7 +95,7 @@ def _coerce_value(key: str, value: Any, default: Any) -> Any:
         except (TypeError, ValueError):
             return default
         return max(0.75, min(2.0, scale))
-    if key in ("folder_warn_threshold", "max_workers", "watch_interval_s"):
+    if key in ("folder_warn_threshold", "max_workers"):
         try:
             n = int(value)
         except (TypeError, ValueError):
