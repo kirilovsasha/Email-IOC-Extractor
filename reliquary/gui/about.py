@@ -24,7 +24,7 @@ def show_about_dialog(
     overrides = ""
     if result and result.meta and result.meta.overrides_loaded:
         ov = result.meta.overrides_loaded
-        overrides = "\nOverrides: " + ", ".join(
+        overrides = "\nПереопределения: " + ", ".join(
             f"{k}={Path(v).name}" for k, v in ov.items()
         )
     elif profile_dir:
@@ -45,14 +45,16 @@ def show_about_dialog(
         f"{__app_name__} v{__version__}\n"
         f"{__tagline__}\n\n"
         "Офлайн-triage писем (.eml / .msg).\n"
-        "Сначала вердикт; IOC — как доказательства. Сеть заблокирована.\n\n"
+        "Один EXE + опциональные конфиги рядом. Без БД и без сети.\n"
+        "Сначала вердикт; IOC — как доказательства.\n\n"
         "1. Откройте письмо или папку\n"
         "2. Вердикт — score / разбор / причины\n"
         "3. Вложения · URL · IOC\n"
         "4. Экспорт JSON / CSV / ECS / CEF / STIX / MISP / OpenCTI / тикет\n"
         "5. ПКМ по IOC → allowlist / сменить вердикт\n\n"
         f"Журнал: {__log_name__}\n"
-        "Ctrl+O · Ctrl+H тикет · Ctrl+E экспорт · Ctrl+L тема · Ctrl+D плотность\n"
+        "Ctrl+O · Ctrl+H тикет · Ctrl+E экспорт · Ctrl+Shift+V компакт\n"
+        "Ctrl+N/P следующее письмо пакета · Ctrl+L тема · Ctrl+D плотность\n"
         f"Тема: {appearance_mode} · IOC: {ioc_density}"
         f"{overrides}{update_line}{runbook_line}{qr_line}\n\n"
         f"Каталог:\n{root}",

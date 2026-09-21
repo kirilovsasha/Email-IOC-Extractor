@@ -1,4 +1,4 @@
-﻿"""Compare samples/corpus/*.eml verdicts against expected.json.
+"""Compare samples/corpus/*.eml verdicts against expected.json.
 
 Also supports offline calibration on a local inbox folder of .eml/.msg files::
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
+from collections import defaultdict
 from pathlib import Path
 
 from reliquary.core.pipeline import analyze_file
@@ -18,6 +18,42 @@ from reliquary.core.pipeline import analyze_file
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "samples" / "corpus"
 EXPECTED_PATH = CORPUS / "expected.json"
+
+
+def _segment_for(result) -> str:
+    """Грубая сегментация для калибровки FP/FN без БД."""
+    signals = set(result.content_signals or [])
+    if "bec_payment" in signals:
+        return "bec"
+    if any(u.changed for u in (result.url_rewrites or [])):
+        rewriters = {u.rewriter for u in result.url_rewrites if u.changed}
+        if "microsoft_safelinks" in rewriters:
+            return "safelinks"
+        return "rewrite"
+    if any(
+        f in (a.risk_flags or [])
+        for a in (result.attachments or [])
+        for f in (
+            "dangerous_extension",
+            "macro_enabled_office",
+            "encrypted_archive",
+            "iso_image",
+            "shortcut_lnk",
+        )
+    ):
+        return "attachment"
+    if "credential_harvest" in signals or "href_mismatch" in signals:
+        return "phishing_content"
+    mid = result.mail_identity
+    if mid and ((mid.auto_submitted or "").lower() not in ("", "no")):
+        return "auto_reply"
+    subj = (result.subject or "").lower()
+    if "meeting" in subj or "приглашен" in subj or "calendar" in subj:
+        return "calendar"
+    reasons = (result.verdict.reasons if result.verdict else []) or []
+    if any("lookalike" in (r or "").lower() for r in reasons):
+        return "lookalike"
+    return "other"
 
 
 def _score_inbox(folder: Path) -> int:
@@ -29,6 +65,7 @@ def _score_inbox(folder: Path) -> int:
         return 1
     counts: dict[str, int] = {}
     scores: list[int] = []
+    by_seg: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     print(f"Inbox calibration ({len(files)} files) under {folder}\n")
     for path in files:
         result = analyze_file(path)
@@ -36,17 +73,35 @@ def _score_inbox(folder: Path) -> int:
         if v is None:
             print(f"SKIP  {path.name}: no verdict")
             continue
+        seg = _segment_for(result)
         counts[v.level.value] = counts.get(v.level.value, 0) + 1
+        by_seg[seg][v.level.value] += 1
         scores.append(v.score)
-        print(f"  {path.name}: {v.level.value} score={v.score}")
+        print(f"  [{seg}] {path.name}: {v.level.value} score={v.score}")
     print()
     print("Level distribution:")
     for level in ("benign", "unknown", "suspicious", "malicious"):
         print(f"  {level}: {counts.get(level, 0)}")
+    print("\nBy segment (level counts):")
+    for seg in sorted(by_seg):
+        parts = ", ".join(f"{lvl}={n}" for lvl, n in sorted(by_seg[seg].items()))
+        print(f"  {seg}: {parts}")
+    marketing_fp = by_seg.get("safelinks", {}).get("suspicious", 0) + by_seg.get(
+        "safelinks", {}
+    ).get("malicious", 0)
+    bec_fn = by_seg.get("bec", {}).get("benign", 0) + by_seg.get("bec", {}).get("unknown", 0)
+    if marketing_fp:
+        print(
+            f"\nHint FP: safelinks→suspicious/malicious = {marketing_fp} "
+            f"(см. weight_url_rewrite)"
+        )
+    if bec_fn:
+        print(f"Hint FN: bec→benign/unknown = {bec_fn} (см. weight_bec_payment)")
     if scores:
         avg = sum(scores) / len(scores)
-        print(f"Mean score: {avg:.1f}  (n={len(scores)})")
+        print(f"\nMean score: {avg:.1f}  (n={len(scores)})")
     print("\nUse docs/TUNING.md to adjust verdict_extra.json / org profile.")
+    print("Configs live next to the EXE only — no database.")
     return 0
 
 

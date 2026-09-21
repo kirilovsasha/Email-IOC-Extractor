@@ -1,0 +1,14 @@
+Received: from mail.internal.example (mail.internal.example [192.0.2.10]) by mx.company.local; Wed, 17 Sep 2025 11:00:00 +0000
+From: alice@company.local
+To: bob@company.local
+Subject: Re: бюджет Q3
+Message-ID: <thread_reply2@company.local>
+In-Reply-To: <thread_root@company.local>
+References: <thread_root@company.local>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=pass; dkim=pass; dmarc=pass
+
+Согласен, оставляем как обсудили.
+С уважением,
+Alice

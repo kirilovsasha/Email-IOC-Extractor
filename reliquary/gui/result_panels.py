@@ -25,16 +25,16 @@ class ResultPanelsMixin:
                 self._batch_tree_scroll.pack(fill="both", expand=True, padx=4, pady=4)
             try:
                 self.batch_box.pack_forget()
-            except Exception:
+            except tk.TclError:
                 pass
             if len(rows) < 2:
-                tree.insert("", "end", values=("Need >=2 files for batch table", "", "", "", ""))
+                tree.insert("", "end", values=("Нужно ≥2 файла для пакета", "", "", "", ""))
                 return
             for row in rows:
                 name = Path(row.path).name
-                level = (row.verdict_level or "-").upper()
-                score = f"{row.verdict_score}" if row.verdict_score is not None else "-"
-                reason = (row.top_reason or "-")[:60]
+                level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
+                score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
+                reason = (row.top_reason or "—")[:60]
                 peers = ", ".join(row.campaign_peers[:3]) if row.campaign_peers else ""
                 iid = tree.insert("", "end", values=(name, level, score, reason, peers))
                 self._batch_row_map[iid] = row
@@ -45,7 +45,7 @@ class ResultPanelsMixin:
             self._batch_diff_tags = {}
         self._batch_diff_tags.clear()
         if len(rows) < 2:
-            self._put(self.batch_box, "Need >=2 files for batch table\n", "empty")
+            self._put(self.batch_box, "Нужно ≥2 файла для таблицы пакета\n", "empty")
             return
         self._put(
             self.batch_box,
@@ -165,11 +165,11 @@ class ResultPanelsMixin:
         if hasattr(self, "_batch_tree_scroll"):
             try:
                 self._batch_tree_scroll.pack_forget()
-            except Exception:
+            except tk.TclError:
                 pass
         try:
             self.batch_box.pack(fill="both", expand=True, padx=4, pady=4)
-        except Exception:
+        except tk.TclError:
             pass
         self._clear_box(self.batch_box)
         self._put(self.batch_box, delta.to_text(), "value")

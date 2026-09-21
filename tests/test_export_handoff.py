@@ -37,7 +37,7 @@ def test_handoff_and_batch_export(tmp_path: Path):
     assert len(payload["batch"]) == 2
     assert payload.get("schema_version") == SCHEMA_VERSION
 
-    assert "Handoff" in EXPORT_CHOICES
+    assert "Тикет" in EXPORT_CHOICES
     assert "ECS" in EXPORT_CHOICES
     assert "CEF" in EXPORT_CHOICES
     assert "STIX" in EXPORT_CHOICES

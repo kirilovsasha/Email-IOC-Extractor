@@ -156,8 +156,12 @@ def _build_meta(
 
 
 def campaign_key_for(result: AnalysisResult) -> str:
-    """Stable campaign fingerprint for batch grouping."""
+    """Stable campaign fingerprint: thread root → Msg-ID → attachment → subject."""
     mid = result.mail_identity
+    if mid is not None:
+        thread = mid.thread_root_id()
+        if thread:
+            return f"thread:{thread}"
     msg_id = ((mid.message_id if mid else "") or "").strip().lower()
     if msg_id:
         return f"msgid:{msg_id}"
@@ -283,10 +287,14 @@ def _lift_attachment_iocs(attachments: list[AttachmentInfo], iocs: list[Ioc]) ->
             )
 
 
-def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
-    """Return (extra_text, errors) from nested .eml/.msg bytes."""
+def _parse_nested_email_attachment(
+    att: AttachmentInfo, *, depth: int = 0, max_depth: int = 2
+) -> tuple[str, list[str]]:
+    """Return (extra_text, errors) from nested .eml/.msg bytes (up to ``max_depth``)."""
     if not att.data or "nested_email" not in att.risk_flags:
         return "", []
+    if depth > max_depth:
+        return "", [f"nested mail depth>{max_depth}: {att.filename}"]
     errors: list[str] = []
     name = att.filename.lower()
     try:
@@ -304,9 +312,12 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
             sender = str(msg_file.sender or "")
             try:
                 msg_file.close()
-            except Exception:
+            except (OSError, AttributeError, RuntimeError):
                 pass
-            return f"Nested MSG {att.filename}\nFrom: {sender}\nSubject: {subj}\n{body}\n{html}", errors
+            return (
+                f"Nested MSG {att.filename}\nFrom: {sender}\nSubject: {subj}\n{body}\n{html}",
+                errors,
+            )
         # .eml / rfc822
         msg = email.message_from_bytes(att.data, policy=email.policy.default)  # type: ignore[arg-type]
         parts: list[str] = [
@@ -314,12 +325,32 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
             f"From: {msg.get('From', '')}",
             f"Subject: {msg.get('Subject', '')}",
             f"Message-ID: {msg.get('Message-ID', '')}",
+            f"In-Reply-To: {msg.get('In-Reply-To', '')}",
         ]
         if msg.is_multipart():
             for part in msg.walk():
                 ctype = part.get_content_type()
-                if part.get_filename():
-                    parts.append(f"Nested-Att: {part.get_filename()}")
+                fname = part.get_filename() or ""
+                if fname:
+                    parts.append(f"Nested-Att: {fname}")
+                    fl = fname.lower()
+                    if fl.endswith((".eml", ".msg")) and depth < max_depth:
+                        try:
+                            raw = part.get_payload(decode=True)
+                        except (TypeError, ValueError, AttributeError):
+                            raw = None
+                        if isinstance(raw, (bytes, bytearray)) and raw:
+                            from reliquary.core.attachment_inspector import inspect_bytes
+
+                            nested_info = inspect_bytes(fname, bytes(raw), keep_bytes=True)
+                            extra, nest_err = _parse_nested_email_attachment(
+                                nested_info, depth=depth + 1, max_depth=max_depth
+                            )
+                            if extra:
+                                parts.append(extra)
+                            errors.extend(nest_err)
+                    elif fl.endswith((".one", ".onepkg", ".iso", ".lnk")):
+                        parts.append(f"Nested-Risk-Att: {fname}")
                     continue
                 if ctype in ("text/plain", "text/html"):
                     try:
@@ -328,7 +359,7 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
                             continue
                         charset = part.get_content_charset() or "utf-8"
                         parts.append(bytes(raw).decode(charset, errors="replace"))
-                    except Exception:
+                    except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
                         continue
         else:
             try:
@@ -338,9 +369,11 @@ def _parse_nested_email_attachment(att: AttachmentInfo) -> tuple[str, list[str]]
                     parts.append(bytes(raw).decode(charset, errors="replace"))
                 else:
                     parts.append(str(msg.get_payload()))
-            except Exception:
+            except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
                 parts.append(str(msg.get_payload()))
         return "\n".join(parts), errors
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        return "", [f"Nested mail {att.filename}: {exc}"]
     except Exception as exc:  # noqa: BLE001
         return "", [f"Nested mail {att.filename}: {exc}"]
 

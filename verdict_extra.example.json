@@ -1,5 +1,5 @@
 {
-  "_comment": "Optional overrides for VerdictConfig. Copy to verdict_extra.json next to the exe/project, or pass --verdict / prefs verdict_path. Only listed keys replace built-in defaults.",
+  "_comment": "Optional overrides for VerdictConfig. Copy to verdict_extra.json next to the exe, or pass --verdict / prefs verdict_path. Only listed keys replace built-in defaults. Schema: docs/verdict_extra.schema.json. No database — configs beside the EXE only.",
   "threshold_malicious": 60,
   "threshold_suspicious": 30,
   "threshold_unknown": 10,
@@ -30,10 +30,14 @@
   "weight_dmarc_pass_aligned": -12,
   "weight_auth_full_pass": -6,
   "weight_internal_relay": -8,
+  "weight_auto_reply": -10,
+  "weight_calendar_invite": -8,
+  "weight_corp_signature": -5,
+  "weight_thread_reply": -4,
   "cap_headers": 45,
   "cap_attachments": 40,
   "cap_urls": 30,
   "cap_content": 40,
   "cap_lookalike": 30,
-  "cap_mitigation": 25
+  "cap_mitigation": 30
 }

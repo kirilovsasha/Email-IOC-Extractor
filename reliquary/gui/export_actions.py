@@ -25,7 +25,7 @@ EXPORT_CHOICES = (
     "JSON",
     "CSV",
     "Batch CSV",
-    "Handoff",
+    "Тикет",
     "Кампания",
     "ECS",
     "CEF",
@@ -38,6 +38,8 @@ EXPORT_CHOICES = (
 def normalize_export_kind(kind: str) -> str:
     raw = kind.strip().lower().replace(" ", "_")
     aliases = {
+        "тикет": "handoff",
+        "handoff": "handoff",
         "кампания": "campaign",
         "campaign_handoff": "campaign",
         "opencti": "opencti",

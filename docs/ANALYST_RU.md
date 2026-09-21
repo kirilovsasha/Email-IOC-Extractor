@@ -1,6 +1,7 @@
 # Analyst runbook (RU) — Email IOC Extractor
 
 Офлайн triage писем `.eml` / `.msg`. Сеть не используется.
+Деплой: **1 EXE** + опциональные конфиги рядом. Без базы данных.
 
 ## Быстрый цикл
 
@@ -8,8 +9,9 @@
 2. Вкладка **Вердикт** — уровень, score, разбор весов.
 3. При шуме: фильтры «к разбору», SafeLinks, allowlist.
 4. ПКМ по IOC → **В allowlist** или **Override вердикта**.
-5. Handoff (Ctrl+H) / JSON / CSV / Batch CSV (Ctrl+E).
-6. Пакет: таблица файлов; двойной клик при peers → diff кампании.
+5. Тикет (Ctrl+H) / JSON / CSV / Batch CSV (Ctrl+E).
+6. Пакет: таблица файлов; Ctrl+N/P — следующее письмо; peers → diff кампании.
+7. Ctrl+Shift+V — компактный режим (только вердикт).
 
 ## Горячие клавиши
 
@@ -17,8 +19,10 @@
 |---------|----------|
 | Ctrl+O | Открыть письмо |
 | Ctrl+Enter | Разбор текста слева |
-| Ctrl+H | Handoff |
+| Ctrl+H | Тикет (handoff) |
 | Ctrl+E | Экспорт |
+| Ctrl+Shift+V | Компактный вердикт |
+| Ctrl+N / Ctrl+P | Следующее / предыдущее в пакете |
 | Ctrl+L | Тема |
 | Ctrl+D | Плотность IOC |
 | Ctrl+F | Поиск IOC |
@@ -35,18 +39,18 @@
 - **STIX** — STIX 2.1 lite bundle
 - **MISP** — attribute CSV
 - **OpenCTI** — observables JSON lite
-- **Кампания** — пакетный handoff по campaign_key
+- **Кампания** — пакетный handoff по campaign_key (`thread:` / Msg-ID)
+- **Тикет** — текстовый блок для ITSM
 
-CLI: `--ecs` / `--cef` / `--stix` / `--misp` / `--opencti` / `--campaign-handoff`.
+CLI: `--ecs` / `--cef` / `--stix` / `--misp` / `--opencti` / `--campaign-handoff` / `--handoff`.
 
-UI только на русском. Вердикт в интерфейсе: безопасный / неясный / подозрительный / вредоносный.
+UI только на русском. Вердикт: безопасный / неясный / подозрительный / вредоносный.
 
-## Overrides рядом с EXE
+## Конфиги рядом с EXE
 
 - `allowlist_extra.txt`, `verdict_extra.json`, `org_profile/`
-- `ui_prefs.json` — prefs (контраст `high_contrast`, hook…)
-- `update.json` — локальный манифест версии (без сети): `{"latest":"2.8.0"}`
-
-UI только на русском.
+- `ui_prefs.json` — prefs (`verdict_compact`, `high_contrast`, hook…)
+- `update.json` — локальный манифест версии (без сети): `{"latest":"2.9.0"}`
+- схема весов: `docs/verdict_extra.schema.json`
 
 См. также `docs/TUNING.md`, `SECURITY.md`, `docs/SIGNING.md`.
