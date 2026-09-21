@@ -45,6 +45,11 @@ _DEFAULTS: dict[str, Any] = {
     "post_export_hook_allow_external": False,
     # Corporate lock: ignore prefs/CLI hook entirely
     "disable_post_export_hook": False,
+    # Pass schema_version:2 JSON sidecar as 2nd argv to the hook
+    "post_export_hook_json_sidecar": True,
+    # Batch tree: last sort column / reverse
+    "batch_sort_column": "score",
+    "batch_sort_reverse": True,
 }
 
 _APPEARANCE_OK = frozenset({"dark", "light", "system"})
@@ -63,9 +68,9 @@ _EXPORT_OK = frozenset(
         "STIX",
         "MISP",
         "OpenCTI",
+        "Campaign pack",
     }
 )
-
 
 def prefs_path() -> Path:
     return app_dir() / _PREFS_NAME

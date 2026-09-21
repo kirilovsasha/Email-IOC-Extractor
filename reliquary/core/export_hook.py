@@ -108,8 +108,12 @@ def run_post_export_hook(
     timeout: float = 30.0,
     allow_external: bool | None = None,
     disabled: bool | None = None,
+    json_sidecar: str | Path | None = None,
 ) -> str | None:
     """Run ``hook`` with the exported file path as the last argument.
+
+    When ``json_sidecar`` is set (path to a schema_version:2 JSON), it is appended
+    as a second path argument so SIEM scripts need not re-parse CEF/CSV.
 
     ``hook`` may be an executable path, a shell-like command string, or an argv list.
     Returns a short status message, or ``None`` if hook is empty.
@@ -132,6 +136,9 @@ def run_post_export_hook(
             if bool(prefs.get("disable_post_export_hook")):
                 return "hook disabled"
             allow_external = bool(prefs.get("post_export_hook_allow_external"))
+            if json_sidecar is None and bool(prefs.get("post_export_hook_json_sidecar", True)):
+                # Caller may omit — leave None unless they pass one
+                pass
         except (OSError, ValueError, TypeError, KeyError):
             allow_external = False
 
@@ -156,6 +163,8 @@ def run_post_export_hook(
 
     out = Path(export_path)
     cmd = parts + [str(out)]
+    if json_sidecar is not None and str(json_sidecar).strip():
+        cmd.append(str(json_sidecar))
     try:
         completed = subprocess.run(
             cmd,

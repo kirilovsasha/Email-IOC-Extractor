@@ -37,7 +37,7 @@ def test_zip_bomb_ratio_skipped() -> None:
 def test_zip_bomb_declared_sum(tmp_path: Path) -> None:
     # Build zip with many large declared members via ZipInfo trick is hard;
     # instead verify huge single-file path returns early through analyze size cap.
-    big = tmp_path / "huge.eml"
+    _ = tmp_path / "huge.eml"
     # Don't write 40MB; just assert constant exists and tiny file still works
     assert MAX_SOURCE_BYTES >= 10 * 1024 * 1024
     sample = Path("samples/corpus/benign_hr_notice.eml")
@@ -75,7 +75,9 @@ def test_update_manifest(tmp_path: Path, monkeypatch) -> None:
         json.dumps({"latest": "99.0.0", "notes": "test"}), encoding="utf-8"
     )
     msg = check_update_manifest()
-    assert msg and "update available" in msg
+    assert msg and (
+        "update available" in msg.lower() or "доступно обновление" in msg.lower()
+    )
 
 
 def test_cisco_unwrap() -> None:

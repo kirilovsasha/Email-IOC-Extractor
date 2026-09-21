@@ -52,7 +52,8 @@ UI только на русском. Вердикт: безопасный / не
 
 - `allowlist_extra.txt`, `verdict_extra.json`, `org_profile/` или **`org_profile.zip`**
 - `ui_prefs.json` — prefs (`verdict_compact`, `high_contrast`, hook…)
-- `update.json` — локальный манифест версии (без сети): `{"latest":"2.12.0"}`
+- `update.json` — локальный манифест (без сети): `latest` / `channel` lite|full / `sha256`
+- «Настройки» в GUI — пути allowlist/verdict/profile, workers, post-export hook + JSON sidecar
 - схема весов: `docs/verdict_extra.schema.json`
 - при старте: self-check Lite/Full + наличиеждения `verdict_extra`
 

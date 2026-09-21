@@ -1,1 +1,1 @@
-{"latest":"2.8.0","notes":"BEC scoring, nested unwrap, schema v2, MISP/OpenCTI, campaign handoff"}
+{"latest":"2.13.0","channel":"lite","sha256":"","notes":"MSG/TNEF/ISO/nested-mail, QR CID/PDF, allowlist mitigation, campaign pack"}

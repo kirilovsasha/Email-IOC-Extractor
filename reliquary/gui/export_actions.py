@@ -110,11 +110,28 @@ def run_export(
     prefs = load_prefs()
     if hook is None:
         hook = str(prefs.get("post_export_hook") or "")
+    sidecar_arg: Path | None = None
+    if hook and bool(prefs.get("post_export_hook_json_sidecar", True)):
+        if written.suffix.lower() != ".json":
+            try:
+                sidecar_arg = written.with_name(written.stem + ".sidecar.json")
+                export_report_json(
+                    result,
+                    sidecar_arg,
+                    filters_applied=filters_applied,
+                    batch_results=batch_results,
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                from reliquary.core.error_log import append_error_log
+
+                append_error_log(f"json sidecar failed: {exc}")
+                sidecar_arg = None
     run_post_export_hook(
         hook,
         written,
         allow_external=bool(prefs.get("post_export_hook_allow_external")),
         disabled=bool(prefs.get("disable_post_export_hook")),
+        json_sidecar=sidecar_arg,
     )
     return written
 

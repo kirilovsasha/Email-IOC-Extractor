@@ -353,6 +353,40 @@ def _parse_web_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
         return "", [f"Web-att {att.filename}: {exc}"]
 
 
+def _decode_data_image_qr(html: str, result: AnalysisResult) -> str:
+    """Decode data:image/*;base64 blobs in HTML for QR payloads; append notes to result."""
+    import base64
+    import re as _re
+
+    extra = ""
+    try:
+        from reliquary.core.qr_scan import decode_qr_payloads, qr_decoder_available
+    except ImportError:
+        return extra
+    if not qr_decoder_available():
+        return extra
+    found = 0
+    for m in _re.finditer(
+        r"data:image/(?:png|jpeg|jpg|gif);base64,([A-Za-z0-9+/=\s]{80,})",
+        html,
+        flags=_re.IGNORECASE,
+    ):
+        if found >= 4:
+            break
+        try:
+            raw = base64.b64decode(m.group(1), validate=False)
+        except (ValueError, TypeError):
+            continue
+        if len(raw) < 64 or len(raw) > 2 * 1024 * 1024:
+            continue
+        payloads, _notes = decode_qr_payloads(raw)
+        for p in payloads:
+            extra += f"\n{p}"
+            result.errors.append(f"QR data:image: {p[:120]}")
+        found += 1
+    return extra
+
+
 def _parse_nested_email_attachment(
     att: AttachmentInfo, *, depth: int = 0, max_depth: int = 2
 ) -> tuple[str, list[str]]:
@@ -376,22 +410,62 @@ def _parse_nested_email_attachment(
                 html = html.decode("utf-8", errors="replace")
             subj = str(msg_file.subject or "")
             sender = str(msg_file.sender or "")
+            parts: list[str] = [
+                f"Nested MSG {att.filename}",
+                f"From: {sender}",
+                f"Subject: {subj}",
+            ]
+            # Transport-ish headers when available
+            for attr, label in (
+                ("messageId", "Message-ID"),
+                ("date", "Date"),
+                ("inReplyTo", "In-Reply-To"),
+            ):
+                val = getattr(msg_file, attr, None)
+                if val:
+                    parts.append(f"{label}: {val}")
+            # Nested MSG attachments
+            try:
+                for matt in msg_file.attachments:
+                    mname = (
+                        getattr(matt, "longFilename", None)
+                        or getattr(matt, "shortFilename", None)
+                        or "attachment"
+                    )
+                    parts.append(f"Nested-Att: {mname}")
+                    raw = getattr(matt, "data", None)
+                    adata = bytes(raw) if isinstance(raw, (bytes, bytearray)) else b""
+                    fl = str(mname).lower()
+                    if fl.endswith((".eml", ".msg")) and depth < max_depth and adata:
+                        from reliquary.core.attachment_inspector import inspect_bytes
+
+                        nested_info = inspect_bytes(str(mname), adata, keep_bytes=True)
+                        extra, nest_err = _parse_nested_email_attachment(
+                            nested_info, depth=depth + 1, max_depth=max_depth
+                        )
+                        if extra:
+                            parts.append(extra)
+                        errors.extend(nest_err)
+                    elif fl.endswith((".one", ".onepkg", ".iso", ".lnk", ".html", ".htm")):
+                        parts.append(f"Nested-Risk-Att: {mname}")
+            except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
+                errors.append(f"Nested MSG attachments: {exc}")
             try:
                 msg_file.close()
             except (OSError, AttributeError, RuntimeError):
                 pass
-            return (
-                f"Nested MSG {att.filename}\nFrom: {sender}\nSubject: {subj}\n{body}\n{html}",
-                errors,
-            )
+            parts.append(body)
+            parts.append(html if isinstance(html, str) else "")
+            return "\n".join(parts), errors
         # .eml / rfc822
         msg = email.message_from_bytes(att.data, policy=email.policy.default)  # type: ignore[arg-type]
-        parts: list[str] = [
+        parts = [
             f"Nested EML {att.filename}",
             f"From: {msg.get('From', '')}",
             f"Subject: {msg.get('Subject', '')}",
             f"Message-ID: {msg.get('Message-ID', '')}",
             f"In-Reply-To: {msg.get('In-Reply-To', '')}",
+            f"Authentication-Results: {msg.get('Authentication-Results', '')}",
         ]
         if msg.is_multipart():
             for part in msg.walk():
@@ -486,6 +560,39 @@ def _enrich_parsed_result(
 
     blob = f"{parsed.text}\n{parsed.html}"
 
+    # Expand nested mail from ZIP/RAR and TNEF into attachment list (bounded)
+    expanded: list = []
+    for att in list(result.attachments):
+        if att.data and "archive_nested_email" in (att.risk_flags or []):
+            from reliquary.core.attachment_inspector import extract_nested_mail_from_archive
+
+            kids, knotes = extract_nested_mail_from_archive(
+                att.data, container_name=att.filename
+            )
+            result.errors.extend(knotes)
+            expanded.extend(kids)
+            if kids:
+                att.notes.append(f"Извлечено вложенных писем: {len(kids)}")
+        if att.data and "tnef_attachment" in (att.risk_flags or []):
+            try:
+                from reliquary.core.attachment_inspector import inspect_bytes
+                from reliquary.core.tnef import extract_tnef_attachments
+
+                parts, tnotes = extract_tnef_attachments(att.data)
+                result.errors.extend(tnotes)
+                for fname, payload in parts:
+                    expanded.append(inspect_bytes(fname, payload, keep_bytes=True))
+                if parts:
+                    att.notes.append(f"TNEF: извлечено {len(parts)} вложений")
+            except (OSError, ValueError, TypeError, ImportError) as exc:
+                result.errors.append(f"TNEF {att.filename}: {exc}")
+    if expanded:
+        result.attachments.extend(expanded)
+
+    # data:image QR in HTML body (Full)
+    if parsed.html and "data:image" in parsed.html.lower():
+        blob += _decode_data_image_qr(parsed.html, result)
+
     for att in result.attachments:
         nested_text, nested_errs = _parse_nested_email_attachment(att)
         if nested_text:
@@ -578,7 +685,20 @@ def _enrich_parsed_result(
         result.iocs = [_tag_file(i, tag_filename) for i in result.iocs]
     if result.source_kind == "email":
         cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
-        result.verdict = render_verdict(result, cfg, brands_path=opts.brands_path)
+        allow_domains: set[str] = set()
+        try:
+            from reliquary.core.allowlist import build_allowlist
+
+            domains, _ips = build_allowlist(extra_path=opts.allowlist_path)
+            allow_domains = domains
+        except (OSError, TypeError, ValueError, ImportError):
+            allow_domains = set()
+        result.verdict = render_verdict(
+            result,
+            cfg,
+            brands_path=opts.brands_path,
+            allowlist_domains=allow_domains or None,
+        )
     result.file_rows = [file_triage_row(result)]
     return result
 

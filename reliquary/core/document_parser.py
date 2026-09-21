@@ -92,6 +92,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
             ctype = part.get_content_type()
             disp = str(part.get("Content-Disposition", ""))
             filename = part.get_filename()
+            cid = str(part.get("Content-ID", "") or "").strip("<> ")
             if filename:
                 try:
                     payload = part.get_payload(decode=True) or b""
@@ -109,6 +110,25 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                             notes=[str(exc)],
                         )
                     )
+                continue
+            # CID / inline images without filename → still inspect for QR
+            if ctype.startswith("image/") and "attachment" not in disp.lower():
+                try:
+                    payload = part.get_payload(decode=True) or b""
+                except (TypeError, ValueError, AttributeError, OSError):
+                    payload = b""
+                if payload:
+                    synth = f"cid-{cid[:40] or 'inline'}.{ctype.split('/')[-1].split('+')[0]}"
+                    attachments.append(inspect_bytes(synth, payload))
+                continue
+            # TNEF without filename
+            if ctype in {"application/ms-tnef", "application/vnd.ms-tnef"}:
+                try:
+                    payload = part.get_payload(decode=True) or b""
+                except (TypeError, ValueError, AttributeError, OSError):
+                    payload = b""
+                if payload:
+                    attachments.append(inspect_bytes("winmail.dat", payload, keep_bytes=True))
                 continue
             if "attachment" in disp.lower():
                 continue
@@ -262,7 +282,35 @@ def parse_msg(path: Path, data: bytes | None = None) -> ParsedDocument:
                 synthetic["Subject"] = str(msg_file.subject)
             if msg_file.to:
                 synthetic["To"] = str(msg_file.to)
+            # Best-effort transport headers for offline MSG dumps
+            for attr, hdr in (
+                ("messageId", "Message-ID"),
+                ("date", "Date"),
+                ("inReplyTo", "In-Reply-To"),
+                ("replyTo", "Reply-To"),
+                ("returnPath", "Return-Path"),
+            ):
+                val = getattr(msg_file, attr, None)
+                if val and hdr not in synthetic:
+                    synthetic[hdr] = str(val)
+            # Received / Authentication-Results if exposed as header dict
+            hdrs = getattr(msg_file, "headerDict", None) or getattr(msg_file, "headers", None)
+            if isinstance(hdrs, dict):
+                for key in (
+                    "Received",
+                    "Authentication-Results",
+                    "DKIM-Signature",
+                    "References",
+                    "List-Unsubscribe",
+                ):
+                    raw = hdrs.get(key) or hdrs.get(key.lower())
+                    if raw and key not in synthetic:
+                        if isinstance(raw, (list, tuple)):
+                            synthetic[key] = str(raw[0])
+                        else:
+                            synthetic[key] = str(raw)
             message = synthetic
+            errors.append("MSG: transport-заголовки частично синтезированы (asEmailMessage недоступен)")
 
         subject = str(msg_file.subject or "")
         sender = str(msg_file.sender or "")
