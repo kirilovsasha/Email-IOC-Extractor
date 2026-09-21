@@ -593,7 +593,7 @@ class LayoutMixin:
         self._batch_verdict_chip = ctk.StringVar(value="все")
         filter_row = ctk.CTkFrame(batch_frame, fg_color="transparent")
         filter_row.pack(fill="x", padx=4, pady=(4, 0))
-        ctk.CTkLabel(filter_row, text="Фильтр:", font=ctk_font("small")).pack(side="left")
+        ctk.CTkLabel(filter_row, text="Фильтр:", font=ctk_font("dense")).pack(side="left")
         filt_entry = ctk.CTkEntry(filter_row, textvariable=self._batch_filter_var, width=160)
         filt_entry.pack(side="left", padx=6)
         filt_entry.bind("<KeyRelease>", lambda _e: self._on_batch_filter_change())
@@ -620,7 +620,6 @@ class LayoutMixin:
             filter_row,
             text="Экспорт среза",
             width=110,
-            height=26,
             font=ctk_font("dense"),
             command=self._export_batch_filtered,
             **BTN_SECONDARY,
