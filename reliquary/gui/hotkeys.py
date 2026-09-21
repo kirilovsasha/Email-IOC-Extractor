@@ -8,7 +8,7 @@ from pathlib import Path
 import customtkinter as ctk
 
 from reliquary.core.defang import defang_value
-from reliquary.gui.theme import COLORS, apply_appearance
+from reliquary.gui.theme import COLORS, apply_appearance, restyle_widget_tree
 
 _TAB_HOTKEYS = ("mail", "att", "url", "ioc", "batch", "err")
 _SCALE_STEPS = (0.85, 1.0, 1.15, 1.25, 1.35, 1.5)
@@ -49,11 +49,38 @@ class HotkeysMixin:
             self.bind(str(i), lambda _e, k=key: self._hotkey_tab(k))
             self.bind(f"<Key-{i}>", lambda _e, k=key: self._hotkey_tab(k))
 
+    def _apply_live_theme(self, remap: dict[str, str] | None = None) -> None:
+        """Recolor open widgets after COLORS / appearance_mode change (no restart)."""
+        try:
+            restyle_widget_tree(self, remap or {})
+        except (AttributeError, tk.TclError):
+            pass
+        try:
+            self.configure(fg_color=COLORS["bg"])
+        except (AttributeError, tk.TclError, ValueError, TypeError):
+            pass
+        try:
+            table = getattr(self, "ioc_table", None)
+            if table is not None:
+                table.configure(fg_color=COLORS["surface"])
+                table._apply_tree_style()
+        except (AttributeError, tk.TclError, ValueError, TypeError):
+            pass
+        try:
+            self._apply_panel_fonts()
+        except (AttributeError, tk.TclError):
+            pass
+        try:
+            if hasattr(self, "_refresh_views"):
+                self._refresh_views()
+        except (AttributeError, tk.TclError):
+            pass
+
     def _cycle_appearance(self) -> None:
         nxt = "light" if self._appearance_mode != "light" else "dark"
         self._appearance_mode = nxt
-        apply_appearance(nxt)
-        self.configure(fg_color=COLORS["bg"])
+        remap = apply_appearance(nxt)
+        self._apply_live_theme(remap)
         self._persist_prefs()
         self._set_status(f"Тема: {nxt}")
 

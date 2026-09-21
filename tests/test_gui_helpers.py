@@ -108,6 +108,27 @@ def test_ioc_type_colors_are_distinct():
     assert len(set(colors)) == len(colors)
 
 
+def test_appearance_remap_and_derived_sync():
+    from reliquary.gui import theme
+
+    theme.set_high_contrast(False)
+    theme.apply_appearance("dark")
+    assert theme.COLORS["bg"] == theme.COLORS_DARK["bg"]
+    assert theme.VERDICT_COLORS["malicious"] == theme.COLORS["danger"]
+
+    remap = theme.apply_appearance("light")
+    assert theme.COLORS["bg"] == theme.COLORS_LIGHT["bg"]
+    assert theme.COLORS_DARK["bg"].lower() in remap
+    assert remap[theme.COLORS_DARK["bg"].lower()] == theme.COLORS_LIGHT["bg"]
+    assert theme.BTN_PRIMARY["fg_color"] == theme.COLORS["accent"]
+    assert theme.SEVERITY_COLORS["info"] == theme.COLORS["muted"]
+
+    # Round-trip restores dark
+    remap2 = theme.apply_appearance("dark")
+    assert theme.COLORS_LIGHT["bg"].lower() in remap2
+    assert theme.COLORS["bg"] == theme.COLORS_DARK["bg"]
+
+
 def test_i18n_ru_only():
     from reliquary.gui import i18n
 

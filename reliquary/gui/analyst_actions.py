@@ -112,7 +112,14 @@ class AnalystActionsMixin:
         save_prefs({"high_contrast": enabled})
         try:
             set_high_contrast(enabled)
-            apply_appearance(str(self._prefs.get("appearance_mode") or "dark"))
-        except (AttributeError, ValueError, TypeError):
+            mode = str(
+                getattr(self, "_appearance_mode", None)
+                or self._prefs.get("appearance_mode")
+                or "dark"
+            )
+            remap = apply_appearance(mode)
+            if hasattr(self, "_apply_live_theme"):
+                self._apply_live_theme(remap)
+        except (AttributeError, ValueError, TypeError, tk.TclError):
             pass
         self._set_status(f"{t('high_contrast')}: {'вкл' if enabled else 'выкл'}")

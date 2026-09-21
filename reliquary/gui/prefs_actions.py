@@ -38,7 +38,17 @@ class PrefsMixin:
                 from reliquary.gui.theme import apply_appearance, set_high_contrast
 
                 set_high_contrast(bool(fresh.get("high_contrast")))
-                apply_appearance(self._appearance_mode)
+                remap = apply_appearance(self._appearance_mode)
+                self._apply_live_theme(remap)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                if hasattr(self, "ioc_table"):
+                    self.ioc_table.set_density(self._ioc_density)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                self._apply_verdict_compact()
             except Exception:  # noqa: BLE001
                 pass
             try:

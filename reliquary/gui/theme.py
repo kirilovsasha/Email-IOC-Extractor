@@ -78,21 +78,124 @@ def set_high_contrast(enabled: bool) -> None:
     _HIGH_CONTRAST = bool(enabled)
 
 
-def apply_appearance(mode: str = "dark") -> None:
-    """Switch COLORS dict and CustomTkinter appearance mode."""
-    light = str(mode).lower() == "light"
+def _sync_derived_palettes() -> None:
+    """Keep severity/verdict/button dicts in sync with active COLORS."""
+    SEVERITY_COLORS.update(
+        {
+            "critical": COLORS["danger"],
+            "high": COLORS["danger"],
+            "medium": COLORS["warn"],
+            "low": COLORS["info"],
+            "info": COLORS["muted"],
+        }
+    )
+    VERDICT_COLORS.update(
+        {
+            "malicious": COLORS["danger"],
+            "suspicious": COLORS["warn"],
+            "unknown": COLORS["info"],
+            "benign": COLORS["ok"],
+        }
+    )
+    BTN_PRIMARY["fg_color"] = COLORS["accent"]
+    BTN_PRIMARY["hover_color"] = COLORS["accent_dim"]
+    BTN_SECONDARY["fg_color"] = COLORS["surface_alt"]
+    BTN_SECONDARY["hover_color"] = COLORS["border"]
+    BTN_SECONDARY["border_color"] = COLORS["border"]
+
+
+def palette_remap(old: dict[str, str], new: dict[str, str]) -> dict[str, str]:
+    """Map old hex → new hex for live widget restyle (keys lowercased)."""
+    remap: dict[str, str] = {}
+    for key, old_hex in old.items():
+        new_hex = new.get(key)
+        if not new_hex or old_hex == new_hex:
+            continue
+        remap[str(old_hex).strip().lower()] = new_hex
+    return remap
+
+
+_CTK_COLOR_ATTRS = (
+    "fg_color",
+    "bg_color",
+    "text_color",
+    "border_color",
+    "hover_color",
+    "button_color",
+    "button_hover_color",
+    "progress_color",
+    "checkmark_color",
+    "text_color_disabled",
+    "placeholder_text_color",
+)
+
+
+def _remap_color_value(value: Any, remap: dict[str, str]) -> Any | None:
+    """Return remapped color (str/tuple) or None if unchanged / not applicable."""
+    if value is None or value == "transparent":
+        return None
+    if isinstance(value, (list, tuple)):
+        mapped = []
+        changed = False
+        for item in value:
+            nxt = _remap_color_value(item, remap)
+            if nxt is None:
+                mapped.append(item)
+            else:
+                mapped.append(nxt)
+                changed = True
+        return type(value)(mapped) if changed else None
+    if isinstance(value, str):
+        return remap.get(value.strip().lower())
+    return None
+
+
+def restyle_widget_tree(widget: Any, remap: dict[str, str]) -> None:
+    """Recursively recolor CustomTkinter widgets using a palette remap."""
+    if not remap:
+        return
+    for attr in _CTK_COLOR_ATTRS:
+        try:
+            current = widget.cget(attr)
+        except Exception:  # noqa: BLE001
+            continue
+        mapped = _remap_color_value(current, remap)
+        if mapped is None:
+            continue
+        try:
+            widget.configure(**{attr: mapped})
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        children = widget.winfo_children()
+    except Exception:  # noqa: BLE001
+        return
+    for child in children:
+        restyle_widget_tree(child, remap)
+
+
+def apply_appearance(mode: str = "dark") -> dict[str, str]:
+    """Switch COLORS + CTK appearance. Returns old→new hex remap for live restyle."""
+    mode_l = str(mode).lower()
+    light = mode_l == "light"
     if _HIGH_CONTRAST:
         palette = COLORS_HC_LIGHT if light else COLORS_HC_DARK
     else:
         palette = COLORS_LIGHT if light else COLORS_DARK
+    old = dict(COLORS)
     COLORS.clear()
     COLORS.update(palette)
+    _sync_derived_palettes()
     try:
         import customtkinter as ctk
 
-        ctk.set_appearance_mode("Light" if light else "Dark")
+        if mode_l == "system":
+            ctk.set_appearance_mode("System")
+        else:
+            ctk.set_appearance_mode("Light" if light else "Dark")
     except Exception:  # noqa: BLE001
         pass
+    return palette_remap(old, COLORS)
 
 
 # Typography (pt). Sized for 100% scale; Ctrl+/- still available.
