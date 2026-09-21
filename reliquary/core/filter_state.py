@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Mapping
 
 from reliquary.core.exporters import filter_iocs, with_iocs
@@ -151,13 +150,16 @@ class FilterState:
         return with_iocs(result, self.apply(result))
 
     def with_focus(self, source_file: str) -> FilterState:
+        # Basename must work for both POSIX and Windows paths (CI runs on Linux).
+        raw = (source_file or "").replace("\\", "/").rstrip("/")
+        base = raw.rsplit("/", 1)[-1] if raw else ""
         return FilterState(
             hide_rewriter=self.hide_rewriter,
             hide_allowlisted=self.hide_allowlisted,
             hide_private=self.hide_private,
             actionable_only=self.actionable_only,
             search=self.search,
-            source_file=Path(source_file).name if source_file else "",
+            source_file=base,
             cat_network=self.cat_network,
             cat_hashes=self.cat_hashes,
             cat_host=self.cat_host,
