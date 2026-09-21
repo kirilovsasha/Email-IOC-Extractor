@@ -37,7 +37,7 @@ def test_zip_bomb_ratio_skipped() -> None:
 def test_zip_bomb_declared_sum(tmp_path: Path) -> None:
     # Build zip with many large declared members via ZipInfo trick is hard;
     # instead verify huge single-file path returns early through analyze size cap.
-    big = tmp_path / "huge.eml"
+    _ = tmp_path / "huge.eml"
     # Don't write 40MB; just assert constant exists and tiny file still works
     assert MAX_SOURCE_BYTES >= 10 * 1024 * 1024
     sample = Path("samples/corpus/benign_hr_notice.eml")

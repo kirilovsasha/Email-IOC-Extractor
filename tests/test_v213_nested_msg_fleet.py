@@ -129,9 +129,12 @@ def test_update_manifest_channel_sha(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_prefs_campaign_pack_and_sidecar_defaults() -> None:
-    assert "Campaign pack" in _DEFAULTS.get("export_choice", "JSON") or True
+    from reliquary.core.prefs import _EXPORT_OK
+
+    assert "Campaign pack" in _EXPORT_OK
     assert "post_export_hook_json_sidecar" in _DEFAULTS
     assert _DEFAULTS["post_export_hook_json_sidecar"] is True
+    assert "batch_sort_column" in _DEFAULTS
 
 
 def test_export_hook_accepts_sidecar(tmp_path: Path) -> None:

@@ -114,8 +114,6 @@ def run_export(
     if hook and bool(prefs.get("post_export_hook_json_sidecar", True)):
         if written.suffix.lower() != ".json":
             try:
-                from reliquary.core.exporters import export_report_json
-
                 sidecar_arg = written.with_name(written.stem + ".sidecar.json")
                 export_report_json(
                     result,

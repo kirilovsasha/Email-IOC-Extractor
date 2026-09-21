@@ -433,12 +433,13 @@ def _parse_nested_email_attachment(
                         or "attachment"
                     )
                     parts.append(f"Nested-Att: {mname}")
-                    adata = matt.data or b""
+                    raw = getattr(matt, "data", None)
+                    adata = bytes(raw) if isinstance(raw, (bytes, bytearray)) else b""
                     fl = str(mname).lower()
                     if fl.endswith((".eml", ".msg")) and depth < max_depth and adata:
                         from reliquary.core.attachment_inspector import inspect_bytes
 
-                        nested_info = inspect_bytes(str(mname), bytes(adata), keep_bytes=True)
+                        nested_info = inspect_bytes(str(mname), adata, keep_bytes=True)
                         extra, nest_err = _parse_nested_email_attachment(
                             nested_info, depth=depth + 1, max_depth=max_depth
                         )
@@ -574,8 +575,8 @@ def _enrich_parsed_result(
                 att.notes.append(f"Извлечено вложенных писем: {len(kids)}")
         if att.data and "tnef_attachment" in (att.risk_flags or []):
             try:
-                from reliquary.core.tnef import extract_tnef_attachments
                 from reliquary.core.attachment_inspector import inspect_bytes
+                from reliquary.core.tnef import extract_tnef_attachments
 
                 parts, tnotes = extract_tnef_attachments(att.data)
                 result.errors.extend(tnotes)
