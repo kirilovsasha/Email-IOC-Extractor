@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.17.1
+
+### IOC precision
+- Message-ID / In-Reply-To / References больше не попадают в IOC email/domain
+- Имена вида `ivan.petrov` и атрибуты `header.from` / `smtp.mailfrom` не считаются доменами
+- Домены не обрезаются после лейбла с цифрой (`mx1.mail…` остаётся целиком)
+- Local-part email (`anna.ivanova@…`) не дублируется как domain
+
 ## 2.17.0
 
 ### Детекция
