@@ -2,15 +2,21 @@
 
 Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 
+## Done in 2.17.1
+
+- IOC precision: Message-ID / In-Reply-To / References not treated as email/domain IOC
+- Username-like labels (`ivan.petrov`) and auth attrs (`header.from`, `smtp.mailfrom`) rejected as domains
+- Domain truncation after digit labels fixed (`mx1.mail…`); local-part not duplicated as domain
+
 ## Done in 2.17
 
 - Wrap×lure composite; Return-Path mismatch + weak auth; SPF softfail FP control
 - ARC fail + reply-chain anomaly scoring
 - Campaign divergence as verdict signal (batch)
-- Feedback → threshold/cap suggestions beyond ±2 weights
+- Feedback → threshold/cap suggestions beyond ±2 weights (`--feedback-tune`)
 - Attachment depth: Excel DDE, OLE Package, OneNote file-data, PDF OpenAction+/URI
 - HTML depth: CID phishing, form action IP/TLD, deeper hidden styles
-- Homoglyph expand; YARA pack v2; PST MVP (optional pypff / clear skip)
+- Homoglyph expand; YARA pack v2; PST MVP (optional `.[pst]` / libratom·pypff / clear skip)
 - `cap_display_spoof` to reduce spoof score pinning
 
 ## Done in 2.16
@@ -31,6 +37,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - `.mbox` ingest
 - Org profile import wizard (Settings)
 - Optional YARA (`pip install .[yara]`)
+- BY brands / display-spoof / ЕРИП BEC + `by_gov` preset; coverage gate 75%
 
 ## Near-term
 
@@ -41,6 +48,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - [x] Tighten golden corpus score windows + BY brands/spoof/BEC
 - [x] Detection quality 2.16 (lures / polyglot / remote template / YARA pack)
 - [x] Detection next 2.17 (wrap-lure / ARC / campaign / DDE / PST MVP / caps)
+- [x] IOC precision 2.17.1 (Message-ID / usernames / auth headers / truncation)
 - [ ] Deeper PST support (full folder tree / attachments) if fleet demands pypff builds
 
 ## Later

@@ -1,4 +1,4 @@
-"""README golden verdict corpus (91 cases).
+"""README golden verdict corpus (103 cases).
 
 Добавить кейс
 --------------
@@ -22,4 +22,7 @@
 
 BY (РБ): ``suspicious_display_spoof_belarusbank.eml``, ``suspicious_display_spoof_mns_by.eml``,
 ``suspicious_bec_by_erip.eml``, ``benign_portal_gov_by.eml`` + пресет ``org_profile.example/by_gov/``.
+
+2.16+: messenger/QR lure, ISO exe, remote template, HTML polyglot, RAR scrape, KZ/UA spoof.
+2.17+: wrap-lure, ARC fail, office DDE, CID phishing, OLE package, form action.
 """

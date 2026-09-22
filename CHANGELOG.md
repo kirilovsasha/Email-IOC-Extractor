@@ -8,6 +8,10 @@
 - Домены не обрезаются после лейбла с цифрой (`mx1.mail…` остаётся целиком)
 - Local-part email (`anna.ivanova@…`) не дублируется как domain
 
+### Docs
+- README / ANALYST / PACKAGING / ROADMAP / corpus README сверены с 2.17.1
+  (корпус 103, `.pst`, `kz_gov`/`ua_gov`, `--feedback-weights`/`--feedback-tune`)
+
 ## 2.17.0
 
 ### Детекция
@@ -22,7 +26,7 @@
 
 ### Продукт
 - Feedback → `suggest_threshold_overrides` (пороги/caps) в `--feedback-weights` / `--feedback-tune`
-- PST MVP: `reliquary/core/pst_ingest.py` + optional `pst` extra (pypff); без lib — ясная RU-ошибка, без краша
+- PST MVP: `reliquary/core/pst_ingest.py` + optional `pst` extra (libratom; pypff fallback); без lib — ясная RU-ошибка, без краша
 
 ### Качество
 - Corpus / тесты `tests/test_v217_detection.py`; сегменты калибровки wrap_lure / arc_fail / reply_chain / …
@@ -60,13 +64,11 @@
 - `update.json`: `latest` / `sha256` / `notes` (legacy `channel` игнорируется)
 - CI: один `build-exe`; Ubuntu ставит `libzbar0`
 
-## Unreleased
-
 ### Docs
 - README / ANALYST_RU: повседневный экспорт только JSON·CSV·Batch CSV·Тикет;
   SIEM/кампания — отдельный блок «CLI only» (в GUI выпадающего списка нет)
 
-### Детекция
+### Детекция (BY)
 - Республика Беларусь: бренды/display-spoof (Беларусбанк, МНС, ЕРИП, Приорбанк, …)
 - BEC-маркеры ЕРИП / УНП / р/с / IBAN BY; unwrap redirect `portal.gov.by` / банки РБ
 - Пресет `org_profile.example/by_gov/`

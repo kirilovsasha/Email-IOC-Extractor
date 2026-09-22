@@ -67,7 +67,7 @@ Feedback → `python scripts/feedback_weights.py` или `--feedback-weights OUT
 Сегменты: `wrap_lure` / `arc_fail` / `reply_chain` / `return_path` / `campaign` /
 `office_dde` / `ole_package` / `pdf_openaction` / `cid_phishing` / `form_action`.
 Feedback также пишет threshold/cap suggestions (`suggest_threshold_overrides`,
-`--feedback-tune`). PST: optional `pip install .[pst]` (pypff).
+`--feedback-tune`). PST: optional `pip install .[pst]` (libratom; pypff тоже подходит).
 
 Вердикт JSON (2.15+): поля `confidence` (`high`|`medium`|`low`) и `confidence_note`.
 

@@ -2,7 +2,7 @@
 
 **Mail. Extract. Decide.** · v2.17.1
 
-🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg` / `.mbox`): заголовки,
+🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg` / `.mbox` / `.pst`): заголовки,
 вложения, URL rewrite, IOC как доказательства и **вердикт**
 (`benign` / `unknown` / `suspicious` / `malicious`) со score, разбором весов
 (включая mitigations) и **уверенностью** (`high` / `medium` / `low`).
@@ -42,6 +42,7 @@ python -m reliquary.cli mail.eml
 
 ```bash
 pip install -e ".[yara]"   # offline YARA по вложениям/телу
+pip install -e ".[pst]"    # разбор Outlook .pst (libratom)
 ```
 
 ### 📦 Одна EXE-сборка
@@ -58,7 +59,7 @@ ZIP/7z unlock и опциональный YARA остаются.
 
 ## 📋 Analyst runbook
 
-1. 📧 Откройте письмо (`.eml` / `.msg` / `.mbox`), папку или вставьте RFC822 слева (Ctrl+Enter).
+1. 📧 Откройте письмо (`.eml` / `.msg` / `.mbox` / `.pst`), папку или вставьте RFC822 слева (Ctrl+Enter).
 2. ⚖️ Вкладка **Вердикт**: уровень, score, **уверенность**, разбор (`+N` risk / `−N` mitigation), причины.
 3. 🔎 При шуме ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы** IOC.
 4. 🎫 **Тикет** (Ctrl+H) → буфер для ITSM; либо JSON / CSV / Batch CSV (Ctrl+E).
@@ -74,7 +75,7 @@ ZIP/7z unlock и опциональный YARA остаются.
 
 | | Область | Содержание |
 |---|---------|------------|
-| 📧 | Письмо | `.eml` / `.msg` / `.mbox` / папка / RFC822 / drag-drop |
+| 📧 | Письмо | `.eml` / `.msg` / `.mbox` / `.pst` / папка / RFC822 / drag-drop |
 | ⚖️ | Вердикт | score · confidence · breakdown (+/−) · причины |
 | 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
 | 📁 | Пакет | сводка + peers кампании + diff |
@@ -135,6 +136,8 @@ reliquary mail.eml --enable-yara --yara-rules rules.yar
 # самопроверка / feedback
 reliquary --self-check
 reliquary --feedback-summary
+reliquary --feedback-weights suggested.json   # ±2 к весам по сегментам FP/FN
+reliquary --feedback-tune suggested.json      # веса + пороги/caps
 
 # IOC-фильтры (по умолчанию как в GUI)
 reliquary mail.eml --full-ioc-types
@@ -173,13 +176,14 @@ reliquary ./inbox --campaign-pack pack.ndjson
 
 ## 🔬 Что анализируется
 
-Корневой вход — **письма** (`.eml` / `.msg` / `.mbox`).
-Внутри письма: Office, ZIP / 7z / RAR\* , nested `.eml` / `.msg`, OLE / macros,
+Корневой вход — **письма** (`.eml` / `.msg` / `.mbox` / `.pst`\*).
+Внутри письма: Office, ZIP / 7z / RAR\*\* , nested `.eml` / `.msg`, OLE / macros,
 TNEF / ISO / VHD, скрипты (JS/VBS/HTA/…), QR, messenger/QR lure, HTML polyglot,
-remote template, опционально YARA\*\*.
+remote template, опционально YARA\*\*\*.
 
-\* RAR — `rar_archive` + эвристический scrape имён (без rarfile/UnRAR).  
-\*\* YARA — `pip install -e ".[yara]"`; `yara_rules/` рядом с EXE / `--yara-rules` (авто).
+\* PST — MVP: `pip install -e ".[pst]"` (libratom; также подходит pypff); без lib — RU-пропуск, без краша.  
+\*\* RAR — `rar_archive` + эвристический scrape имён (без rarfile/UnRAR).  
+\*\*\* YARA — `pip install -e ".[yara]"`; `yara_rules/` рядом с EXE / `--yara-rules` (авто).
 
 | | Сигнал | Примеры |
 |---|--------|---------|
@@ -238,11 +242,14 @@ Override: `verdict_extra.json`
 [`local_mx`](org_profile.example/local_mx) ·
 [`ru_mail`](org_profile.example/ru_mail) ·
 [`ru_gov`](org_profile.example/ru_gov) ·
-[`by_gov`](org_profile.example/by_gov) —
+[`by_gov`](org_profile.example/by_gov) ·
+[`kz_gov`](org_profile.example/kz_gov) ·
+[`ua_gov`](org_profile.example/ua_gov) —
 см. [`org_profile.example/README.md`](org_profile.example/README.md).
 
 CLI: `--allowlist` · `--verdict` · `--handoff-template` · `--profile` ·
-`--post-export-hook` · `--archive-password` · `--enable-yara` · `--yara-rules`  
+`--post-export-hook` · `--archive-password` · `--enable-yara` · `--yara-rules` ·
+`--feedback-weights` · `--feedback-tune`  
 Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`, `brands_path`,
 `post_export_hook`, `post_export_hook_allow_external`, `disable_post_export_hook`,
 `enable_yara`, `yara_rules_path`, …
@@ -260,8 +267,9 @@ Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`,
 
 ## 🧪 Корпус и тесты
 
-Golden corpus: `samples/corpus/` + `expected.json` (**91** кейс: `.eml` / `.msg`;
-узкие score windows ±8/±10). Включает FP-кейсы, RU/BY display-spoof, BEC/ЕРИП.
+Golden corpus: `samples/corpus/` + `expected.json` (**103** кейса: `.eml` / `.msg`;
+узкие score windows ±8/±10). Включает FP-кейсы, RU/BY/KZ/UA display-spoof, BEC/ЕРИП,
+wrap-lure / ARC / DDE / polyglot / CID.
 
 ```bash
 pip install -r requirements-dev.txt
@@ -328,12 +336,12 @@ push в `main` → один EXE + frozen `--cli` smoke + SHA256;
 reliquary/
   core/     # pipeline, verdict_config / scoring / confidence,
             # lookalike, content_signals, IOC, archive_unlock, yara_scan,
-            # feedback, mbox_ingest, diff, exporters, handoff,
+            # feedback, mbox_ingest, pst_ingest, diff, exporters, handoff,
             # allowlist, org_profile, batch, calibration
   gui/      # app + mixins: layout, analysis, clipboard, result_panels,
             # hotkeys, prefs_actions, settings_dialog, about, ioc_table
-samples/corpus/          # golden EMLs + expected.json (91)
-org_profile.example/     # m365 / google / banking / ru_gov / by_gov / …
+samples/corpus/          # golden EMLs + expected.json (103)
+org_profile.example/     # m365 / google / banking / ru_gov / by_gov / kz_gov / ua_gov / …
 docs/TUNING.md           # калибровка verdict_extra.json
 docs/ANALYST_RU.md       # runbook
 tests/                   # corpus + доменные / GUI smoke / BY
