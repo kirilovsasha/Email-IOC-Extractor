@@ -12,7 +12,6 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 | Brand spoof under-scored | Raise `weight_display_spoof` (display-name) / `weight_lookalike` / `weight_idn`; extend `brands.txt` |
 | Auth fails dominate everything | Caps: `cap_headers` (default 45) — already limits stacking |
 | Mitigations hide real attacks | Mitigations auto-skip on HIGH headers / dangerous attachments / bad content signals; lower `cap_mitigation` if needed |
-| RAR without UnRAR under-scored | Ship `UnRAR.exe` beside Full EXE; raise `weight_unrar_missing` |
 | CAB / LNK / PDF URI soft | Raise `weight_cab_archive`, `weight_lnk_dangerous`, `weight_pdf_uri_action` |
 
 ## Score bands (defaults)
@@ -39,7 +38,8 @@ Copy `verdict_extra.example.json` to `verdict_extra.json` next to the exe, or pu
 | `cap_mitigation` | 30 | Max absolute reduction |
 
 HTML/PDF вложения: `weight_html_smuggling`, `weight_pdf_javascript`, `weight_html_attachment`, `weight_pdf_uri_action`.
-LNK/CAB/RAR: `weight_attachment_lnk`, `weight_lnk_dangerous`, `weight_cab_archive`, `weight_unrar_missing`, `weight_archive_nested_email`, `weight_zip_bomb`.
+LNK/CAB/архивы: `weight_attachment_lnk`, `weight_lnk_dangerous`, `weight_cab_archive`, `weight_archive_nested_email`, `weight_zip_bomb`.
+RAR: только флаг `rar_archive` / `archive_unlisted` (без inventory членов).
 Display-spoof: `weight_display_spoof` (отдельно от `weight_lookalike`).
 
 Сегменты калибровки (2.14+): `display_spoof`, `office_link`, `script_att`, `cloud_lure`,

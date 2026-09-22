@@ -164,7 +164,7 @@ class ExtractorApp(
         self._bind_global_hotkeys()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._search_var.trace_add("write", lambda *_: self._schedule_search_refresh())
-        # Startup self-check (Lite/Full + configs beside EXE)
+        # Startup self-check (QR + configs beside EXE)
         try:
             lines = build_self_check_lines(
                 profile_dir=self._profile_dir,
@@ -207,23 +207,16 @@ class ExtractorApp(
         try:
             right_w = max(self._right.winfo_width() - 36, 180)
             left_w = max(self._left.winfo_width() - 36, 140)
-            stacked = right_w < 560
-            self._place_summary(stacked)
-            badge_reserve = 0 if stacked else 240
-            self.ioc_breakdown.configure(wraplength=max(right_w - badge_reserve, 140))
+            # Summary stays one row (verdict + evidence); no stacked reflow.
+            self._place_summary(False)
             self.filter_hint.configure(wraplength=right_w)
             self.source_meta.configure(wraplength=max(left_w - 90, 80))
             self.ioc_empty_label.configure(wraplength=max(right_w - 20, 160))
         except Exception:  # noqa: BLE001
             right_w = 480
 
-        compact_tabs = right_w < 620
-        if compact_tabs != self._tabs_compact:
-            self._tabs_compact = compact_tabs
-            try:
-                self._sync_result_tabs(self.result, len(self._filtered_iocs()) if self.result else 0)
-            except Exception:  # noqa: BLE001
-                pass
+        # Tab labels are stable; skip compact/full rebuild that caused EXE jumps.
+        self._tabs_compact = False
 
         try:
             if w < 900:
@@ -535,11 +528,21 @@ class ExtractorApp(
 
     def _show_tab_frame(self, key: str) -> None:
         self._active_tab_key = key
-        for k, frame in self._tab_frames.items():
-            if k == key:
-                frame.pack(fill="both", expand=True)
-            else:
-                frame.pack_forget()
+        frame = self._tab_frames.get(key)
+        if frame is None:
+            return
+        try:
+            frame.tkraise()
+        except Exception:  # noqa: BLE001
+            # Fallback if tkraise unavailable on some CTk builds
+            for k, fr in self._tab_frames.items():
+                try:
+                    if k == key:
+                        fr.grid()
+                    else:
+                        fr.grid_remove()
+                except Exception:  # noqa: BLE001
+                    pass
 
     def _mail_tab_relevant(self, result: AnalysisResult) -> bool:
         rows = result.file_rows or []
@@ -565,10 +568,16 @@ class ExtractorApp(
         label_by_key = {key: label for key, label in desired}
 
         prev_key = self._active_tab_key
+        prev_labels = list(getattr(self, "_tab_seg_labels", ()) or ())
         self._tab_key_by_label = key_by_label
         self._tab_label_by_key = label_by_key
 
-        self._tab_seg.configure(values=labels)
+        # Rebuild segmented values only when the set of labels actually changes —
+        # avoids width jumps and EXE lag on every filter keystroke.
+        if labels != prev_labels:
+            self._tab_seg_labels = tuple(labels)
+            self._tab_seg.configure(values=labels)
+
         if prev_key in label_by_key:
             select_key = prev_key
         elif "mail" in label_by_key:
@@ -576,8 +585,13 @@ class ExtractorApp(
         else:
             select_key = desired[0][0] if desired else "ioc"
         select_label = label_by_key[select_key]
-        self._tab_var.set(select_label)
-        self._tab_seg.set(select_label)
+        try:
+            if self._tab_var.get() != select_label:
+                self._tab_var.set(select_label)
+                self._tab_seg.set(select_label)
+        except Exception:  # noqa: BLE001
+            self._tab_var.set(select_label)
+            self._tab_seg.set(select_label)
         self._show_tab_frame(select_key)
 
     def _screen_metrics(self) -> tuple[tuple[int, int], tuple[int, int, int, int]]:
@@ -663,7 +677,6 @@ class ExtractorApp(
             self._panels_result_id = None
             self.ioc_summary_label.configure(text="")
             self.verdict_badge.configure(text="Вердикт —", text_color=COLORS["muted"])
-            self.ioc_breakdown.configure(text="Откройте .eml / .msg")
             self._set_hint_default(
                 "Откройте письмо или вставьте RFC822 · затем вкладка «Вердикт»"
             )
@@ -689,23 +702,21 @@ class ExtractorApp(
 
         if total == full_count:
             self.ioc_summary_label.configure(text=f"доказательства {total}")
-            self._set_hint_default(
-                "Вердикт → вложения / URL → IOC · Enter копирует · 2×клик — к фрагменту"
-            )
+            hint = "Вердикт → вложения / URL → IOC · Enter копирует · 2×клик — к фрагменту"
         else:
             self.ioc_summary_label.configure(text=f"доказательства {total}/{full_count}")
-            self._set_hint_default(
-                f"Показано {total} из {full_count} · фильтр/поиск · Enter копирует выбранное"
-            )
+            hint = f"Показано {total} из {full_count} · фильтр/поиск · Enter копирует выбранное"
+        if total == 0 and full_count > 0:
+            hint = "Пусто — снимите «к разбору» или ослабьте «Шум»"
+        self._set_hint_default(hint)
 
+        # Type breakdown only in the hint line — not beside the verdict badge
         if counts:
             breakdown = " · ".join(f"{k} {v}" for k, v in sorted(counts.items()))
-            self.ioc_breakdown.configure(text=breakdown, text_color=COLORS["text"])
-        else:
-            self.ioc_breakdown.configure(
-                text="Пусто — снимите «к разбору» или ослабьте «Шум»",
-                text_color=COLORS["muted"],
-            )
+            try:
+                self.filter_hint.configure(text=f"{hint}  ·  {breakdown}")
+            except Exception:  # noqa: BLE001
+                pass
 
         self._update_verdict_badge(self.result)
         self._sync_result_tabs(self.result, filtered_count=total)

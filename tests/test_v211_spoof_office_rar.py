@@ -70,7 +70,7 @@ def test_new_weights() -> None:
 def test_self_check_mentions_unrar() -> None:
     text = "\n".join(build_self_check_lines())
     assert "Сборка" in text
-    assert "RAR" in text or "Lite" in text
+    assert "QR" in text or "pyzbar" in text or "⚠" in text
 
 
 def test_parse_msg_accepts_bytes(tmp_path: Path) -> None:

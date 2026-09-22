@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.15.1
+
+### GUI / UX
+- Сводка: рядом с вердиктом только `доказательства N` (type breakdown → hint)
+- Вкладки: стабильные короткие подписи + `tkraise` / shared grid — без прыжков в EXE
+- Убраны кнопка / хоткей Msg-ID; Message-ID остаётся в «В тикет» и панели вердикта
+
+### Сборка / продукт
+- Одна EXE-сборка: core + QR (`pyzbar` в зависимостях); убраны Lite/Full
+- Убраны `rarfile` / UnRAR inventory, `weight_unrar_missing`, RAR unlock / nested-mail
+- RAR-вложения по-прежнему `rar_archive` / `archive_unlisted` без listing членов
+- ZIP/7z unlock и optional `yara` сохранены
+- `update.json`: `latest` / `sha256` / `notes` (legacy `channel` игнорируется)
+- CI: один `build-exe`; Ubuntu ставит `libzbar0`
+
 ## Unreleased
 
 ### Docs

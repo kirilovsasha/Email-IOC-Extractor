@@ -2,16 +2,15 @@
 
 ## Что публикуется
 
-CI публикует **Lite** `EmailIOCExtractor.exe` + `.sha256` на `main` и на тег `v*`.
-На теге `v*` в Release также публикуется **Full** `EmailIOCExtractor-Full.exe` (RAR/QR).
+CI публикует один артефакт `EmailIOCExtractor.exe` + `.sha256` на `main` и на тег `v*`
+(core + QR decode). Разделения Lite/Full нет; RAR inventory не входит.
+ZIP/7z unlock и опциональный YARA остаются в продукте.
 
-Локально Full:
+Локально:
 
 ```bat
-build_exe.bat --full
+build_exe.bat
 ```
-
-или CI job `build-exe-full` (артефакт на push в main).
 
 ## Деплой без MSI
 
@@ -20,16 +19,14 @@ build_exe.bat --full
 1. Проверить SHA256 (`docs/SIGNING.md`).
 2. Подписать Authenticode (`build/sign_exe.ps1` или секреты CI).
 3. Скопировать EXE + опционально `org_profile.zip` / prefs в защищённую папку.
-4. Для Full: положить `UnRAR.exe` рядом с EXE (иначе RAR inventory недоступен —
-   self-check предупредит, вердикт поднимет `unrar_missing`).
-5. Опционально скопировать `docs/ANALYST_RU.md` рядом с EXE (или он уже внутри сборки).
-6. Опционально — private winget-манифест на внутренний HTTPS URL подписанного EXE.
+4. Опционально скопировать `docs/ANALYST_RU.md` рядом с EXE (или он уже внутри сборки).
+5. Опционально — private winget-манифест на внутренний HTTPS URL подписанного EXE.
 
 ### Эскиз winget-манифеста
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.14.0
+PackageVersion: 2.15.1
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -42,8 +39,9 @@ Installers:
 ## Офлайн-флаг версии
 
 Положите `update.json` рядом с EXE
-(`{"latest":"2.14.0","channel":"lite","sha256":"…","notes":"..."}`).
-Диалог «О программе» покажет канал Lite/Full и сверку SHA256 — без сети.
+(`{"latest":"2.15.1","sha256":"…","notes":"..."}`).
+Диалог «О программе» покажет сверку версии / SHA256 — без сети.
+Legacy-поле `channel` (lite/full) игнорируется.
 
 Предпочтительно один файл **`org_profile.zip`** рядом с EXE (подхватывается автоматически);
 папка `org_profile/` тоже работает.

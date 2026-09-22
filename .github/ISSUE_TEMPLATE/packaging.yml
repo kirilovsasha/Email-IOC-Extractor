@@ -7,7 +7,7 @@ body:
     id: env
     attributes:
       label: Environment
-      description: OS, Lite/Full, signed?, org_profile?
+      description: OS, signed?, org_profile?
     validations:
       required: true
   - type: textarea

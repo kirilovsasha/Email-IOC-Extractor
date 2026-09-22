@@ -567,7 +567,7 @@ class ResultPanelsMixin:
             self._put(self.mail_box, "\n")
             self._put(
                 self.mail_box,
-                "  Кнопки сверху: From / Msg-ID / Auth\n\n",
+                "  Кнопки сверху: From / Auth\n\n",
                 "muted",
             )
 
@@ -634,15 +634,13 @@ class ResultPanelsMixin:
                 self._put(self.mail_box, f"  {name}: ", "label")
                 self._put(self.mail_box, f"{value}\n", "value")
 
-        if mid and (mid.from_header or mid.message_id):
+        if mid and mid.from_header:
             self._put(self.mail_box, "\n", "muted")
-            self._put(self.mail_box, "  [F] Копировать From   [M] Копировать Message-ID\n", "info")
+            self._put(self.mail_box, "  [F] Копировать From   [R] Причины вердикта\n", "info")
             widget = self._tk(self.mail_box)
             if widget is not None:
                 widget.bind("<Key-f>", lambda _e: self._copy_from(), add="+")
                 widget.bind("<Key-F>", lambda _e: self._copy_from(), add="+")
-                widget.bind("<Key-m>", lambda _e: self._copy_message_id(), add="+")
-                widget.bind("<Key-M>", lambda _e: self._copy_message_id(), add="+")
                 widget.bind("<Key-r>", lambda _e: self.copy_verdict_reasons(), add="+")
                 widget.bind("<Key-R>", lambda _e: self.copy_verdict_reasons(), add="+")
 

@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--self-check",
         action="store_true",
-        help="Офлайн self-check (Lite/Full, конфиги рядом с EXE) и выход",
+        help="Офлайн self-check (QR / конфиги рядом с EXE) и выход",
     )
     parser.add_argument(
         "--feedback-summary",

@@ -323,8 +323,9 @@ def _inventory_7z(data: bytes) -> tuple[list[str], list[str], list[str]]:
 
 
 def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Detect RAR magic only — no member listing (rarfile/UnRAR not used)."""
     entries: list[str] = []
-    flags: list[str] = ["archive", "rar_archive"]
+    flags: list[str] = ["archive", "rar_archive", "archive_unlisted"]
     notes: list[str] = []
     # RAR5 / RAR4 magic
     if data[:7] == b"Rar!\x1a\x07\x01":
@@ -333,65 +334,10 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
         notes.append("RAR4 контейнер")
     else:
         notes.append("RAR-подобная сигнатура")
-
-    try:
-        import rarfile  # type: ignore[import-untyped]
-    except ImportError:
-        flags.append("archive_unlisted")
-        notes.append("RAR: для полного inventory нужен rarfile+unrar; имена не извлечены")
-        if b"encrypted" in data[:4096].lower() or data[0x18:0x1A] == b"\x04\x00":
-            flags.append("encrypted_archive")
-            notes.append("Возможно зашифрованный RAR (эвристика)")
-        return entries, flags, notes
-
-    # Tool binary may still be missing even if rarfile is installed
-    try:
-        tool = getattr(rarfile, "UNRAR_TOOL", None) or getattr(rarfile, "ALT_TOOL", None)
-        if tool:
-            notes.append(f"RAR tool: {tool}")
-    except (AttributeError, TypeError):
-        pass
-
-    try:
-        rf = rarfile.RarFile(io.BytesIO(data))
-        if rf.needs_password():
-            flags.append("encrypted_archive")
-            notes.append("⚠ ЗАЩИЩЁН ПАРОЛЕМ: RAR — содержимое недоступно без пароля")
-        names = [i.filename for i in rf.infolist() if not i.is_dir()]
-        rf.close()
-    except (OSError, RuntimeError, ValueError) as exc:
-        flags.append("archive_unlisted")
-        err = str(exc).lower()
-        if "unrar" in err or "cannot find" in err or "tool" in err:
-            flags.append("unrar_missing")
-            notes.append("UnRAR.exe/tool не найден — inventory RAR недоступен")
-        notes.append(f"RAR inventory ({type(exc).__name__}): {exc}")
-        return entries, flags, notes
-
-    entries = names[:MAX_ARCHIVE_ENTRIES]
-    notes.append(f"Содержимое RAR: {len(names)} файл(ов)")
-    dangerous: list[str] = []
-    double_hits: list[str] = []
-    nested_mail: list[str] = []
-    for name in names:
-        base = Path(name).name
-        lower = base.lower()
-        if DOUBLE_EXT_RE.search(lower):
-            double_hits.append(base)
-        ext = Path(lower).suffix
-        if ext in DANGEROUS_EXTENSIONS:
-            dangerous.append(base)
-        if ext in NESTED_MAIL_EXT:
-            nested_mail.append(base)
-    if double_hits:
-        flags.append("archive_double_extension")
-        notes.append("Двойное расширение внутри RAR: " + ", ".join(double_hits[:8]))
-    if dangerous:
-        flags.append("archive_dangerous_member")
-        notes.append("Опасные члены: " + ", ".join(dangerous[:8]))
-    if nested_mail:
-        flags.append("archive_nested_email")
-        notes.append("Вложенные письма в RAR: " + ", ".join(nested_mail[:8]))
+    notes.append("RAR: inventory членов не выполняется (имена не извлечены)")
+    if b"encrypted" in data[:4096].lower() or data[0x18:0x1A] == b"\x04\x00":
+        flags.append("encrypted_archive")
+        notes.append("Возможно зашифрованный RAR (эвристика)")
     return entries, flags, notes
 
 
@@ -610,41 +556,7 @@ def extract_nested_mail_from_archive(
         return extracted, notes
 
     if data[:4] == b"Rar!" or lower.endswith(".rar"):
-        try:
-            import rarfile  # type: ignore[import-untyped]
-        except ImportError:
-            notes.append("RAR nested-mail: нет rarfile")
-            return extracted, notes
-        try:
-            with rarfile.RarFile(io.BytesIO(data)) as rf:
-                if rf.needs_password():
-                    if not pwds:
-                        notes.append("RAR зашифрован — вложенные письма не извлечены")
-                        return extracted, notes
-                    from reliquary.core.archive_unlock import extract_rar_with_passwords
-
-                    members, xnotes = extract_rar_with_passwords(data, pwds)
-                    notes.extend(xnotes)
-                    for name, payload in members:
-                        if Path(name).suffix.lower() in NESTED_MAIL_EXT:
-                            _add(name, payload)
-                        if len(extracted) >= MAX_NESTED_MEMBERS:
-                            break
-                    return extracted, notes
-                for info in rf.infolist():
-                    name = getattr(info, "filename", "") or ""
-                    if Path(name).suffix.lower() not in NESTED_MAIL_EXT:
-                        continue
-                    try:
-                        payload = rf.read(info)
-                    except Exception as exc:  # noqa: BLE001
-                        notes.append(f"RAR read {name}: {exc}")
-                        continue
-                    _add(Path(name).name, bytes(payload))
-                    if len(extracted) >= MAX_NESTED_MEMBERS:
-                        break
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"RAR nested-mail: {exc}")
+        notes.append("RAR nested-mail: вложенные письма из RAR не извлекаются")
         return extracted, notes
 
     return extracted, notes
@@ -779,7 +691,7 @@ def _qr_urls_from_image(data: bytes) -> tuple[list[str], list[str]]:
 
 
 def _qr_from_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
-    """Best-effort: find embedded JPEG/PNG streams in PDF and run QR decode (Full)."""
+    """Best-effort: find embedded JPEG/PNG streams in PDF and run QR decode."""
     notes: list[str] = []
     hits: list[str] = []
     if not data.startswith(b"%PDF"):
@@ -925,7 +837,7 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         pflags, pnotes = _scan_pdf_payload(data)
         flags.extend(pflags)
         notes.extend(pnotes)
-        # Best-effort: decode embedded raster as QR (Full / optional decoder)
+        # Best-effort: decode embedded raster as QR
         qr_hits, qr_notes = _qr_from_pdf_bytes(data)
         notes.extend(qr_notes)
         if qr_hits:

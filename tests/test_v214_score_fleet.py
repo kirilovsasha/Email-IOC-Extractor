@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reliquary import __version__
 from reliquary.core.attachment_inspector import inspect_bytes
 from reliquary.core.calibration import segment_for
 from reliquary.core.content_signals import CLOUD_LURE_RE
@@ -85,24 +84,21 @@ def test_allowlist_skipped_on_display_spoof() -> None:
     assert not mit
 
 
-def test_update_channel_mismatch(tmp_path: Path, monkeypatch) -> None:
+def test_update_manifest_newer_version(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("reliquary.core.update_check.app_dir", lambda: tmp_path)
-    monkeypatch.setattr(
-        "reliquary.core.update_check.detect_runtime_channel", lambda: "lite"
-    )
     (tmp_path / "update.json").write_text(
-        json.dumps({"latest": __version__, "channel": "full"}),
+        json.dumps({"latest": "99.0.0", "sha256": "a" * 64, "notes": "тест"}),
         encoding="utf-8",
     )
     msg = check_update_manifest()
     assert msg
-    assert "Full" in msg or "full" in msg.lower()
-    assert "⚠" in msg or "фактически" in msg
+    assert "99.0.0" in msg
+    assert "Доступно обновление" in msg
 
 
 def test_detect_runtime_channel() -> None:
     ch = detect_runtime_channel()
-    assert ch in {"lite", "full", "partial"}
+    assert ch in {"standard", "no_qr"}
 
 
 def test_cli_self_check(tmp_path: Path) -> None:

@@ -115,7 +115,6 @@ def _score_attachments(
         "svg_script",
         "cab_archive",
         "cab_contains_lnk",
-        "unrar_missing",
         "archive_nested_email",
         "zip_bomb_suspect",
         "tnef_attachment",
@@ -236,15 +235,6 @@ def _score_attachments(
                 )
                 rest.discard("cab_contains_lnk")
                 rest.discard("cab_archive")
-            if "unrar_missing" in rest:
-                parts.append(
-                    ScoreContribution(
-                        "attachments",
-                        cfg.weight_unrar_missing,
-                        f"RAR «{att.filename}»: UnRAR.exe недоступен — содержимое не разобрано",
-                    )
-                )
-                rest.discard("unrar_missing")
             if "archive_nested_email" in rest:
                 parts.append(
                     ScoreContribution(
@@ -610,7 +600,6 @@ def _score_mitigations(
         "svg_script",
         "cab_archive",
         "cab_contains_lnk",
-        "unrar_missing",
         "archive_nested_email",
         "zip_bomb_suspect",
         "tnef_attachment",
