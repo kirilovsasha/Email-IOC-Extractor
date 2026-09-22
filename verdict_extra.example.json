@@ -64,5 +64,14 @@
   "weight_script_attachment": 20,
   "weight_disk_image": 16,
   "weight_cloud_lure": 14,
-  "weight_yara_match": 25
+  "weight_yara_match": 25,
+  "weight_messenger_lure": 12,
+  "weight_qr_lure": 12,
+  "weight_qr_credential": 18,
+  "weight_iso_exe": 16,
+  "weight_office_remote_template": 20,
+  "weight_html_polyglot": 18,
+  "weight_rar_archive": 10,
+  "weight_spf_lookalike": 14,
+  "weight_reply_to_spoof": 10
 }

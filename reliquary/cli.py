@@ -160,6 +160,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Сводка analyst_feedback.ndjson и выход",
     )
     parser.add_argument(
+        "--feedback-weights",
+        metavar="OUT.json",
+        default=None,
+        help="Предложить ±2 weight overrides из FP/FN feedback → JSON",
+    )
+    parser.add_argument(
         "--archive-password",
         action="append",
         default=[],
@@ -376,6 +382,14 @@ def main(argv: list[str] | None = None) -> int:
         from reliquary.core.feedback import feedback_summary
 
         print(feedback_summary())
+        return 0
+
+    if getattr(args, "feedback_weights", None):
+        from reliquary.core.feedback import suggest_weight_overrides, write_weight_suggestions
+
+        out = write_weight_suggestions(args.feedback_weights)
+        sug = suggest_weight_overrides()
+        print(f"Wrote {out} ({len(sug)} weight keys)")
         return 0
 
     if not args.path and not args.text and not args.files:

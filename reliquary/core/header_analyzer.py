@@ -226,7 +226,7 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             HeaderFinding(
                 "Received",
                 "1 hop",
-                Severity.LOW,
+                Severity.MEDIUM,
                 "Очень короткая цепочка доставки",
             )
         )

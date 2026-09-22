@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.16.0
+
+### Детекция
+- Content: `messenger_lure` / `qr_lure` / `qr_credential`; расширен BEC_RE (счёт-фактура, акт сверки, CFO/главбух/казначей, …)
+- Attachments: RAR filename scrape; `iso_contains_exe` / `disk_contains_exe`; `html_polyglot`; `office_remote_template`
+- Compound score: `weight_spf_lookalike`, `weight_reply_to_spoof`; 1-hop Received → MEDIUM
+- Brands KZ/UA + пресеты `org_profile.example/kz_gov/`, `ua_gov/`
+- Bundled `yara_rules/default.yar` (~14 offline rules); YARA auto when package + rules resolve
+- Калибровка: сегменты `messenger_lure` / `qr_lure` / `iso_exe` / `remote_template` / `html_polyglot` / `rar`
+
+### Продукт
+- Feedback → `suggest_weight_overrides` / `--feedback-weights` / `scripts/feedback_weights.py`
+- Новые веса в schema + `verdict_extra.example.json`
+
+### Качество
+- Corpus: messenger/QR lure → suspicious; ISO borderline; remote template / polyglot / ISO-exe / RAR scrape / KZ·UA spoof
+- Тесты `tests/test_v216_detection.py`
+
 ## 2.15.1
 
 ### GUI / UX

@@ -1,0 +1,9 @@
+From: "Kaspi Gold" <noreply@evil-kz.top>
+To: victim@company.local
+Subject: Подтвердите вход Kaspi
+Message-ID: <spoof_kaspi@evil.top>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+
+Срочно подтвердите вход в Kaspi: https://evil-kz.top/login

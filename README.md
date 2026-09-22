@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.15.1
+**Mail. Extract. Decide.** · v2.16.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg` / `.mbox`): заголовки,
 вложения, URL rewrite, IOC как доказательства и **вердикт**
@@ -128,7 +128,7 @@ reliquary mail.eml --profile org_profile.example/m365
 reliquary mail.eml --profile org_profile.example/by_gov
 reliquary mail.eml --profile org_pack.zip
 
-# архив / YARA (2.15+)
+# архив / YARA (2.16+: bundled yara_rules/default.yar, auto if yara installed)
 reliquary mail.eml --archive-password 'secret'
 reliquary mail.eml --enable-yara --yara-rules rules.yar
 
@@ -175,10 +175,11 @@ reliquary ./inbox --campaign-pack pack.ndjson
 
 Корневой вход — **письма** (`.eml` / `.msg` / `.mbox`).
 Внутри письма: Office, ZIP / 7z / RAR\* , nested `.eml` / `.msg`, OLE / macros,
-TNEF / ISO / VHD, скрипты (JS/VBS/HTA/…), QR, опционально YARA\*\*.
+TNEF / ISO / VHD, скрипты (JS/VBS/HTA/…), QR, messenger/QR lure, HTML polyglot,
+remote template, опционально YARA\*\*.
 
-\* RAR — флаг `rar_archive` без inventory членов (нет rarfile/UnRAR).  
-\*\* YARA — `pip install -e ".[yara]"` + правила рядом с EXE / `--yara-rules`.
+\* RAR — `rar_archive` + эвристический scrape имён (без rarfile/UnRAR).  
+\*\* YARA — `pip install -e ".[yara]"`; `yara_rules/` рядом с EXE / `--yara-rules` (авто).
 
 | | Сигнал | Примеры |
 |---|--------|---------|

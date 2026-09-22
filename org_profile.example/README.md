@@ -26,6 +26,8 @@
 | RU mail stack | [`ru_mail/`](ru_mail/) | Mail.ru/Yandex/VK unwrap + RU brands |
 | RU bank / gov | [`ru_gov/`](ru_gov/) | ФНС/ЦБ/Почта/Госуслуги brands + веса spoof/cloud |
 | Belarus bank / gov | [`by_gov/`](by_gov/) | Беларусбанк/МНС/ЕРИП/portal.gov.by + веса spoof/BEC |
+| Kazakhstan bank / gov | [`kz_gov/`](kz_gov/) | Kaspi/Halyk/egov.kz + messenger/QR lure |
+| Ukraine bank / gov | [`ua_gov/`](ua_gov/) | Privat/Monobank/Diia + remote template / polyglot |
 
 Скопируйте пресет в `org_profile/` рядом с exe или: `reliquary mail.eml --profile org_profile.example/m365`
 

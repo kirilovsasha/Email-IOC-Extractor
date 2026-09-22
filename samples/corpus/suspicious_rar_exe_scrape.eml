@@ -1,0 +1,20 @@
+From: ship@evil.top
+To: user@company.local
+Subject: Shipping docs rar
+Message-ID: <rarexe@evil.top>
+MIME-Version: 1.0
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+Content-Type: multipart/mixed; boundary="b216"
+
+--b216
+Content-Type: text/plain; charset=utf-8
+
+Archive attached.
+--b216
+Content-Type: application/x-rar-compressed; name="docs.rar"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="docs.rar"
+
+UmFyIRoHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaW52b2ljZS5wZGYuZXhlAHJl
+cG9ydC5lbWwAcGF5bG9hZC5zY3IA
+--b216--

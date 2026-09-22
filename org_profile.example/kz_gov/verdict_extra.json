@@ -1,0 +1,9 @@
+{
+  "_comment": "KZ bank/gov fleet: сильнее display-spoof и messenger/QR lure",
+  "weight_display_spoof": 28,
+  "weight_messenger_lure": 14,
+  "weight_qr_lure": 14,
+  "weight_spf_lookalike": 16,
+  "threshold_malicious": 58,
+  "threshold_suspicious": 28
+}

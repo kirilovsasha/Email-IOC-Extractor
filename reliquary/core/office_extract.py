@@ -291,6 +291,61 @@ def extract_office_urls(data: bytes, suffix: str) -> list[str]:
     return list(dict.fromkeys(urls))
 
 
+def detect_office_remote_template(data: bytes) -> bool:
+    """True if OOXML has remote template / attachedTemplate External http(s).
+
+    Matches TargetMode=External http(s) on template-like relationships, or
+    settings.xml attachedTemplate with External http(s) target.
+    Plain hyperlinks (Type …/hyperlink) are handled by office_hyperlink instead.
+    """
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return False
+    try:
+        names = set(zf.namelist())
+        if "word/settings.xml" in names:
+            try:
+                raw = zf.read("word/settings.xml")
+            except KeyError:
+                raw = b""
+            if b"attachedTemplate" in raw or b"AttachedTemplate" in raw:
+                rels = "word/_rels/settings.xml.rels"
+                if rels in names:
+                    urls = _external_targets_from_rels(zf, rels)
+                    if any(u.lower().startswith(("http://", "https://")) for u in urls):
+                        return True
+                if re.search(rb"(?i)Target\s*=\s*[\"']https?://", raw):
+                    return True
+
+        for rels in names:
+            if not rels.endswith(".rels"):
+                continue
+            try:
+                root = ET.fromstring(zf.read(rels))
+            except (ET.ParseError, KeyError, OSError):
+                continue
+            for el in root.iter():
+                if _local(el.tag) != "Relationship":
+                    continue
+                mode = (el.attrib.get("TargetMode") or "").lower()
+                target = (el.attrib.get("Target") or "").lower()
+                rel_type = (el.attrib.get("Type") or "").lower()
+                if not (mode == "external" and target.startswith(("http://", "https://"))):
+                    continue
+                if any(
+                    key in rel_type
+                    for key in ("template", "attachedtemplate", "oleobject", "subdocument")
+                ):
+                    return True
+                # settings.xml.rels External http is always remote-template surface
+                if "settings.xml.rels" in rels.replace("\\", "/").lower():
+                    return True
+        return False
+    finally:
+        zf.close()
+
+
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 

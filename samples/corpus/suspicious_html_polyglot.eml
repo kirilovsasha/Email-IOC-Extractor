@@ -1,0 +1,21 @@
+From: docs@partner.example
+To: user@company.local
+Subject: Document preview.html
+Message-ID: <poly@partner.example>
+MIME-Version: 1.0
+Authentication-Results: mx.company.local; spf=fail; dkim=none; dmarc=fail
+Content-Type: multipart/mixed; boundary="b216"
+
+--b216
+Content-Type: text/plain; charset=utf-8
+
+See attached HTML document.
+--b216
+Content-Type: text/html; name="preview.html"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="preview.html"
+
+PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+PHRpdGxlPng8L3RpdGxlPjwvaGVhZD48Ym9keT5P
+cGVuIG1lPC9ib2R5PjwvaHRtbD4KAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAFBLAwRmYWtlemlwY29udGVudCVQREYtMS40IGFsc28gaGVyZQ==
+--b216--

@@ -53,6 +53,13 @@ BEC-маркеры ЕРИП/УНП/р/с; display-spoof «Беларусбанк
 `weight_disk_image`, `weight_nested_archive`, `weight_archive_double_extension`,
 `weight_yara_match` (2.15, optional YARA).
 
+2.16: `weight_messenger_lure`, `weight_qr_lure`, `weight_qr_credential`, `weight_iso_exe`,
+`weight_office_remote_template`, `weight_html_polyglot`, `weight_rar_archive`,
+`weight_spf_lookalike`, `weight_reply_to_spoof`. Сегменты калибровки: `messenger_lure` /
+`qr_lure` / `iso_exe` / `remote_template` / `html_polyglot` / `rar`.
+KZ/UA пресеты: [`kz_gov/`](../org_profile.example/kz_gov/), [`ua_gov/`](../org_profile.example/ua_gov/).
+Feedback → `python scripts/feedback_weights.py` или `--feedback-weights OUT.json`.
+
 Вердикт JSON (2.15+): поля `confidence` (`high`|`medium`|`low`) и `confidence_note`.
 
 ## Calibration loop

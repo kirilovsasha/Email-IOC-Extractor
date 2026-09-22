@@ -1,1 +1,1 @@
-{"latest":"2.15.1","sha256":"","notes":"single EXE + QR; no RAR inventory / Lite-Full split"}
+{"latest":"2.16.0","sha256":"","notes":"detection quality: messenger/QR lure, ISO exe, remote template, HTML polyglot, RAR scrape, YARA pack, KZ/UA brands"}

@@ -28,6 +28,13 @@ BEC_RE = re.compile(
     r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
     r"пишите\s*только\s*сюда|не\s*звоните|CEO\s*urgent|"
     r"генеральн\w*\s*директор|финансов\w*\s*директор|"
+    # RU BEC / finance surface
+    r"сч[её]т[\s\-]*фактур\w*|"
+    r"акт\s+сверк\w*|"
+    r"срочн\w*\s*перев(?:од|ед|ест)\w*|"
+    r"реквизит\w*\s+на\s+карт\w*|"
+    r"изменит\w*\s+плат[её]жн\w*|"
+    r"\bCFO\b|главбух\w*|казнач[её]й\w*|"
     # Беларусь: ЕРИП / УНП / р/с / IBAN BY
     r"ерип|еріp|erip|"
     r"унп\b|"
@@ -36,6 +43,30 @@ BEC_RE = re.compile(
     r"оплат\w*\s*(?:через\s*)?(?:ерип|еріp|oplati|оплати)|"
     r"новые\s+реквизиты\s+(?:рб|беларус)"
     r")\b"
+)
+
+MESSENGER_LURE_RE = re.compile(
+    r"(?i)("
+    r"\btelegram\b|\bтелеграм\w*|\bwhatsapp\b|\bватсап\w*|"
+    r"(?:telegram|телеграм|whatsapp|ватсап|t\.me)[^\n]{0,48}@[a-zA-Z][\w.]{2,31}|"
+    r"@[a-zA-Z][\w.]{2,31}[^\n]{0,48}(?:telegram|телеграм|whatsapp|ватсап|t\.me)|"
+    r"пишите\s+(?:в|мне\s+в)\s+(?:telegram|телеграм|whatsapp|ватсап)|"
+    r"напишите\s+(?:в|мне\s+в)\s+(?:telegram|телеграм|whatsapp|ватсап)|"
+    r"write\s+(?:me\s+)?(?:in|on|via)\s+(?:telegram|whatsapp)|"
+    r"contact\s+(?:me\s+)?(?:in|on|via)\s+(?:telegram|whatsapp)|"
+    r"только\s+(?:в\s+)?(?:telegram|телеграм|whatsapp|ватсап)"
+    r")"
+)
+
+QR_LURE_RE = re.compile(
+    r"(?i)("
+    r"scan\s+the\s+qr|"
+    r"scan\s+(?:this\s+)?qr|"
+    r"сканируй(?:те)?\s+(?:qr|код)|"
+    r"отсканируй(?:те)?|"
+    r"QR[\s\-]*код|"
+    r"qr[\s\-]*code"
+    r")"
 )
 
 HIDDEN_STYLE_RE = re.compile(
@@ -291,6 +322,26 @@ def analyze_content_signals(
             )
         )
 
+    lure_hit = MESSENGER_LURE_RE.search(blob)
+    if lure_hit:
+        signals.append(
+            ContentSignal(
+                "messenger_lure",
+                f"Messenger-lure в тексте (Telegram/WhatsApp/@channel): {lure_hit.group(0)[:60]}",
+                "weight_messenger_lure",
+            )
+        )
+
+    qr_lure_hit = QR_LURE_RE.search(blob)
+    if qr_lure_hit:
+        signals.append(
+            ContentSignal(
+                "qr_lure",
+                f"Призыв сканировать QR: {qr_lure_hit.group(0)[:60]}",
+                "weight_qr_lure",
+            )
+        )
+
     soup: BeautifulSoup | None = None
     if html and ("<" in html):
         try:
@@ -301,6 +352,18 @@ def analyze_content_signals(
             signals.extend(_href_mismatch(soup))
             signals.extend(_hidden_text(html, soup))
             signals.extend(_html_forms(soup))
+
+    has_credential = any(s.kind == "credential_harvest" for s in signals) or bool(
+        CREDENTIAL_RE.search(blob)
+    )
+    if has_qr and has_credential:
+        signals.append(
+            ContentSignal(
+                "qr_credential",
+                "QR + маркеры сбора учётных данных — композитный канал",
+                "weight_qr_credential",
+            )
+        )
 
     if has_qr and has_urls is False and not has_attachments:
         signals.append(

@@ -74,6 +74,15 @@ class VerdictConfig:
     weight_disk_image: int = 16
     weight_cloud_lure: int = 14
     weight_yara_match: int = 25
+    weight_messenger_lure: int = 12
+    weight_qr_lure: int = 12
+    weight_qr_credential: int = 18
+    weight_iso_exe: int = 16
+    weight_office_remote_template: int = 20
+    weight_html_polyglot: int = 18
+    weight_rar_archive: int = 10
+    weight_spf_lookalike: int = 14
+    weight_reply_to_spoof: int = 10
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6

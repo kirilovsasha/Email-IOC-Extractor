@@ -64,12 +64,14 @@ def segment_for(result) -> str:
     }
     if "url_shortener" in signals:
         return "shortener"
-    if "messenger_only" in signals:
-        return "messenger"
     if "html_smuggling" in att_flags or "svg_script" in att_flags:
         return "html_smuggling"
+    if "html_polyglot" in att_flags:
+        return "html_polyglot"
     if "cab_archive" in att_flags or "cab_contains_lnk" in att_flags:
         return "cab"
+    if "office_remote_template" in att_flags:
+        return "remote_template"
     if "office_hyperlink" in att_flags:
         return "office_link"
     if "script_attachment" in att_flags or "script_url" in att_flags:
@@ -78,14 +80,25 @@ def segment_for(result) -> str:
         return "cloud_lure"
     if "tnef_attachment" in att_flags:
         return "tnef"
+    if "rar_archive" in att_flags:
+        return "rar"
     if "iso_contains_lnk" in att_flags or (
         "iso_image" in att_flags and "archive_dangerous_member" in att_flags
+        and "iso_contains_exe" not in att_flags
     ):
         return "iso"
+    if "iso_contains_exe" in att_flags or "disk_contains_exe" in att_flags:
+        return "iso_exe"
     if "archive_password_match" in signals or "archive_password" in signals:
         return "archive_password"
     if "oob_delivery" in signals:
         return "oob_delivery"
+    if "messenger_lure" in signals:
+        return "messenger_lure"
+    if "messenger_only" in signals:
+        return "messenger"
+    if "qr_lure" in signals or "qr_credential" in signals:
+        return "qr_lure"
     if "archive_nested_email" in att_flags or "nested_email" in att_flags:
         return "nested_mail"
     if any(u.changed for u in (result.url_rewrites or [])):
