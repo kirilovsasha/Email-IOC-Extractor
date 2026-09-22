@@ -292,8 +292,14 @@
   },
   "suspicious_display_spoof_fns.eml": {
     "level": "malicious",
-    "score_min": 60,
-    "score_max": 79
+    "score_min": 73,
+    "score_max": 93,
+    "reason_needles": [
+      "фнс",
+      "lookalike",
+      "spoof",
+      "SPF"
+    ]
   },
   "suspicious_display_spoof_gosuslugi.eml": {
     "level": "malicious",
@@ -389,9 +395,14 @@
     ]
   },
   "suspicious_iso_attachment.eml": {
-    "level": "unknown",
-    "score_min": 14,
-    "score_max": 29
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 40,
+    "reason_needles": [
+      "ISO",
+      "образ",
+      "hop"
+    ]
   },
   "suspicious_iso_lnk_inventory.eml": {
     "level": "malicious",
@@ -418,9 +429,14 @@
     ]
   },
   "suspicious_messenger_lure.eml": {
-    "level": "unknown",
-    "score_min": 10,
-    "score_max": 18
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 44,
+    "reason_needles": [
+      "Telegram",
+      "messenger",
+      "lure"
+    ]
   },
   "suspicious_messenger_only.eml": {
     "level": "suspicious",
@@ -512,9 +528,14 @@
     ]
   },
   "suspicious_qr_mention.eml": {
-    "level": "unknown",
-    "score_min": 17,
-    "score_max": 29
+    "level": "suspicious",
+    "score_min": 39,
+    "score_max": 59,
+    "reason_needles": [
+      "QR",
+      "scan",
+      "срочн"
+    ]
   },
   "suspicious_rar_double_ext.eml": {
     "level": "malicious",
@@ -604,9 +625,14 @@
     "score_max": 29
   },
   "unknown_short_received.eml": {
-    "level": "benign",
-    "score_min": 0,
-    "score_max": 9
+    "level": "unknown",
+    "score_min": 10,
+    "score_max": 24,
+    "reason_needles": [
+      "hop",
+      "Received",
+      "коротк"
+    ]
   },
   "unknown_spf_none.eml": {
     "level": "unknown",
@@ -630,5 +656,75 @@
     "level": "suspicious",
     "score_min": 30,
     "score_max": 44
+  },
+  "suspicious_office_remote_template.eml": {
+    "level": "malicious",
+    "score_min": 87,
+    "score_max": 100,
+    "reason_needles": [
+      "remote",
+      "template",
+      "External"
+    ]
+  },
+  "suspicious_html_polyglot.eml": {
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 73,
+    "reason_needles": [
+      "polyglot",
+      "HTML"
+    ]
+  },
+  "suspicious_iso_contains_exe.eml": {
+    "level": "malicious",
+    "score_min": 69,
+    "score_max": 89,
+    "reason_needles": [
+      "iso",
+      "exe",
+      "образ"
+    ]
+  },
+  "suspicious_rar_exe_scrape.eml": {
+    "level": "malicious",
+    "score_min": 75,
+    "score_max": 95,
+    "reason_needles": [
+      "RAR",
+      "archive",
+      "exe"
+    ]
+  },
+  "suspicious_qr_credential.eml": {
+    "level": "malicious",
+    "score_min": 85,
+    "score_max": 100,
+    "reason_needles": [
+      "QR",
+      "password",
+      "credential",
+      "пароль"
+    ]
+  },
+  "suspicious_display_spoof_kaspi.eml": {
+    "level": "malicious",
+    "score_min": 90,
+    "score_max": 100,
+    "reason_needles": [
+      "kaspi",
+      "похож",
+      "Имя"
+    ]
+  },
+  "suspicious_display_spoof_privatbank.eml": {
+    "level": "malicious",
+    "score_min": 90,
+    "score_max": 100,
+    "reason_needles": [
+      "приватбанк",
+      "похож",
+      "Имя"
+    ]
   }
 }

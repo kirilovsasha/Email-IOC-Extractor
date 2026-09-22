@@ -33,6 +33,7 @@ from reliquary.core.verdict_config import (
 )
 from reliquary.core.verdict_scoring import (
     _score_attachments,
+    _score_compounds,
     _score_content,
     _score_headers,
     _score_lookalike,
@@ -77,11 +78,18 @@ def render_verdict(
         lambda r, c: _score_urls(r, c),
         lambda r, c: _score_content(r, c),
         lambda r, c: _score_lookalike(r, c, brands_path=brands_path),
-        lambda r, c: _score_mitigations(r, c, allowlist_domains=allowlist_domains),
     ):
         part, parts = scorer(result, cfg)
         score += part
         breakdown.extend(parts)
+
+    part, parts = _score_compounds(result, cfg, prior_breakdown=breakdown)
+    score += part
+    breakdown.extend(parts)
+
+    part, parts = _score_mitigations(result, cfg, allowlist_domains=allowlist_domains)
+    score += part
+    breakdown.extend(parts)
 
     reasons = [b.reason for b in breakdown if b.points != 0]
     seen: set[str] = set()

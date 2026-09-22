@@ -2,6 +2,15 @@
 
 Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 
+## Done in 2.16
+
+- Messenger/QR lure + QR+credential composite; RU BEC markers expansion
+- RAR scrape / ISO·disk exe / HTML polyglot / Office remote template
+- Compound SPF+lookalike and Reply-To spoof weights; 1-hop Received → MEDIUM
+- Bundled offline YARA pack (`yara_rules/default.yar`) + auto-enable when importable
+- Feedback → suggested weight overrides (`--feedback-weights`)
+- KZ/UA brands + org presets; calibration segments for new channels
+
 ## Done in 2.15
 
 - Verdict confidence (`high`/`medium`/`low`) + «Почему» note
@@ -19,6 +28,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - [x] GUI smoke tests without full Tk display
 - [x] Narrow remaining broad `except Exception` in prefs/pipeline
 - [x] Tighten golden corpus score windows + BY brands/spoof/BEC
+- [x] Detection quality 2.16 (lures / polyglot / remote template / YARA pack)
 - [ ] Deeper PST support (read-only extract → eml) if fleet demands
 
 ## Later
@@ -27,7 +37,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - [ ] Optional offline rule packs beyond YARA (Sigma-lite for mail?)
 - [ ] Campaign graph view in GUI
 - [ ] Authenticode-by-default release lane
-- [ ] Inbox-driven weight pack from analyst_feedback.ndjson aggregates
+- [ ] Inbox-driven weight pack from analyst_feedback.ndjson aggregates (beyond ±2 suggestions)
 
 ## Non-goals
 

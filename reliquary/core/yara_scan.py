@@ -20,8 +20,8 @@ def yara_available() -> bool:
 def resolve_rules_path(explicit: str | Path | None = None) -> Path | None:
     if explicit and str(explicit).strip():
         p = Path(str(explicit).strip())
-        return p if p.is_file() else None
-    for name in ("yara_rules.yar", "yara_rules.yara", "rules.yar"):
+        return p if p.is_file() or p.is_dir() else None
+    for name in ("yara_rules.yar", "yara_rules.yara", "rules.yar", "default.yar"):
         cand = app_dir() / name
         if cand.is_file():
             return cand
@@ -29,7 +29,17 @@ def resolve_rules_path(explicit: str | Path | None = None) -> Path | None:
     if folder.is_dir():
         files = list(folder.glob("*.yar")) + list(folder.glob("*.yara"))
         if files:
+            # Prefer default.yar when present
+            for preferred in sorted(files):
+                if preferred.name == "default.yar":
+                    return folder
             return folder
+    # Packaged / Meipass fallback
+    meipass = getattr(__import__("sys"), "_MEIPASS", None)
+    if meipass:
+        bundled = Path(meipass) / "yara_rules"
+        if bundled.is_dir() and list(bundled.glob("*.yar")):
+            return bundled
     return None
 
 

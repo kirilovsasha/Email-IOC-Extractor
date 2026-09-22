@@ -119,11 +119,17 @@ def _score_attachments(
         "zip_bomb_suspect",
         "tnef_attachment",
         "iso_contains_lnk",
+        "iso_contains_exe",
+        "disk_contains_exe",
         "office_hyperlink",
+        "office_remote_template",
         "nested_archive",
         "archive_double_extension",
         "script_attachment",
         "script_url",
+        "html_polyglot",
+        "rar_archive",
+        "yara_match",
     }
     seen_flags: set[str] = set()
     soft_noted = False
@@ -271,6 +277,45 @@ def _score_attachments(
                     )
                 )
                 rest.discard("iso_contains_lnk")
+            if "iso_contains_exe" in rest or "disk_contains_exe" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_iso_exe,
+                        f"Образ «{att.filename}» содержит .exe/.dll/.scr",
+                    )
+                )
+                rest.discard("iso_contains_exe")
+                rest.discard("disk_contains_exe")
+                rest.discard("archive_dangerous_member")
+            if "office_remote_template" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_remote_template,
+                        f"OOXML remote template «{att.filename}»",
+                    )
+                )
+                rest.discard("office_remote_template")
+            if "html_polyglot" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_html_polyglot,
+                        f"HTML-polyglot «{att.filename}»",
+                    )
+                )
+                rest.discard("html_polyglot")
+                rest.discard("html_attachment")
+            if "rar_archive" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_rar_archive,
+                        f"RAR-архив «{att.filename}»",
+                    )
+                )
+                rest.discard("rar_archive")
             if "office_hyperlink" in rest:
                 parts.append(
                     ScoreContribution(
@@ -453,8 +498,11 @@ def _score_content(
         "weight_html_form": cfg.weight_html_form,
         "weight_qr_only": cfg.weight_qr_only,
         "weight_qr_present": cfg.weight_qr_present,
+        "weight_qr_lure": cfg.weight_qr_lure,
+        "weight_qr_credential": cfg.weight_qr_credential,
         "weight_url_shortener": cfg.weight_url_shortener,
         "weight_messenger_only": cfg.weight_messenger_only,
+        "weight_messenger_lure": cfg.weight_messenger_lure,
         "weight_archive_password": cfg.weight_archive_password,
         "weight_archive_password_match": cfg.weight_archive_password_match,
         "weight_oob_delivery": cfg.weight_oob_delivery,
@@ -506,6 +554,80 @@ def _score_lookalike(
         if len(parts) >= 3:
             break
     return _apply_cap(parts, cfg.cap_lookalike, "lookalike")
+
+
+def _score_compounds(
+    result: AnalysisResult,
+    cfg: VerdictConfig,
+    *,
+    prior_breakdown: list[ScoreContribution] | None = None,
+) -> tuple[int, list[ScoreContribution]]:
+    """Compound boosts: SPF fail + lookalike; Reply-To mismatch + weak auth."""
+    parts: list[ScoreContribution] = []
+    mid = result.mail_identity
+
+    spf_bad = False
+    dmarc_pass = False
+    dmarc_fail = False
+    spf_fail = False
+    reply_mismatch = False
+
+    for h in result.headers:
+        name = (h.name or "").lower()
+        val = (h.value or "").lower()
+        note = (h.note or "").lower()
+        if name.endswith(" result") or name in ("spf", "dkim", "dmarc", "received-spf"):
+            if "spf" in name and val in ("fail", "softfail"):
+                spf_bad = True
+                if val == "fail":
+                    spf_fail = True
+            if "dmarc" in name:
+                if val == "pass":
+                    dmarc_pass = True
+                if val == "fail":
+                    dmarc_fail = True
+        if "softfail" in val or "softfail" in note:
+            if "spf" in name or "spf" in note or "auth" in name:
+                spf_bad = True
+        if "reply-to mismatch" in name:
+            reply_mismatch = True
+
+    if mid:
+        spf_m = (mid.spf or "").lower()
+        dmarc_m = (mid.dmarc or "").lower()
+        if spf_m in ("fail", "softfail"):
+            spf_bad = True
+            if spf_m == "fail":
+                spf_fail = True
+        if dmarc_m == "pass":
+            dmarc_pass = True
+        if dmarc_m == "fail":
+            dmarc_fail = True
+
+    prior = prior_breakdown or []
+    lookalike_hit = any(c.category == "lookalike" and c.points > 0 for c in prior)
+
+    if spf_bad and lookalike_hit:
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_spf_lookalike,
+                "SPF softfail/fail + lookalike/display-spoof",
+            )
+        )
+
+    # Reply-To mismatch + weak auth (no DMARC pass / DMARC fail / SPF fail)
+    if reply_mismatch and ((not dmarc_pass) or dmarc_fail or spf_fail or spf_bad):
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_reply_to_spoof,
+                "Reply-To mismatch при слабой auth (нет DMARC pass / fail)",
+            )
+        )
+
+    total = sum(c.points for c in parts)
+    return total, parts
 
 
 _INTERNAL_RELAY_RE = re.compile(
@@ -604,12 +726,18 @@ def _score_mitigations(
         "zip_bomb_suspect",
         "tnef_attachment",
         "iso_contains_lnk",
+        "iso_contains_exe",
+        "disk_contains_exe",
         "office_hyperlink",
+        "office_remote_template",
         "nested_archive",
         "archive_double_extension",
         "script_attachment",
         "script_url",
         "disk_image",
+        "html_polyglot",
+        "rar_archive",
+        "yara_match",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
@@ -617,6 +745,9 @@ def _score_mitigations(
         "credential_harvest",
         "bec_payment",
         "qr_only",
+        "qr_lure",
+        "qr_credential",
+        "messenger_lure",
         "hidden_text",
         "archive_password_match",
         "oob_delivery",

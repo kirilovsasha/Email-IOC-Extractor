@@ -58,6 +58,11 @@ if _try_collect("pyzbar"):
 if _try_collect("yara"):
     _extra_hidden.append("yara")
 
+# Bundle default YARA rules beside the EXE
+_yara_rules = ROOT / "yara_rules"
+if _yara_rules.is_dir():
+    _extra_datas.append((str(_yara_rules), "yara_rules"))
+
 a = Analysis(
     [str(ROOT / "run_reliquary.py")],
     pathex=[],

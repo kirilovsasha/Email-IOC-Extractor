@@ -26,7 +26,7 @@ build_exe.bat
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.15.1
+PackageVersion: 2.16.0
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -39,7 +39,7 @@ Installers:
 ## Офлайн-флаг версии
 
 Положите `update.json` рядом с EXE
-(`{"latest":"2.15.1","sha256":"…","notes":"..."}`).
+(`{"latest":"2.16.0","sha256":"…","notes":"..."}`).
 Диалог «О программе» покажет сверку версии / SHA256 — без сети.
 Legacy-поле `channel` (lite/full) игнорируется.
 

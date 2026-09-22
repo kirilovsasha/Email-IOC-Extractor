@@ -323,9 +323,9 @@ def _inventory_7z(data: bytes) -> tuple[list[str], list[str], list[str]]:
 
 
 def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
-    """Detect RAR magic only — no member listing (rarfile/UnRAR not used)."""
+    """RAR magic + CAB-like filename scrape (no UnRAR / rarfile)."""
     entries: list[str] = []
-    flags: list[str] = ["archive", "rar_archive", "archive_unlisted"]
+    flags: list[str] = ["archive", "rar_archive"]
     notes: list[str] = []
     # RAR5 / RAR4 magic
     if data[:7] == b"Rar!\x1a\x07\x01":
@@ -334,7 +334,35 @@ def _inventory_rar(data: bytes) -> tuple[list[str], list[str], list[str]]:
         notes.append("RAR4 контейнер")
     else:
         notes.append("RAR-подобная сигнатура")
-    notes.append("RAR: inventory членов не выполняется (имена не извлечены)")
+    sample = data[: min(len(data), 256 * 1024)]
+    found: list[str] = []
+    for m in re.finditer(
+        rb"([\w.\- ]{3,80}\.(?:exe|dll|scr|lnk|bat|cmd|js|vbs|ps1|hta|msi|"
+        rb"iso|img|eml|msg|doc|docx|pdf|zip|rar)(?:;1)?)",
+        sample,
+        re.I,
+    ):
+        name = m.group(1).decode("ascii", errors="ignore").strip().split(";")[0]
+        if name and name not in found:
+            found.append(name)
+    entries = found[:MAX_ARCHIVE_ENTRIES]
+    if entries:
+        notes.append(f"Имена в RAR (эвристика): {len(entries)}")
+    else:
+        flags.append("archive_unlisted")
+        notes.append("RAR: inventory членов не выполняется (имена не извлечены)")
+    dangerous = [n for n in entries if Path(n.lower()).suffix in DANGEROUS_EXTENSIONS]
+    if dangerous:
+        flags.append("archive_dangerous_member")
+        notes.append("Опасные члены RAR: " + ", ".join(dangerous[:8]))
+    double_hits = [n for n in entries if DOUBLE_EXT_RE.search(n.lower())]
+    if double_hits:
+        flags.append("archive_double_extension")
+        notes.append("Двойное расширение в RAR: " + ", ".join(double_hits[:8]))
+    nested_mail = [n for n in entries if Path(n.lower()).suffix in NESTED_MAIL_EXT]
+    if nested_mail:
+        flags.append("archive_nested_email")
+        notes.append("Вложенные письма в RAR: " + ", ".join(nested_mail[:8]))
     if b"encrypted" in data[:4096].lower() or data[0x18:0x1A] == b"\x04\x00":
         flags.append("encrypted_archive")
         notes.append("Возможно зашифрованный RAR (эвристика)")
@@ -410,6 +438,9 @@ def _inventory_iso(data: bytes) -> tuple[list[str], list[str], list[str]]:
     if any(n.lower().endswith(".lnk") for n in entries):
         flags.append("iso_contains_lnk")
         notes.append("ISO содержит .lnk")
+    if any(Path(n.lower()).suffix in {".exe", ".dll", ".scr"} for n in entries):
+        flags.append("iso_contains_exe")
+        notes.append("ISO содержит .exe/.dll/.scr")
     return entries, flags, notes
 
 
@@ -455,6 +486,9 @@ def _inventory_disk_image(data: bytes, *, ext: str) -> tuple[list[str], list[str
     if any(n.lower().endswith(".lnk") for n in entries):
         flags.append("iso_contains_lnk")
         notes.append(f"{label} содержит .lnk")
+    if any(Path(n.lower()).suffix in {".exe", ".dll", ".scr"} for n in entries):
+        flags.append("disk_contains_exe")
+        notes.append(f"{label} содержит .exe/.dll/.scr")
     return entries, flags, notes
 
 
@@ -652,7 +686,26 @@ def _scan_web_payload(filename: str, data: bytes) -> tuple[list[str], list[str],
     if kind == "svg" and (b"<script" in sample.lower() or b"onload=" in sample.lower()):
         flags.append("svg_script")
         notes.append("SVG содержит script/onload")
+    # HTML polyglot: HTML magic near start + ZIP/PDF magic later in first 8KB
+    head8 = data[: min(len(data), 8192)]
+    htmlish = bool(
+        re.search(rb"(?i)<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]", head8[:512])
+        or ext in {".html", ".htm", ".shtml"}
+    )
+    if htmlish and (b"PK\x03\x04" in head8[32:] or b"%PDF" in head8[32:]):
+        flags.append("html_polyglot")
+        notes.append("HTML-polyglot: HTML + ZIP/PDF magic в первых 8 КБ")
     return flags, notes, kind
+
+
+def _detect_html_polyglot(data: bytes) -> bool:
+    """True if HTML magic near start and ZIP/PDF magic later within first 8KB."""
+    if not data:
+        return False
+    head8 = data[: min(len(data), 8192)]
+    if not re.search(rb"(?i)<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]", head8[:512]):
+        return False
+    return b"PK\x03\x04" in head8[32:] or b"%PDF" in head8[32:]
 
 
 def _ole_streams(data: bytes) -> tuple[list[str], list[str], list[str]]:
@@ -831,6 +884,16 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
             notes.extend(wnotes)
             if wkind and not nested_kind:
                 nested_kind = wkind
+    elif _detect_html_polyglot(data):
+        flags.append("html_polyglot")
+        notes.append("HTML-polyglot: HTML + ZIP/PDF magic в первых 8 КБ")
+        wflags, wnotes, wkind = _scan_web_payload(filename, data)
+        for f in wflags:
+            if f not in flags:
+                flags.append(f)
+        notes.extend(wnotes)
+        if wkind and not nested_kind:
+            nested_kind = wkind
 
     if ext in PDF_EXT or mime == "application/pdf" or data[:5] == b"%PDF-":
         flags.append("pdf_attachment")
@@ -888,6 +951,14 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
             archive_entries = entries + archive_entries
             flags.extend(zflags)
             notes.extend(znotes)
+            try:
+                from reliquary.core.office_extract import detect_office_remote_template
+
+                if detect_office_remote_template(data):
+                    flags.append("office_remote_template")
+                    notes.append("OOXML: remote template / TargetMode=External http(s)")
+            except (OSError, ValueError, TypeError, RuntimeError, ImportError):
+                pass
 
     # 7z magic: 37 7A BC AF 27 1C
     if data[:6] == b"\x37\x7a\xbc\xaf\x27\x1c" or ext == ".7z":

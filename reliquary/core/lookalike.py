@@ -56,6 +56,22 @@ DEFAULT_BRANDS: tuple[str, ...] = (
     "erip.by",
     "raschet.by",
     "oplati.by",
+    # Казахстан
+    "kaspi.kz",
+    "halykbank.kz",
+    "egov.kz",
+    "jusan.kz",
+    "forte.kz",
+    "bcc.kz",
+    "nationalbank.kz",
+    # Украина
+    "privatbank.ua",
+    "monobank.ua",
+    "oschadbank.ua",
+    "diia.gov.ua",
+    "gov.ua",
+    "ukrposhta.ua",
+    "pumb.ua",
 )
 
 # Display-name → expected brand domains (RU/BY SOC spoof surface).
@@ -117,6 +133,37 @@ _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("еріp", ("erip.by", "raschet.by", "oplati.by")),
     ("оплати", ("oplati.by", "erip.by", "raschet.by")),
     ("расчет by", ("raschet.by", "erip.by")),
+    # Казахстан
+    ("kaspi", ("kaspi.kz",)),
+    ("каспи", ("kaspi.kz",)),
+    ("halyk", ("halykbank.kz",)),
+    ("халык", ("halykbank.kz",)),
+    ("халык банк", ("halykbank.kz",)),
+    ("egov.kz", ("egov.kz",)),
+    ("егов", ("egov.kz",)),
+    ("jusan", ("jusan.kz",)),
+    ("жусан", ("jusan.kz",)),
+    ("forte", ("forte.kz",)),
+    ("форте", ("forte.kz",)),
+    ("bcc", ("bcc.kz",)),
+    ("бцк", ("bcc.kz",)),
+    ("nationalbank.kz", ("nationalbank.kz",)),
+    ("нацбанк кз", ("nationalbank.kz",)),
+    # Украина
+    ("приватбанк", ("privatbank.ua",)),
+    ("privatbank", ("privatbank.ua",)),
+    ("монобанк", ("monobank.ua",)),
+    ("monobank", ("monobank.ua",)),
+    ("ощадбанк", ("oschadbank.ua",)),
+    ("oschadbank", ("oschadbank.ua",)),
+    ("дія", ("diia.gov.ua",)),
+    ("дия", ("diia.gov.ua",)),
+    ("diia", ("diia.gov.ua",)),
+    ("gov.ua", ("gov.ua", "diia.gov.ua")),
+    ("укрпошта", ("ukrposhta.ua",)),
+    ("ukrposhta", ("ukrposhta.ua",)),
+    ("пумб", ("pumb.ua",)),
+    ("pumb", ("pumb.ua",)),
 )
 
 # Common visual confusables → ASCII (subset; offline, no full Unicode confusables table).

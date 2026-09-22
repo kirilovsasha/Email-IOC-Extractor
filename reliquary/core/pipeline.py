@@ -325,6 +325,15 @@ def _parse_office_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
                 if u not in att.archive_entries:
                     att.archive_entries.append(u)
             att.notes.append(f"OOXML-гиперссылки: {len(urls)}")
+        try:
+            from reliquary.core.office_extract import detect_office_remote_template
+
+            if detect_office_remote_template(att.data):
+                if "office_remote_template" not in att.risk_flags:
+                    att.risk_flags.append("office_remote_template")
+                att.notes.append("OOXML: remote template / TargetMode=External http(s)")
+        except (OSError, ValueError, TypeError, RuntimeError):
+            pass
         if not text and not errs and not urls:
             return "", []
         header = f"Office-Att {att.filename}"
@@ -709,6 +718,17 @@ def _enrich_parsed_result(
     if tag_filename:
         result.iocs = [_tag_file(i, tag_filename) for i in result.iocs]
     if opts.enable_yara:
+        _run_yara = True
+    else:
+        # Auto-enable when yara package + rules resolve (unless nothing to scan with)
+        _run_yara = False
+        try:
+            from reliquary.core.yara_scan import resolve_rules_path, yara_available
+
+            _run_yara = bool(yara_available() and resolve_rules_path(opts.yara_rules_path))
+        except (ImportError, OSError, TypeError, ValueError):
+            _run_yara = False
+    if _run_yara:
         try:
             from reliquary.core.yara_scan import scan_result_attachments
 
