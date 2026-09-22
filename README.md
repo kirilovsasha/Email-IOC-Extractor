@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.14.0
+**Mail. Extract. Decide.** · v2.14.1
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg`): заголовки, вложения,
 URL rewrite, IOC как доказательства и **вердикт**
@@ -50,10 +50,10 @@ pip install -e ".[rar,qr]"
 
 | Сборка | Что внутри |
 |--------|------------|
-| **Lite** — `EmailIOCExtractor.exe` из CI / GitHub Release / `build_exe.bat` | Базовый разбор; без rarfile / pyzbar |
-| **Full** — `build_exe.bat --full` или source с extras | RAR inventory + QR decode |
+| **Full** — `EmailIOCExtractor.exe` из CI / Release / `build_exe.bat` (по умолчанию) | RAR inventory + QR decode |
+| **Lite** — `build_exe.bat --lite` / `EmailIOCExtractor-Lite.exe` | Базовый разбор; без rarfile / pyzbar |
 
-В Release notes публикуется **SHA256** Lite EXE.
+В Release notes публикуется **SHA256** Full EXE (основной артефакт флота).
 
 ⚠️ При ошибке GUI смотрите `email_ioc_extractor_error.log` рядом с bat/exe.
 
@@ -83,7 +83,8 @@ pip install -e ".[rar,qr]"
 | ⚖️ | Вердикт | score · breakdown (+/−) · причины |
 | 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
 | 📁 | Пакет | сортировка / фильтр / чипы вердикта / экспорт среза / diff peer |
-| 📋 | Буфер | Msg-ID · Тикет · копирование IOC |
+| 📋 | Буфер | В тикет · копирование IOC |
+
 | 💾 | Экспорт | JSON / CSV / Batch CSV / Тикет / Кампания / Campaign pack / SIEM |
 | ⚙️ | Настройки | пути · workers · hook · тема · фильтры (→ `ui_prefs.json`) |
 
@@ -278,39 +279,40 @@ build_exe.bat
 build\build.bat
 ```
 
-**Full** (RAR + QR extras перед упаковкой):
+По умолчанию — **Full** (RAR + QR extras). Lite:
 
 ```bat
-build_exe.bat --full
+build_exe.bat --lite
 ```
 
 Скрипт сам:
 
 1. Берёт `.venv\Scripts\python.exe`, если есть, иначе `python` из PATH  
-2. Ставит `requirements.txt` + PyInstaller + пакет  
+2. Ставит `requirements.txt` + PyInstaller + пакет (+ `.[rar,qr]` для Full)  
 3. Синхронизирует `build\version_info.txt`  
 4. Запускает PyInstaller (`build\reliquary.spec`)  
 5. Пишет `dist\EmailIOCExtractor.exe.sha256`
 
-Ручная сборка (эквивалент):
+Ручная сборка (эквивалент Full):
 
 ```bash
 pip install -r requirements-dev.txt
-python build/sync_version_info.py
-python -m PyInstaller build/reliquary.spec --noconfirm
+pip install -e ".[rar,qr]"
+RELIQUARY_FULL=1 python build/sync_version_info.py
+RELIQUARY_FULL=1 python -m PyInstaller build/reliquary.spec --noconfirm
 ```
 
-Linux/macOS: `bash build/build.sh`.
+Linux/macOS: `bash build/build.sh` (Full) / `bash build/build.sh --lite`.
 
 | | |
 |--|--|
-| 📦 Артефакт | `dist/EmailIOCExtractor.exe` (Lite, без консоли, без UPX) + `.sha256` |
+| 📦 Артефакт | `dist/EmailIOCExtractor.exe` (**Full** по умолчанию, без консоли, без UPX) + `.sha256` |
 | 🏷️ Версия | `reliquary/__init__.py` → `build/version_info.txt` + `pyproject.toml` |
 | ✍️ Подпись | `build/sign_exe.ps1` / [`docs/SIGNING.md`](docs/SIGNING.md) (опционально) |
 | 📜 Лог | `email_ioc_extractor_error.log` |
 | 🧊 Smoke | `EmailIOCExtractor.exe --cli sample.eml --json out.json` |
 
-CI: pytest Windows + Ubuntu, **Python 3.10–3.13**; push в `main` → EXE + frozen `--cli` smoke + SHA256;
+CI: pytest Windows + Ubuntu, **Python 3.10–3.13**; push в `main` → Full EXE + frozen `--cli` smoke + SHA256;
 тег `v*` → GitHub Release с changelog и хешем. История: [`CHANGELOG.md`](CHANGELOG.md).
 Безопасность: [`SECURITY.md`](SECURITY.md). Схема JSON: [`docs/schema_report_v2.json`](docs/schema_report_v2.json).
 

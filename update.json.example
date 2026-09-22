@@ -1,1 +1,1 @@
-{"latest":"2.14.0","channel":"lite","sha256":"","notes":"score wiring TNEF/ISO/scripts, cloud lure, Bitrix unwrap, CLI self-check, ru_gov profile"}
+{"latest":"2.14.1","channel":"full","sha256":"","notes":"GUI UX: stable tabs, evidence summary, Full EXE default, Msg-ID via ticket only"}

@@ -77,6 +77,7 @@ jobs:
         run: python scripts/corpus_metrics.py
 
   build-exe:
+    # Primary fleet artifact = Full (RAR/QR). Lite is optional via build-exe-lite.
     runs-on: windows-latest
     needs: pytest
     if: >
@@ -87,14 +88,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install
+      - name: Install Full extras + build
+        env:
+          RELIQUARY_FULL: "1"
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
           pip install pyinstaller
-          pip install -e .
-      - name: Sync version + build
-        run: |
+          pip install -e ".[rar,qr]"
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
       - name: Smoke CLI + frozen --cli
@@ -130,6 +131,11 @@ jobs:
             ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor.exe" } |
             Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
           Get-Content dist\EmailIOCExtractor.exe.sha256
+          # Compat alias for fleets still fetching *-Full.exe
+          Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Full.exe
+          Copy-Item dist\EmailIOCExtractor.exe.sha256 dist\EmailIOCExtractor-Full.exe.sha256
+          (Get-Content dist\EmailIOCExtractor-Full.exe.sha256) -replace 'EmailIOCExtractor\.exe','EmailIOCExtractor-Full.exe' |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
@@ -137,9 +143,11 @@ jobs:
           path: |
             dist/EmailIOCExtractor.exe
             dist/EmailIOCExtractor.exe.sha256
+            dist/EmailIOCExtractor-Full.exe
+            dist/EmailIOCExtractor-Full.exe.sha256
           if-no-files-found: error
 
-  build-exe-full:
+  build-exe-lite:
     runs-on: windows-latest
     needs: pytest
     if: >
@@ -150,30 +158,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install full extras + build
-        env:
-          RELIQUARY_FULL: "1"
+      - name: Install + build Lite
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
           pip install pyinstaller
-          pip install -e ".[rar,qr]"
+          pip install -e .
           python build/sync_version_info.py
           python -m PyInstaller build/reliquary.spec --noconfirm
-      - name: SHA256 Full
+      - name: SHA256 Lite
         shell: pwsh
         run: |
-          Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Full.exe
-          Get-FileHash dist\EmailIOCExtractor-Full.exe -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
-            Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
-      - name: Upload Full EXE
+          Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Lite.exe
+          Get-FileHash dist\EmailIOCExtractor-Lite.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Lite.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor-Lite.exe.sha256
+      - name: Upload Lite EXE
         uses: actions/upload-artifact@v4
         with:
-          name: EmailIOCExtractor-Full
+          name: EmailIOCExtractor-Lite
           path: |
-            dist/EmailIOCExtractor-Full.exe
-            dist/EmailIOCExtractor-Full.exe.sha256
+            dist/EmailIOCExtractor-Lite.exe
+            dist/EmailIOCExtractor-Lite.exe.sha256
           if-no-files-found: error
 
   release:
@@ -191,7 +197,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install + build Lite
+      - name: Install + build Lite first
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
@@ -201,38 +207,32 @@ jobs:
           python -m PyInstaller build/reliquary.spec --noconfirm
           Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Lite.exe
         shell: pwsh
-      - name: Frozen CLI smoke
-        shell: cmd
-        env:
-          PYTHONUTF8: "1"
-        run: |
-          dist\EmailIOCExtractor-Lite.exe --cli samples\corpus\benign_hr_notice.eml --json dist\smoke_report.json --quiet-verdict
-          if errorlevel 1 exit /b 1
-          if not exist dist\smoke_report.json exit /b 1
-      - name: SHA256 Lite
-        shell: pwsh
-        run: |
-          Copy-Item dist\EmailIOCExtractor-Lite.exe dist\EmailIOCExtractor.exe -Force
-          $hash = (Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  EmailIOCExtractor.exe" | Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
-          Get-Content dist\EmailIOCExtractor.exe.sha256
-      - name: Build Full (RAR/QR)
+      - name: Build Full (default primary artifact)
         env:
           RELIQUARY_FULL: "1"
         run: |
           pip install -e ".[rar,qr]"
           python -m PyInstaller build/reliquary.spec --noconfirm
           Copy-Item dist\EmailIOCExtractor.exe dist\EmailIOCExtractor-Full.exe
-          # Restore Lite artifact name for release upload
-          Copy-Item dist\EmailIOCExtractor-Lite.exe dist\EmailIOCExtractor.exe -Force
         shell: pwsh
-      - name: SHA256 Full
+      - name: Frozen CLI smoke
+        shell: cmd
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          dist\EmailIOCExtractor.exe --cli samples\corpus\benign_hr_notice.eml --json dist\smoke_report.json --quiet-verdict
+          if errorlevel 1 exit /b 1
+          if not exist dist\smoke_report.json exit /b 1
+      - name: SHA256
         shell: pwsh
         run: |
-          Get-FileHash dist\EmailIOCExtractor-Full.exe -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
-            Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
-          Get-Content dist\EmailIOCExtractor-Full.exe.sha256
+          $full = (Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256).Hash.ToLower()
+          "$full  EmailIOCExtractor.exe" | Set-Content -Encoding ascii dist\EmailIOCExtractor.exe.sha256
+          "$full  EmailIOCExtractor-Full.exe" | Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
+          $lite = (Get-FileHash dist\EmailIOCExtractor-Lite.exe -Algorithm SHA256).Hash.ToLower()
+          "$lite  EmailIOCExtractor-Lite.exe" | Set-Content -Encoding ascii dist\EmailIOCExtractor-Lite.exe.sha256
+          Get-Content dist\EmailIOCExtractor.exe.sha256
+          Get-Content dist\EmailIOCExtractor-Lite.exe.sha256
       - name: Optional Authenticode sign
         if: ${{ env.SIGNING_PFX_BASE64 != '' }}
         shell: pwsh
@@ -242,6 +242,7 @@ jobs:
           $secure = ConvertTo-SecureString $env:SIGNING_PFX_PASSWORD -AsPlainText -Force
           powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe -PfxPath sign.pfx -PfxPassword $secure
           powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor-Full.exe -PfxPath sign.pfx -PfxPassword $secure
+          powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor-Lite.exe -PfxPath sign.pfx -PfxPassword $secure
           Remove-Item sign.pfx -Force -ErrorAction SilentlyContinue
           # refresh hashes after signing
           Get-FileHash dist\EmailIOCExtractor.exe -Algorithm SHA256 |
@@ -250,6 +251,9 @@ jobs:
           Get-FileHash dist\EmailIOCExtractor-Full.exe -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Full.exe" } |
             Set-Content -Encoding ascii dist\EmailIOCExtractor-Full.exe.sha256
+          Get-FileHash dist\EmailIOCExtractor-Lite.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  EmailIOCExtractor-Lite.exe" } |
+            Set-Content -Encoding ascii dist\EmailIOCExtractor-Lite.exe.sha256
       - name: Extract changelog snippet
         shell: bash
         run: |
@@ -268,13 +272,18 @@ jobs:
                   out.append(line)
           sha = Path("dist/EmailIOCExtractor.exe.sha256").read_text(encoding="utf-8").strip()
           digest = sha.split()[0] if sha else "(missing)"
-          full_sha = Path("dist/EmailIOCExtractor-Full.exe.sha256").read_text(encoding="utf-8").strip()
-          full_digest = full_sha.split()[0] if full_sha else "(missing)"
+          lite_path = Path("dist/EmailIOCExtractor-Lite.exe.sha256")
+          lite_digest = (
+              lite_path.read_text(encoding="utf-8").strip().split()[0]
+              if lite_path.is_file()
+              else "(missing)"
+          )
           body = "\n".join(out) + "\n\n## Artifacts\n\n"
-          body += "- `EmailIOCExtractor.exe` — **Lite** (без RAR/QR extras)\n"
-          body += f"- SHA256 Lite: `{digest}`\n"
-          body += "- `EmailIOCExtractor-Full.exe` — **Full** (RAR + QR)\n"
-          body += f"- SHA256 Full: `{full_digest}`\n"
+          body += "- `EmailIOCExtractor.exe` — **Full** (RAR + QR; default fleet build)\n"
+          body += f"- SHA256 Full: `{digest}`\n"
+          body += "- `EmailIOCExtractor-Full.exe` — то же, что Full (compat alias)\n"
+          body += "- `EmailIOCExtractor-Lite.exe` — **Lite** (без RAR/QR extras)\n"
+          body += f"- SHA256 Lite: `{lite_digest}`\n"
           body += "- Без подписи по умолчанию — см. `docs/SIGNING.md` (проверяйте SHA256 перед выкладкой)\n"
           Path("release_notes.md").write_text(body, encoding="utf-8")
           PY
@@ -286,5 +295,7 @@ jobs:
             dist/EmailIOCExtractor.exe.sha256
             dist/EmailIOCExtractor-Full.exe
             dist/EmailIOCExtractor-Full.exe.sha256
+            dist/EmailIOCExtractor-Lite.exe
+            dist/EmailIOCExtractor-Lite.exe.sha256
           body_path: release_notes.md
           generate_release_notes: true

@@ -53,7 +53,7 @@ def check_update_manifest(path: str | Path | None = None) -> str | None:
 
     Manifest shape::
         {
-          "latest": "2.14.0",
+          "latest": "2.14.1",
           "channel": "lite"|"full",
           "sha256": "optional hex of EmailIOCExtractor.exe",
           "notes": "optional"

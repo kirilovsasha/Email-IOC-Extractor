@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Build Email IOC Extractor binary with PyInstaller (run on target OS, usually Windows).
+# Default = Full (RAR/QR). Pass --lite for a smaller build without extras.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-FULL=0
-if [[ "${1:-}" == "--full" ]]; then
+FULL=1
+if [[ "${1:-}" == "--lite" ]]; then
+  FULL=0
+  shift
+elif [[ "${1:-}" == "--full" ]]; then
+  # kept for compatibility; Full is already the default
   FULL=1
   shift
 fi
@@ -12,7 +17,9 @@ pip install -e .
 if [[ "$FULL" -eq 1 ]]; then
   pip install -e ".[rar,qr]"
   export RELIQUARY_FULL=1
-  echo "Full build: rar + qr"
+  echo "Full build (default): rar + qr"
+else
+  echo "Lite build: no rar/qr extras"
 fi
 python build/sync_version_info.py
 python -m PyInstaller build/reliquary.spec --noconfirm
@@ -34,4 +41,8 @@ print(f"SHA256 {digest}")
 PY
 echo "Artifact: ${ART}"
 echo "Optional Authenticode signing: build/sign_exe.ps1 -ExePath dist\\EmailIOCExtractor.exe"
-echo "Extras: build/build.sh --full  (or pip install '.[rar,qr]' before build)"
+if [[ "$FULL" -eq 1 ]]; then
+  echo "Full build by default. Lite: build/build.sh --lite"
+else
+  echo "Lite build. Full (default): build/build.sh"
+fi

@@ -22,6 +22,14 @@ if exist ".venv\Scripts\python.exe" (
   echo Using: python from PATH
 )
 
+REM Default = Full (RAR/QR). Pass --lite for a smaller build without extras.
+set "BUILD_LITE=0"
+if /I "%~1"=="--lite" set "BUILD_LITE=1"
+if /I "%~1"=="--full" (
+  REM kept for compatibility; Full is already the default
+  set "BUILD_LITE=0"
+)
+
 echo.
 echo [1/4] Dependencies (requirements + PyInstaller)...
 "%PY%" -m pip install -U pip
@@ -33,7 +41,7 @@ if errorlevel 1 exit /b 1
 "%PY%" -m pip install -e .
 if errorlevel 1 exit /b 1
 
-if /I "%~1"=="--full" (
+if "%BUILD_LITE%"=="0" (
   echo.
   echo [extras] Full build: rar + qr
   "%PY%" -m pip install -e ".[rar,qr]"
@@ -47,7 +55,7 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo [3/4] PyInstaller...
-if /I "%~1"=="--full" (
+if "%BUILD_LITE%"=="0" (
   set "RELIQUARY_FULL=1"
   echo RELIQUARY_FULL=1
 )
@@ -79,6 +87,10 @@ echo.
 echo Optional signing:
 echo   powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe
 echo.
-echo Lite build by default. Full (RAR/QR): build\build.bat --full
+if "%BUILD_LITE%"=="0" (
+  echo Full build by default ^(RAR/QR^). Lite: build\build.bat --lite
+) else (
+  echo Lite build. Full ^(default^): build\build.bat
+)
 echo.
 exit /b 0

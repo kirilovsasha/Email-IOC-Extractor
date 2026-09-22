@@ -27,7 +27,7 @@ SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 
 def test_product_name():
     assert __app_name__ == "Email IOC Extractor"
-    assert __version__ == "2.14.0"
+    assert __version__ == "2.14.1"
 
 
 def test_defang_and_extract():
@@ -301,6 +301,9 @@ def test_desired_result_tabs_verdict_first():
     compact = desired_result_tabs(result, filtered_count=len(result.iocs), compact=True)
     assert compact[0] == ("mail", "Вердикт")
     assert all(len(label) <= 18 for _, label in compact)
+    # Labels stay stable — no verdict level embedded (that lives in the summary badge).
+    assert all(" · " not in label for _, label in tabs)
+    assert tabs[0][1] == "Вердикт"
 
 
 def test_export_actions_json_csv(tmp_path: Path):

@@ -31,6 +31,7 @@ powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe `
 
 1. SHA256 совпал.
 2. Authenticode (локально или CI).
-3. Выбрать **Lite** или **Full** (`EmailIOCExtractor-Full.exe` + UnRAR.exe рядом при RAR).
+3. Выбрать **Full** (по умолчанию, `EmailIOCExtractor.exe` + UnRAR.exe рядом при RAR)
+   или **Lite** (`EmailIOCExtractor-Lite.exe`).
 4. Рядом с EXE: `org_profile.zip` (или `org_profile/`), опционально `verdict_extra.json`, `allowlist_extra.txt`, `ui_prefs.json`.
 5. `update.json` с `{"latest":"…"}` для локального баннера версии (без сети).

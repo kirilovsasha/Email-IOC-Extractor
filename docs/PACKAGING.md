@@ -2,16 +2,23 @@
 
 ## Что публикуется
 
-CI публикует **Lite** `EmailIOCExtractor.exe` + `.sha256` на `main` и на тег `v*`.
-На теге `v*` в Release также публикуется **Full** `EmailIOCExtractor-Full.exe` (RAR/QR).
+CI публикует **Full** `EmailIOCExtractor.exe` + `.sha256` на `main` и на тег `v*`
+(RAR/QR extras внутри). Compat-алиас `EmailIOCExtractor-Full.exe` — тот же файл.
+На теге `v*` также публикуется **Lite** `EmailIOCExtractor-Lite.exe` (без rarfile/pyzbar).
 
-Локально Full:
+Локально Full — по умолчанию:
 
 ```bat
-build_exe.bat --full
+build_exe.bat
 ```
 
-или CI job `build-exe-full` (артефакт на push в main).
+Lite:
+
+```bat
+build_exe.bat --lite
+```
+
+или CI job `build-exe-lite`.
 
 ## Деплой без MSI
 
@@ -29,7 +36,7 @@ build_exe.bat --full
 
 ```yaml
 PackageIdentifier: SOC.EmailIOCExtractor
-PackageVersion: 2.14.0
+PackageVersion: 2.14.1
 InstallerType: portable
 Installers:
   - Architecture: x64
@@ -42,7 +49,7 @@ Installers:
 ## Офлайн-флаг версии
 
 Положите `update.json` рядом с EXE
-(`{"latest":"2.14.0","channel":"lite","sha256":"…","notes":"..."}`).
+(`{"latest":"2.14.1","channel":"full","sha256":"…","notes":"..."}`).
 Диалог «О программе» покажет канал Lite/Full и сверку SHA256 — без сети.
 
 Предпочтительно один файл **`org_profile.zip`** рядом с EXE (подхватывается автоматически);
