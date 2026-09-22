@@ -27,7 +27,7 @@ SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 
 def test_product_name():
     assert __app_name__ == "Email IOC Extractor"
-    assert __version__ == "2.17.0"
+    assert __version__ == "2.17.1"
 
 
 def test_defang_and_extract():

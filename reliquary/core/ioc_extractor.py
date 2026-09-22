@@ -33,9 +33,208 @@ EMAIL_RE = re.compile(
     r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b"
 )
 # Broad TLD: 2–24 letter labels or punycode. File-like suffixes filtered in _valid_domain.
+# Do not start mid-label; do not end into an email local-part (`user@` → reject via (?!@)).
 DOMAIN_RE = re.compile(
-    r"(?i)(?<!@)(?<![A-Fa-f0-9])\b(?:xn--[a-z0-9\-]+|[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+"
-    r"(?:xn--[a-z0-9\-]{1,59}|[a-z]{2,24})\b"
+    r"(?i)(?<!@)(?<![A-Za-z0-9_-])(?:xn--[a-z0-9\-]+|[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+"
+    r"(?:xn--[a-z0-9\-]{1,59}|[a-z]{2,24})(?![A-Za-z0-9_@-])"
+)
+
+# Auth-results / DKIM attribute names that look like domains (header.from, smtp.mailfrom).
+_AUTH_ATTR_DOMAINS = frozenset(
+    {
+        "header.from",
+        "header.d",
+        "header.i",
+        "header.s",
+        "header.b",
+        "header.a",
+        "header.t",
+        "header.h",
+        "smtp.mailfrom",
+        "smtp.helo",
+        "smtp.rcptto",
+        "smtp.auth",
+        "smtp.vrfy",
+        "smtp.rcpt",
+    }
+)
+
+# Two-label free-text domains need a plausible TLD (kills ivan.petrov / header.from).
+# Multi-label hosts (evil.corp.phishing) stay allowed for phishing gTLDs.
+_COMMON_TLDS = frozenset(
+    {
+        # ccTLD / region
+        "ru",
+        "su",
+        "by",
+        "ua",
+        "kz",
+        "uz",
+        "am",
+        "ge",
+        "kg",
+        "tj",
+        "tm",
+        "az",
+        "md",
+        "uk",
+        "de",
+        "fr",
+        "it",
+        "es",
+        "pl",
+        "cz",
+        "sk",
+        "nl",
+        "be",
+        "ch",
+        "at",
+        "se",
+        "no",
+        "fi",
+        "dk",
+        "ie",
+        "pt",
+        "gr",
+        "tr",
+        "il",
+        "ae",
+        "sa",
+        "in",
+        "cn",
+        "jp",
+        "kr",
+        "tw",
+        "hk",
+        "sg",
+        "my",
+        "th",
+        "vn",
+        "id",
+        "ph",
+        "au",
+        "nz",
+        "ca",
+        "us",
+        "br",
+        "mx",
+        "ar",
+        "cl",
+        "co",
+        "za",
+        "eu",
+        "io",
+        "ai",
+        "me",
+        "tv",
+        "cc",
+        "ws",
+        "to",
+        "nu",
+        "fm",
+        "gg",
+        "im",
+        "je",
+        "lc",
+        "vc",
+        "gd",
+        "ms",
+        "tc",
+        "vg",
+        "ac",
+        "sh",
+        # gTLD / common brand
+        "com",
+        "org",
+        "net",
+        "edu",
+        "gov",
+        "mil",
+        "int",
+        "info",
+        "biz",
+        "name",
+        "pro",
+        "aero",
+        "museum",
+        "coop",
+        "jobs",
+        "mobi",
+        "tel",
+        "travel",
+        "xxx",
+        "online",
+        "site",
+        "website",
+        "space",
+        "tech",
+        "store",
+        "shop",
+        "app",
+        "dev",
+        "cloud",
+        "digital",
+        "email",
+        "mail",
+        "bank",
+        "finance",
+        "money",
+        "company",
+        "ltd",
+        "llc",
+        "inc",
+        "corp",
+        "center",
+        "world",
+        "global",
+        "today",
+        "live",
+        "news",
+        "media",
+        "blog",
+        "club",
+        "vip",
+        "top",
+        "xyz",
+        "icu",
+        "buzz",
+        "click",
+        "link",
+        "win",
+        "zip",
+        "mov",
+        "country",
+        "agency",
+        "solutions",
+        "services",
+        "support",
+        "systems",
+        "network",
+        "security",
+        "software",
+        "technology",
+        "group",
+        "holdings",
+        "international",
+        "moscow",
+        "tatar",
+        # local / lab
+        "local",
+        "localhost",
+        "internal",
+        "lan",
+        "home",
+        "corp",
+        "intranet",
+        "test",
+        "example",
+        "invalid",
+    }
+)
+
+# Header names whose values are Message-IDs — blank before IOC extract.
+_MSGID_HEADER_RE = re.compile(
+    r"(?im)^(message-id|in-reply-to|references)\s*:.*$"
 )
 
 # Final labels that are almost always local filenames / noise, not DNS TLDs.
@@ -291,10 +490,78 @@ def _is_rewriter_host(host: str) -> bool:
     return any(h == s or h.endswith("." + s) for s in REWRITER_DOMAIN_SUFFIXES)
 
 
-def _valid_domain(domain: str) -> bool:
+def _mask_msgid_headers(text: str) -> str:
+    """Blank Message-ID / In-Reply-To / References values so they are not emails/domains."""
+
+    def _blank(m: re.Match[str]) -> str:
+        return " " * len(m.group(0))
+
+    return _MSGID_HEADER_RE.sub(_blank, text)
+
+
+def _email_is_message_id_context(text: str, match: re.Match[str]) -> bool:
+    """True when the address sits in <…> and is not a From/To/Cc mailbox."""
+    start, end = match.start(), match.end()
+    left = text.rfind("<", 0, start)
+    right = text.find(">", end)
+    if left == -1 or right == -1 or not (left < start < end <= right):
+        return False
+    window = text[max(0, left - 48) : left].lower()
+    if re.search(
+        r"(?:^|[\s;])(?:from|to|cc|bcc|sender|reply-to|mail\s*from|rcpt\s*to)\s*:?\s*$",
+        window,
+    ):
+        return False
+    return True
+
+
+def _domain_in_angle_msgid(text: str, start: int, end: int) -> bool:
+    """Skip hostnames that only appear inside Message-ID-like <…> tokens."""
+    left = text.rfind("<", 0, start)
+    right = text.find(">", end)
+    if left == -1 or right == -1 or not (left < start < end <= right):
+        return False
+    window = text[max(0, left - 48) : left].lower()
+    if re.search(
+        r"(?:^|[\s;])(?:from|to|cc|bcc|sender|reply-to|mail\s*from|rcpt\s*to)\s*:?\s*$",
+        window,
+    ):
+        return False
+    return True
+
+
+def _expand_domain_left(text: str, start: int, domain: str) -> str | None:
+    """Pull preceding ``label.`` segments so ``mx1.mail.x`` is not truncated to ``mail.x``.
+
+    Returns None when the match is the host of an email (owned by EMAIL_RE) or cannot
+    form a valid hostname.
+    """
+    s = start
+    d = domain
+    while s > 1 and text[s - 1] == ".":
+        j = s - 2
+        while j >= 0 and (text[j].isalnum() or text[j] == "-"):
+            j -= 1
+        if j >= 0 and text[j] == "@":
+            return None
+        label = text[j + 1 : s - 1]
+        if not label or not re.fullmatch(
+            r"(?i)(?:xn--[a-z0-9\-]+|[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?)", label
+        ):
+            break
+        d = f"{label}.{d}"
+        s = j + 1
+    if s > 0 and text[s - 1] == "@":
+        return None
+    return d
+
+
+def _valid_domain(domain: str, *, free_text: bool = False) -> bool:
     """Drop garbage domains produced by percent-encoding leftovers / filenames."""
     d = domain.lower().rstrip(".")
     if not d or d.startswith("-") or ".." in d:
+        return False
+    if d in _AUTH_ATTR_DOMAINS or d.startswith("header.") or d.startswith("smtp."):
         return False
     labels = d.split(".")
     if len(labels) < 2:
@@ -306,7 +573,11 @@ def _valid_domain(domain: str) -> bool:
         return False
     if tld.isdigit():
         return False
-    if re.match(r"^[0-9a-f]{2}[a-z]", labels[0]) and not re.match(r"^\d", labels[0]):
+    # Two-label free-text hosts need a real-ish TLD (ivan.petrov / header.from).
+    if free_text and len(labels) == 2 and not tld.startswith("xn--") and tld not in _COMMON_TLDS:
+        return False
+    # Pure hex labels (percent-encoding leftovers), not real DNS.
+    if re.fullmatch(r"[0-9a-f]{8,}", labels[0]) and any(c.isdigit() for c in labels[0]):
         return False
     return True
 
@@ -404,7 +675,7 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
     if not text:
         return []
 
-    cleaned = unquote(defang(text))
+    cleaned = _mask_msgid_headers(unquote(defang(text)))
     found: dict[tuple[str, str], Ioc] = {}
 
     def add(
@@ -466,6 +737,8 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
                 add(host.lower(), IocType.DOMAIN, m, tags_d)
 
     for m in EMAIL_RE.finditer(cleaned):
+        if _email_is_message_id_context(cleaned, m):
+            continue
         email = m.group(0).lower()
         add(email, IocType.EMAIL, m)
         domain = email.split("@", 1)[1]
@@ -556,8 +829,14 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         add(cmd, IocType.COMMAND_LINE, m, ["process"])
 
     for m in DOMAIN_RE.finditer(cleaned):
-        domain = m.group(0).lower().rstrip(".")
-        if not _valid_domain(domain):
+        raw = m.group(0).rstrip(".")
+        if _domain_in_angle_msgid(cleaned, m.start(), m.end()):
+            continue
+        expanded = _expand_domain_left(cleaned, m.start(), raw)
+        if expanded is None:
+            continue
+        domain = expanded.lower().rstrip(".")
+        if not _valid_domain(domain, free_text=True):
             continue
         tags = ["url_rewriter"] if _is_rewriter_host(domain) else []
         if domain.startswith("xn--") or ".xn--" in domain:
