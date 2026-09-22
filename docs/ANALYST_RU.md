@@ -1,6 +1,6 @@
 # Analyst runbook (RU) — Email IOC Extractor
 
-Офлайн triage писем `.eml` / `.msg` / `.mbox`. Сеть не используется.
+Офлайн triage писем `.eml` / `.msg` / `.mbox` / `.pst`. Сеть не используется.
 Деплой: **1 EXE** + опциональные конфиги рядом. Без базы данных.
 
 ## Быстрый цикл
@@ -15,7 +15,19 @@
 8. Ctrl+R — копировать причины вердикта; вкладка «Ошибки» → [L] каталог журнала.
 9. ПКМ → Feedback FP/FN; пароль архива и переразбор.
 10. Настройки → импорт org_profile; YARA (extra) — правила `yara_rules/` рядом с EXE авто.
-11. Feedback FP/FN → `--feedback-weights` предлагает ±2 к весам по сегменту.
+11. Feedback FP/FN → `--feedback-weights` (±2 к весам) / `--feedback-tune` (веса + пороги/caps).
+12. `.pst` — MVP: нужен `pip install .[pst]` (libratom) или pypff; иначе RU-пропуск без краша.
+
+## Пороги вердикта
+
+| Уровень | Score |
+|---------|-------|
+| безопасный (benign) | 0–9 |
+| неясный (unknown) | 10–29 |
+| подозрительный (suspicious) | 30–59 |
+| вредоносный (malicious) | ≥ 60 |
+
+Тюнинг весов/caps: `verdict_extra.json` + [`docs/TUNING.md`](TUNING.md).
 
 ## Горячие клавиши
 
@@ -56,6 +68,7 @@ UI только на русском. Вердикт: безопасный / не
 ## Конфиги рядом с EXE
 
 - `allowlist_extra.txt`, `verdict_extra.json`, `org_profile/` или **`org_profile.zip`**
+- пресеты: `m365` / `google` / `banking` / `ru_gov` / `by_gov` / `kz_gov` / `ua_gov` / …
 - `ui_prefs.json` — prefs (`verdict_compact`, `high_contrast`, hook…)
 - `update.json` — локальный манифест (без сети): `latest` / `sha256` / `notes`
 - «Настройки» в GUI — пути allowlist/verdict/profile, workers, post-export hook + JSON sidecar

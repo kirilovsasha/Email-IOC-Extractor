@@ -48,7 +48,7 @@ def pst_library_available() -> bool:
 def _ru_missing_lib_message(path: Path) -> str:
     return (
         f"PST «{path.name}»: разбор недоступен без опциональной библиотеки. "
-        "Установите `pip install reliquary[pst]` (pypff) или libratom. "
+        "Установите `pip install reliquary[pst]` (libratom) или pypff. "
         "Файл пропущен — разбор не прерван."
     )
 

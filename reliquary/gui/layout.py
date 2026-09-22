@@ -49,7 +49,7 @@ class LayoutMixin:
 
         self._header_meta = ctk.CTkLabel(
             header,
-            text=f"v{__version__}  ·  офлайн  ·  .eml / .msg",
+            text=f"v{__version__}  ·  офлайн  ·  .eml / .msg / .mbox / .pst",
             font=ctk_font("caption"),
             text_color=COLORS["muted"],
         )
