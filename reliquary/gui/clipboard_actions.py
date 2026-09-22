@@ -32,16 +32,6 @@ class ClipboardActionsMixin:
         self.clipboard_append(value)
         self._set_status("From скопирован")
 
-    def _copy_message_id(self) -> None:
-        if not self.result or not self.result.mail_identity:
-            return
-        value = self.result.mail_identity.message_id or ""
-        if not value:
-            return
-        self.clipboard_clear()
-        self.clipboard_append(value)
-        self._set_status("Message-ID скопирован")
-
     def _copy_auth(self) -> None:
         if not self.result or not self.result.mail_identity:
             return
@@ -50,28 +40,6 @@ class ClipboardActionsMixin:
         self.clipboard_clear()
         self.clipboard_append(text)
         self._set_status("Auth скопирован")
-
-    def copy_message_id_block(self) -> None:
-        if not self.result:
-            messagebox.showinfo(__app_name__, "Сначала разберите письмо")
-            return
-        mid = self.result.mail_identity
-        parts: list[str] = []
-        if mid and mid.message_id:
-            parts.append(mid.message_id)
-        elif self.result.raw_headers.get("Message-ID"):
-            parts.append(self.result.raw_headers["Message-ID"])
-        if mid and mid.subject:
-            parts.append(f"Subject: {mid.subject}")
-        elif self.result.subject:
-            parts.append(f"Subject: {self.result.subject}")
-        block = "\n".join(dict.fromkeys(parts))
-        if not block.strip():
-            messagebox.showinfo(__app_name__, "Message-ID не найден")
-            return
-        self.clipboard_clear()
-        self.clipboard_append(block)
-        self._set_status("Message-ID / Subject скопирован")
 
     def copy_handoff(self) -> None:
         if not self.result:

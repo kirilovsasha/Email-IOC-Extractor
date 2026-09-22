@@ -87,12 +87,11 @@ def test_campaign_pack_ndjson(tmp_path: Path) -> None:
     assert meta["mail_count"] == 2
 
 
-def test_self_check_mentions_unrar_loudly() -> None:
+def test_self_check_mentions_qr() -> None:
     lines = build_self_check_lines()
     blob = "\n".join(lines)
     assert "Версия" in blob
-    # Lite or Full — either mentions RAR/UnRAR or Lite
-    assert "Lite" in blob or "RAR" in blob or "Full" in blob
+    assert "QR" in blob or "pyzbar" in blob or "Сборка" in blob
 
 
 def test_local_mx_ru_benign() -> None:

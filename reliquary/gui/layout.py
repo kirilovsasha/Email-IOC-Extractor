@@ -108,16 +108,6 @@ class LayoutMixin:
 
         hand_shell, hand = toolbar_group(actions, "Буфер", compact=True)
         self._hand_shell = hand_shell
-        btn_msgid = ctk.CTkButton(
-            hand,
-            text="Msg-ID",
-            width=70,
-            font=btn_font,
-            command=self.copy_message_id_block,
-            **BTN_SECONDARY,
-        )
-        btn_msgid.pack(side="left", padx=(0, 4))
-        HoverTip(btn_msgid, "Message-ID / Subject для корреляции")
         btn_handoff = ctk.CTkButton(
             hand,
             text="В тикет",
@@ -127,7 +117,7 @@ class LayoutMixin:
             **BTN_SECONDARY,
         )
         btn_handoff.pack(side="left", padx=(0, 4))
-        HoverTip(btn_handoff, "Скопировать блок triage для тикета (вердикт + Msg-ID + IOC)")
+        HoverTip(btn_handoff, "Скопировать блок triage для тикета (вердикт + IOC; Msg-ID внутри текста)")
         ctk.CTkOptionMenu(
             hand,
             variable=self._copy_format,
@@ -413,8 +403,7 @@ class LayoutMixin:
         summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
         summary.pack(fill="x", padx=10, pady=(10, 4))
         summary.grid_columnconfigure(0, weight=0)
-        summary.grid_columnconfigure(1, weight=0)
-        summary.grid_columnconfigure(2, weight=1)
+        summary.grid_columnconfigure(1, weight=1)
         self._summary = summary
 
         self.verdict_badge = ctk.CTkLabel(
@@ -431,20 +420,12 @@ class LayoutMixin:
             text="",
             font=ctk_font("body"),
             text_color=COLORS["accent"],
-            anchor="w",
-        )
-        self.ioc_summary_label.grid(row=0, column=1, padx=(0, 10), pady=8, sticky="w")
-
-        self.ioc_breakdown = ctk.CTkLabel(
-            summary,
-            text="Откройте .eml / .msg",
-            font=ctk_font("body"),
-            text_color=COLORS["muted"],
             anchor="e",
-            justify="right",
-            wraplength=320,
         )
-        self.ioc_breakdown.grid(row=0, column=2, padx=12, pady=8, sticky="ew")
+        self.ioc_summary_label.grid(row=0, column=1, padx=(0, 12), pady=8, sticky="e")
+
+        # Alias for older helpers; type breakdown lives in filter_hint, not beside badge.
+        self.ioc_breakdown = self.ioc_summary_label
 
         self._job_row = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
         self.status = ctk.CTkLabel(
@@ -527,7 +508,11 @@ class LayoutMixin:
         self._tab_frames: dict[str, ctk.CTkFrame] = {}
         for key in ("mail", "att", "url", "ioc", "batch", "err"):
             frame = ctk.CTkFrame(self._tab_body, fg_color=COLORS["surface"])
+            # All tabs share one grid cell; raise on switch (no pack_forget jump).
+            frame.grid(row=0, column=0, sticky="nsew")
             self._tab_frames[key] = frame
+        self._tab_body.grid_rowconfigure(0, weight=1)
+        self._tab_body.grid_columnconfigure(0, weight=1)
 
         mail_bar = ctk.CTkFrame(self._tab_frames["mail"], fg_color="transparent")
         mail_bar.pack(fill="x", padx=2, pady=(2, 0))
@@ -538,14 +523,6 @@ class LayoutMixin:
             width=70,
             font=mail_btn_font,
             command=self._copy_from,
-            **BTN_SECONDARY,
-        ).pack(side="left", padx=(0, 4))
-        ctk.CTkButton(
-            mail_bar,
-            text="Msg-ID",
-            width=70,
-            font=mail_btn_font,
-            command=self._copy_message_id,
             **BTN_SECONDARY,
         ).pack(side="left", padx=(0, 4))
         ctk.CTkButton(
@@ -701,19 +678,18 @@ class LayoutMixin:
             self._exp_shell.grid(row=0, column=2, sticky="nw", pady=2)
 
     def _place_summary(self, stacked: bool) -> None:
-        if stacked == self._summary_stacked:
+        # Summary is a fixed one-row composition (verdict + evidence count).
+        # stacked flag kept for API compatibility with resize handler.
+        _ = stacked
+        if getattr(self, "_summary_stacked", None) is False and not stacked:
             return
-        self._summary_stacked = stacked
-        if stacked:
-            self.verdict_badge.grid(row=0, column=0, columnspan=3, padx=12, pady=(8, 0), sticky="w")
-            self.ioc_summary_label.grid(row=1, column=0, padx=(12, 8), pady=(2, 8), sticky="w")
-            self.ioc_breakdown.grid(row=1, column=1, columnspan=2, padx=12, pady=(2, 8), sticky="ew")
-            self.ioc_breakdown.configure(anchor="w", justify="left")
-        else:
-            self.verdict_badge.grid(row=0, column=0, padx=(12, 10), pady=8, sticky="w")
-            self.ioc_summary_label.grid(row=0, column=1, padx=(0, 10), pady=8, sticky="w")
-            self.ioc_breakdown.grid(row=0, column=2, padx=12, pady=8, sticky="ew")
-            self.ioc_breakdown.configure(anchor="e", justify="right")
+        self._summary_stacked = False
+        self.verdict_badge.grid(row=0, column=0, padx=(12, 10), pady=8, sticky="w")
+        self.ioc_summary_label.grid(row=0, column=1, padx=(0, 12), pady=8, sticky="e")
+        try:
+            self.ioc_summary_label.configure(anchor="e")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _try_hook_drop(self) -> None:
         try:

@@ -1,4 +1,7 @@
-"""Unlock encrypted ZIP/7z/RAR members with analyst-supplied passwords (offline)."""
+"""Unlock encrypted ZIP/7z members with analyst-supplied passwords (offline).
+
+RAR unlock is unsupported (no rarfile/UnRAR).
+"""
 
 from __future__ import annotations
 
@@ -121,47 +124,6 @@ def extract_7z_with_passwords(
     return members, notes
 
 
-def extract_rar_with_passwords(
-    data: bytes, passwords: Iterable[str]
-) -> tuple[list[tuple[str, bytes]], list[str]]:
-    notes: list[str] = []
-    members: list[tuple[str, bytes]] = []
-    try:
-        import rarfile  # type: ignore[import-untyped]
-    except ImportError:
-        return members, ["RAR: rarfile недоступен (Full / UnRAR)"]
-    for pwd in passwords:
-        s = (pwd or "").strip()
-        if not s:
-            continue
-        try:
-            with rarfile.RarFile(io.BytesIO(data)) as rf:
-                rf.setpassword(s)
-                for info in rf.infolist():
-                    if len(members) >= MAX_MEMBERS:
-                        break
-                    name = getattr(info, "filename", "") or ""
-                    if getattr(info, "isdir", lambda: False)():
-                        continue
-                    try:
-                        payload = bytes(rf.read(info))
-                    except Exception as exc:  # noqa: BLE001
-                        notes.append(f"RAR {name}: {exc}")
-                        continue
-                    if len(payload) > MAX_MEMBER:
-                        continue
-                    members.append((Path(name).name or name, payload))
-                if members:
-                    notes.append("RAR: пароль принят — содержимое извлечено")
-                    return members, notes
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"RAR pwd try: {type(exc).__name__}")
-            continue
-    if not members:
-        notes.append("RAR: ни один пароль не подошёл")
-    return members, notes
-
-
 def extract_archive_members(
     data: bytes, *, filename: str = "", passwords: Iterable[str] | None = None
 ) -> tuple[list[tuple[str, bytes]], list[str]]:
@@ -174,7 +136,7 @@ def extract_archive_members(
     if data[:6] == b"7z\xbc\xaf'\x1c" or lower.endswith(".7z"):
         return extract_7z_with_passwords(data, pwds)
     if data[:4] == b"Rar!" or lower.endswith(".rar"):
-        return extract_rar_with_passwords(data, pwds)
+        return [], ["RAR: расшифровка не поддерживается"]
     # Fallback probe ZIP
     return extract_zip_with_passwords(data, pwds)
 

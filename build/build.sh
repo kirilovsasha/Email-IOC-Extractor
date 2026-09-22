@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
 # Build Email IOC Extractor binary with PyInstaller (run on target OS, usually Windows).
+# Single build: core + QR (pyzbar). No Lite/Full / RAR split.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-FULL=0
-if [[ "${1:-}" == "--full" ]]; then
-  FULL=1
-  shift
-fi
 pip install -r requirements.txt pyinstaller
 pip install -e .
-if [[ "$FULL" -eq 1 ]]; then
-  pip install -e ".[rar,qr]"
-  export RELIQUARY_FULL=1
-  echo "Full build: rar + qr"
-fi
 python build/sync_version_info.py
 python -m PyInstaller build/reliquary.spec --noconfirm
 if [[ -f dist/EmailIOCExtractor.exe ]]; then
@@ -34,4 +25,3 @@ print(f"SHA256 {digest}")
 PY
 echo "Artifact: ${ART}"
 echo "Optional Authenticode signing: build/sign_exe.ps1 -ExePath dist\\EmailIOCExtractor.exe"
-echo "Extras: build/build.sh --full  (or pip install '.[rar,qr]' before build)"

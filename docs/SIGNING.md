@@ -4,7 +4,7 @@
 пока корпоративный SoftCert / EV не подпишет бинарник.
 
 Опциональная подпись в CI уже поддержана: секреты `SIGNING_PFX_BASE64` и
-`SIGNING_PFX_PASSWORD` — job `release` вызывает `build/sign_exe.ps1` для Lite+Full.
+`SIGNING_PFX_PASSWORD` — job `release` вызывает `build/sign_exe.ps1` для EXE.
 
 ## Проверка перед выкладкой
 
@@ -31,6 +31,6 @@ powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe `
 
 1. SHA256 совпал.
 2. Authenticode (локально или CI).
-3. Выбрать **Lite** или **Full** (`EmailIOCExtractor-Full.exe` + UnRAR.exe рядом при RAR).
+3. Один EXE (core + QR); RAR inventory не требуется.
 4. Рядом с EXE: `org_profile.zip` (или `org_profile/`), опционально `verdict_extra.json`, `allowlist_extra.txt`, `ui_prefs.json`.
 5. `update.json` с `{"latest":"…"}` для локального баннера версии (без сети).

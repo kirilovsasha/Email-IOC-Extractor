@@ -142,11 +142,14 @@ def test_desired_result_tabs_compact_and_full() -> None:
     assert keys[0] == "mail"
     assert "att" in keys and "url" in keys and "ioc" in keys
     assert "batch" in keys and "err" in keys
-    assert any("suspicious" in lab for _k, lab in tabs)
+    # Labels stay stable — no verdict level embedded
+    assert all(" · " not in lab for _k, lab in tabs)
+    assert tabs[0][1] == "Вердикт"
 
     compact = desired_result_tabs(result, filtered_count=1, compact=True)
     assert any(lab.startswith("Влож.") for _k, lab in compact)
     assert any(lab.startswith("!") or "Ошиб" in lab for _k, lab in compact)
+    assert compact[0] == ("mail", "Вердикт")
 
 
 def test_windowing_helpers_no_tk() -> None:

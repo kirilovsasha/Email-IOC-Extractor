@@ -3,12 +3,11 @@
 Build:
   pyinstaller build/reliquary.spec
 
-Full (RAR/QR): install extras first, or set RELIQUARY_FULL=1 after pip install '.[rar,qr]'.
-  Hiddenimports for rarfile/pyzbar are added automatically when importable.
+Single fleet build: core + QR (pyzbar). RAR inventory is not bundled.
+Optional yara-python is collected when present in the build env.
 """
 
 # -*- mode: python ; coding: utf-8 -*-
-import os
 import sys
 from pathlib import Path
 
@@ -35,13 +34,6 @@ _schema = ROOT / "docs" / "schema_report_v2.json"
 if _schema.is_file():
     _extra_datas.append((str(_schema), "docs"))
 
-_want_full = os.environ.get("RELIQUARY_FULL", "").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-    "on",
-)
-
 
 def _try_collect(mod: str) -> bool:
     global _extra_datas, _extra_binaries, _extra_hidden
@@ -59,12 +51,12 @@ def _try_collect(mod: str) -> bool:
     return True
 
 
-# Auto-bundle optional extras when present in the build env (Lite = not installed).
-_ = _want_full  # documented env; importability is the real gate
-if _try_collect("rarfile"):
-    _extra_hidden.append("rarfile")
+# QR decode is a required dependency — bundle when importable at build time.
 if _try_collect("pyzbar"):
     _extra_hidden.extend(["pyzbar", "pyzbar.pyzbar"])
+# Optional offline YARA
+if _try_collect("yara"):
+    _extra_hidden.append("yara")
 
 a = Analysis(
     [str(ROOT / "run_reliquary.py")],
@@ -83,6 +75,8 @@ a = Analysis(
         "windnd",
         "py7zr",
         "PIL",
+        "pyzbar",
+        "pyzbar.pyzbar",
         "reliquary",
         "reliquary.gui.app",
         "reliquary.gui.tabs",
@@ -111,11 +105,13 @@ a = Analysis(
         "reliquary.core.analysis_options",
         "reliquary.core.org_profile",
         "reliquary.core.export_hook",
+        "reliquary.core.archive_unlock",
+        "reliquary.core.yara_scan",
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=["rarfile"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

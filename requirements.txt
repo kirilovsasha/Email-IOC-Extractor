@@ -9,7 +9,4 @@ windnd==1.0.7
 pillow==11.3.0
 # 0.22 pulls pyppmd<1.2 (no cp314 wheel / needs MSVC). 1.x has binary wheels.
 py7zr>=1.0,<2
-
-# Optional (not required for GUI exe):
-# rarfile>=4.1          # RAR inventory + UnRAR binary on PATH
-# pyzbar>=0.1.9         # QR from images (or zxingcpp)
+pyzbar==0.1.9

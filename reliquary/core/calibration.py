@@ -109,7 +109,6 @@ def segment_for(result) -> str:
             "pdf_uri_action",
             "html_attachment",
             "onenote_attachment",
-            "unrar_missing",
         )
     ):
         return "attachment"

@@ -53,7 +53,6 @@
     "weight_pdf_uri_action": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_cab_archive": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_lnk_dangerous": { "type": "integer", "minimum": -50, "maximum": 100 },
-    "weight_unrar_missing": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_archive_nested_email": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_zip_bomb": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_archive_password": { "type": "integer", "minimum": -50, "maximum": 100 },

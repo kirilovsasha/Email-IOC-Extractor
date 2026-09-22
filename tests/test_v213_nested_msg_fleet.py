@@ -115,7 +115,6 @@ def test_update_manifest_channel_sha(tmp_path: Path, monkeypatch) -> None:
         json.dumps(
             {
                 "latest": "99.0.0",
-                "channel": "full",
                 "sha256": "a" * 64,
                 "notes": "тест",
             }
@@ -125,7 +124,7 @@ def test_update_manifest_channel_sha(tmp_path: Path, monkeypatch) -> None:
     msg = check_update_manifest()
     assert msg
     assert "99.0.0" in msg
-    assert "Full" in msg or "full" in msg.lower()
+    assert "Доступно обновление" in msg
 
 
 def test_prefs_export_ui_and_sidecar_defaults() -> None:

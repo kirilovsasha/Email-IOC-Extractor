@@ -33,13 +33,6 @@ if errorlevel 1 exit /b 1
 "%PY%" -m pip install -e .
 if errorlevel 1 exit /b 1
 
-if /I "%~1"=="--full" (
-  echo.
-  echo [extras] Full build: rar + qr
-  "%PY%" -m pip install -e ".[rar,qr]"
-  if errorlevel 1 exit /b 1
-)
-
 echo.
 echo [2/4] Sync version_info.txt...
 "%PY%" build\sync_version_info.py
@@ -47,10 +40,6 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo [3/4] PyInstaller...
-if /I "%~1"=="--full" (
-  set "RELIQUARY_FULL=1"
-  echo RELIQUARY_FULL=1
-)
 "%PY%" -m PyInstaller build\reliquary.spec --noconfirm
 if errorlevel 1 (
   echo [ERROR] PyInstaller failed
@@ -78,7 +67,5 @@ echo ========================================
 echo.
 echo Optional signing:
 echo   powershell -File build\sign_exe.ps1 -ExePath dist\EmailIOCExtractor.exe
-echo.
-echo Lite build by default. Full (RAR/QR): build\build.bat --full
 echo.
 exit /b 0

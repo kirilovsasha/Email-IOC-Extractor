@@ -619,7 +619,7 @@ def _enrich_parsed_result(
     if expanded:
         result.attachments.extend(expanded)
 
-    # data:image QR in HTML body (Full)
+    # data:image QR in HTML body
     if parsed.html and "data:image" in parsed.html.lower():
         blob += _decode_data_image_qr(parsed.html, result)
 

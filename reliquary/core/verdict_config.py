@@ -59,7 +59,6 @@ class VerdictConfig:
     weight_pdf_uri_action: int = 12
     weight_cab_archive: int = 14
     weight_lnk_dangerous: int = 22
-    weight_unrar_missing: int = 10
     weight_archive_nested_email: int = 16
     weight_zip_bomb: int = 18
     weight_archive_password: int = 8

@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.15.0
+**Mail. Extract. Decide.** · v2.15.1
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg` / `.mbox`): заголовки,
 вложения, URL rewrite, IOC как доказательства и **вердикт**
@@ -8,7 +8,7 @@
 (включая mitigations) и **уверенностью** (`high` / `medium` / `low`).
 
 📡 Сеть не используется. Пакет Python — `reliquary`; продукт — **Email IOC Extractor**.
-Деплой: **один EXE** + опциональные конфиги рядом (без БД).
+Деплой: **один EXE** + опциональные конфиги рядом (без БД). QR decode встроен.
 
 📦 Экспорт (GUI): JSON (`schema_version` **2**) · CSV · Batch CSV · Тикет.
 
@@ -41,20 +41,16 @@ python -m reliquary.cli mail.eml
 Опциональные extras:
 
 ```bash
-pip install -e ".[rar]"    # RAR во вложениях
-pip install -e ".[qr]"     # QR в изображениях/архивах
 pip install -e ".[yara]"   # offline YARA по вложениям/телу
-pip install -e ".[rar,qr,yara]"
 ```
 
-### 📦 Lite vs Full
+### 📦 Одна EXE-сборка
 
-| Сборка | Что внутри |
-|--------|------------|
-| **Lite** — `EmailIOCExtractor.exe` из CI / GitHub Release / `build_exe.bat` | Базовый разбор; без rarfile / pyzbar |
-| **Full** — `build_exe.bat --full` или source с extras | RAR inventory + QR decode |
+CI / `build_exe.bat` публикуют **`EmailIOCExtractor.exe`** (core + QR).
+Разделения Lite/Full нет. RAR-вложения детектятся без listing членов;
+ZIP/7z unlock и опциональный YARA остаются.
 
-В Release notes публикуются **SHA256** Lite и Full EXE.
+В Release notes публикуется **SHA256** одного EXE.
 
 ⚠️ При ошибке GUI смотрите `email_ioc_extractor_error.log` рядом с bat/exe.
 
@@ -82,7 +78,7 @@ pip install -e ".[rar,qr,yara]"
 | ⚖️ | Вердикт | score · confidence · breakdown (+/−) · причины |
 | 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
 | 📁 | Пакет | сводка + peers кампании + diff |
-| 📋 | Буфер | Msg-ID · Тикет · копирование IOC |
+| 📋 | Буфер | В тикет · копирование IOC |
 | 💾 | Экспорт | JSON / CSV / Batch CSV / Тикет |
 
 **Фильтры по умолчанию:** rewriter/noise (SafeLinks и т.п.) и локальные IP скрыты;
@@ -178,10 +174,10 @@ reliquary ./inbox --campaign-pack pack.ndjson
 ## 🔬 Что анализируется
 
 Корневой вход — **письма** (`.eml` / `.msg` / `.mbox`).
-Внутри письма: Office, ZIP / 7z / RAR\*, nested `.eml` / `.msg`, OLE / macros,
-TNEF / ISO / VHD, скрипты (JS/VBS/HTA/…), QR\*, опционально YARA\*\*.
+Внутри письма: Office, ZIP / 7z / RAR\* , nested `.eml` / `.msg`, OLE / macros,
+TNEF / ISO / VHD, скрипты (JS/VBS/HTA/…), QR, опционально YARA\*\*.
 
-\* RAR и QR — optional extras; Lite EXE их не включает.  
+\* RAR — флаг `rar_archive` без inventory членов (нет rarfile/UnRAR).  
 \*\* YARA — `pip install -e ".[yara]"` + правила рядом с EXE / `--yara-rules`.
 
 | | Сигнал | Примеры |
@@ -290,16 +286,10 @@ build_exe.bat
 
 или напрямую: `build\build.bat`
 
-**Full** (RAR + QR extras перед упаковкой):
-
-```bat
-build_exe.bat --full
-```
-
 Скрипт:
 
 1. Берёт `.venv\Scripts\python.exe`, если есть, иначе `python` из PATH  
-2. Ставит `requirements.txt` + PyInstaller + пакет  
+2. Ставит `requirements.txt` + PyInstaller + пакет (включая `pyzbar`)  
 3. Синхронизирует `build\version_info.txt`  
 4. Запускает PyInstaller (`build\reliquary.spec`)  
 5. Пишет `dist\EmailIOCExtractor.exe.sha256`
@@ -308,6 +298,7 @@ build_exe.bat --full
 
 ```bash
 pip install -r requirements-dev.txt
+pip install -e .
 python build/sync_version_info.py
 python -m PyInstaller build/reliquary.spec --noconfirm
 ```
@@ -316,15 +307,15 @@ Linux/macOS: `bash build/build.sh`.
 
 | | |
 |--|--|
-| 📦 Артефакт | `dist/EmailIOCExtractor.exe` (Lite) + `.sha256` |
+| 📦 Артефакт | `dist/EmailIOCExtractor.exe` (core + QR) + `.sha256` |
 | 🏷️ Версия | `reliquary/__init__.py` → `build/version_info.txt` + `pyproject.toml` |
 | ✍️ Подпись | `build/sign_exe.ps1` / [`docs/SIGNING.md`](docs/SIGNING.md) (опционально) |
 | 📜 Лог | `email_ioc_extractor_error.log` |
 | 🧊 Smoke | `EmailIOCExtractor.exe --cli sample.eml --json out.json` |
 
 CI: pytest Windows + Ubuntu, **Python 3.10–3.13**; coverage gate **75%** (core);
-push в `main` → Lite + Full EXE + frozen `--cli` smoke + SHA256;
-тег `v*` → GitHub Release с changelog и хешами. История: [`CHANGELOG.md`](CHANGELOG.md).
+push в `main` → один EXE + frozen `--cli` smoke + SHA256;
+тег `v*` → GitHub Release с changelog и хешем. История: [`CHANGELOG.md`](CHANGELOG.md).
 Безопасность: [`SECURITY.md`](SECURITY.md). Схема JSON: [`docs/schema_report_v2.json`](docs/schema_report_v2.json).
 Справка аналитика: [`docs/ANALYST_RU.md`](docs/ANALYST_RU.md).
 
