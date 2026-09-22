@@ -346,6 +346,47 @@ def detect_office_remote_template(data: bytes) -> bool:
         zf.close()
 
 
+_DDE_RE = re.compile(
+    rb"(?i)(DDEAUTO|DDE\s*\(|cmd\s*\||=cmd\||MSEXCEL\||"
+    rb"=\s*CMD\s*\||CreateObject\s*\(\s*[\"']WScript|"
+    rb"Shell\s*\(|powershell|mshta\.exe)"
+)
+
+
+def detect_office_dde(data: bytes) -> bool:
+    """True if OOXML xlsx/xlsm (or zip) contains DDE / formula-injection markers."""
+    if not data or data[:2] != b"PK":
+        # Also catch plain OLE / XML fragments
+        return bool(_DDE_RE.search(data[: min(len(data), 512 * 1024)]))
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return bool(_DDE_RE.search(data[: min(len(data), 256 * 1024)]))
+    try:
+        names = zf.namelist()
+        targets = [
+            n
+            for n in names
+            if n.endswith((".xml", ".rels"))
+            and (
+                "sharedStrings" in n
+                or n.startswith("xl/worksheets/")
+                or "workbook" in n
+                or n.startswith("word/")
+            )
+        ]
+        for name in targets[:40]:
+            try:
+                chunk = zf.read(name)
+            except KeyError:
+                continue
+            if _DDE_RE.search(chunk):
+                return True
+        return False
+    finally:
+        zf.close()
+
+
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 

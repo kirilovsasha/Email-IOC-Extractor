@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.17.0
+
+### Детекция
+- Composite `wrap_lure`: URL rewrite (SafeLinks/Mail.ru/VK/Bitrix/…) × urgency/credential/archive/QR
+- Return-Path ≠ From + weak auth → `weight_return_path_mismatch`; SPF softfail не стекается с brand без lookalike/display_spoof
+- ARC-Authentication-Results fail → `weight_arc_fail`; reply-chain spoof → `weight_reply_chain_anomaly`
+- Batch campaign divergence (≥2 From-доменов на один `campaign_key`) → `weight_campaign_divergence`
+- Attachments: `office_dde`, `ole_package`, `pdf_openaction_uri`, усиленный OneNote embedded-file
+- HTML: `cid_phishing`, `form_action_suspicious`, глубже mso-hide / off-screen / font-size:0
+- Homoglyph: uppercase Cyrillic + KZ/UA confusables; YARA pack v2 (remote_template / html_polyglot / office_dde / ole10native / pdf_openaction)
+- `cap_display_spoof` — spoof-кейсы не все пинят score=100
+
+### Продукт
+- Feedback → `suggest_threshold_overrides` (пороги/caps) в `--feedback-weights` / `--feedback-tune`
+- PST MVP: `reliquary/core/pst_ingest.py` + optional `pst` extra (pypff); без lib — ясная RU-ошибка, без краша
+
+### Качество
+- Corpus / тесты `tests/test_v217_detection.py`; сегменты калибровки wrap_lure / arc_fail / reply_chain / …
+
 ## 2.16.0
 
 ### Детекция

@@ -50,7 +50,7 @@ def show_about_dialog(
         f"{t('about_title')} — {__app_name__}",
         f"{__app_name__} v{__version__}\n"
         f"{__tagline__}\n\n"
-        "Офлайн-triage писем (.eml / .msg / .mbox).\n"
+        "Офлайн-triage писем (.eml / .msg / .mbox / .pst).\n"
         "Один EXE + опциональные конфиги рядом. Без БД и без сети.\n"
         "Сначала вердикт; IOC — как доказательства.\n\n"
         f"{self_check}\n\n"

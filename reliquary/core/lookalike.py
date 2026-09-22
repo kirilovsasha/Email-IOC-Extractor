@@ -167,6 +167,7 @@ _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 # Common visual confusables → ASCII (subset; offline, no full Unicode confusables table).
+# Includes bank-homoglyph Cyrillic (а/е/о/р/с/у/х/і) + uppercase + a few extras for KZ/UA.
 _CONFUSABLES = str.maketrans(
     {
         "а": "a",  # Cyrillic
@@ -180,6 +181,16 @@ _CONFUSABLES = str.maketrans(
         "ї": "i",
         "ё": "e",
         "ѕ": "s",
+        "А": "a",
+        "Е": "e",
+        "О": "o",
+        "Р": "p",
+        "С": "c",
+        "У": "y",
+        "Х": "x",
+        "І": "i",
+        "Ї": "i",
+        "Ё": "e",
         "ɡ": "g",
         "ｌ": "l",
         "０": "0",
@@ -187,6 +198,15 @@ _CONFUSABLES = str.maketrans(
         "３": "3",
         "５": "5",
         "８": "8",
+        "ҝ": "k",  # Kazakh
+        "қ": "k",
+        "ү": "y",
+        "ұ": "u",
+        "ң": "n",
+        "ә": "a",
+        "ө": "o",
+        "һ": "h",
+        "ґ": "g",  # Ukrainian
     }
 )
 

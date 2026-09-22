@@ -1,0 +1,25 @@
+Content-Type: multipart/mixed; boundary="===============6132394224448213058=="
+MIME-Version: 1.0
+From: docs@evil.top
+To: user@company.local
+Subject: Invoice PDF
+Message-ID: <pdfoa@evil.top>
+Authentication-Results: mx.company.local; spf=none; dkim=none; dmarc=none
+
+--===============6132394224448213058==
+Content-Type: text/plain; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+
+See attached invoice.
+--===============6132394224448213058==
+Content-Type: application/pdf
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice.pdf"
+
+JVBERi0xLjQKMSAwIG9iajw8IC9UeXBlIC9DYXRhbG9nIC9PcGVuQWN0aW9uIDIgMCBSID4+ZW5k
+b2JqCjIgMCBvYmo8PCAvUyAvVVJJIC9VUkkgKGh0dHBzOi8vZXZpbC50b3AvcGF5KSA+PmVuZG9i
+agp0cmFpbGVyPDwgL1Jvb3QgMSAwIFIgPj4KJSVFT0YK
+
+--===============6132394224448213058==--

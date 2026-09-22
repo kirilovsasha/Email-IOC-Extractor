@@ -172,3 +172,65 @@ rule archive_password_lure
     condition:
         any of them
 }
+
+/* --- pack v2 (2.17) --- */
+
+rule remote_template
+{
+    meta:
+        description = "OOXML remote / attachedTemplate External"
+    strings:
+        $a = "TargetMode=\"External\"" ascii nocase
+        $b = "attachedTemplate" ascii nocase
+        $c = "TargetMode='External'" ascii nocase
+    condition:
+        $a or ($b and $c) or ($b and $a)
+}
+
+rule html_polyglot
+{
+    meta:
+        description = "HTML + PK (ZIP) polyglot"
+    strings:
+        $h = "<html" ascii nocase
+        $d = "<!DOCTYPE html" ascii nocase
+        $z = { 50 4B 03 04 }
+    condition:
+        ($h or $d) and $z
+}
+
+rule office_dde
+{
+    meta:
+        description = "Excel DDE / formula injection"
+    strings:
+        $a = "DDEAUTO" ascii nocase
+        $b = "cmd|" ascii nocase
+        $c = "=CMD|" ascii nocase
+        $d = "MSEXCEL|" ascii nocase
+    condition:
+        any of them
+}
+
+rule ole10native
+{
+    meta:
+        description = "OLE Package Ole10Native stream"
+    strings:
+        $a = "Ole10Native" ascii
+        $b = { 4F 6C 65 31 30 4E 61 74 69 76 65 }
+        $c = { D0 CF 11 E0 A1 B1 1A E1 }
+    condition:
+        $c and ($a or $b)
+}
+
+rule pdf_openaction
+{
+    meta:
+        description = "PDF OpenAction with URI"
+    strings:
+        $a = "/OpenAction" ascii
+        $b = "/URI" ascii
+    condition:
+        $a and $b
+}

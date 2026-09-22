@@ -55,7 +55,7 @@ class VerdictConfig:
     weight_html_attachment: int = 10
     weight_url_shortener: int = 10
     weight_messenger_only: int = 14
-    weight_display_spoof: int = 24
+    weight_display_spoof: int = 20
     weight_pdf_uri_action: int = 12
     weight_cab_archive: int = 14
     weight_lnk_dangerous: int = 22
@@ -83,6 +83,17 @@ class VerdictConfig:
     weight_rar_archive: int = 10
     weight_spf_lookalike: int = 14
     weight_reply_to_spoof: int = 10
+    # 2.17 — wrap×lure, ARC/reply-chain, campaign, attachment/HTML depth
+    weight_wrap_lure: int = 12
+    weight_return_path_mismatch: int = 10
+    weight_arc_fail: int = 12
+    weight_reply_chain_anomaly: int = 14
+    weight_campaign_divergence: int = 10
+    weight_office_dde: int = 18
+    weight_ole_package: int = 16
+    weight_pdf_openaction_uri: int = 14
+    weight_cid_phishing: int = 12
+    weight_form_action_suspicious: int = 14
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -98,6 +109,8 @@ class VerdictConfig:
     cap_urls: int = 30
     cap_content: int = 40
     cap_lookalike: int = 30
+    # Display-spoof alone should not pin every spoof case at 100
+    cap_display_spoof: int = 28
     # Max absolute mitigation (floor on how much score can be reduced)
     cap_mitigation: int = 30
 

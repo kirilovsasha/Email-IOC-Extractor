@@ -77,11 +77,22 @@
     "weight_rar_archive": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_spf_lookalike": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_reply_to_spoof": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_wrap_lure": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_return_path_mismatch": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_arc_fail": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_reply_chain_anomaly": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_campaign_divergence": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_office_dde": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_ole_package": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_pdf_openaction_uri": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_cid_phishing": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_form_action_suspicious": { "type": "integer", "minimum": -50, "maximum": 100 },
     "cap_headers": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_attachments": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_urls": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_content": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_lookalike": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "cap_display_spoof": { "type": "integer", "minimum": 0, "maximum": 100 },
     "cap_mitigation": { "type": "integer", "minimum": 0, "maximum": 100 }
   }
 }

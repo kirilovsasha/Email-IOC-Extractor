@@ -130,6 +130,10 @@ def _score_attachments(
         "html_polyglot",
         "rar_archive",
         "yara_match",
+        "office_dde",
+        "ole_package",
+        "pdf_openaction_uri",
+        "onenote_embedded_file",
     }
     seen_flags: set[str] = set()
     soft_noted = False
@@ -364,6 +368,44 @@ def _score_attachments(
                     )
                 )
                 rest.discard("yara_match")
+            if "office_dde" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_dde,
+                        f"Excel DDE / formula injection в «{att.filename}»",
+                    )
+                )
+                rest.discard("office_dde")
+            if "ole_package" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_ole_package,
+                        f"OLE Package / Ole10Native в «{att.filename}»",
+                    )
+                )
+                rest.discard("ole_package")
+                rest.discard("ole_embedded_object")
+            if "pdf_openaction_uri" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_pdf_openaction_uri,
+                        f"PDF «{att.filename}»: OpenAction + /URI вместе",
+                    )
+                )
+                rest.discard("pdf_openaction_uri")
+            if "onenote_embedded_file" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_attachment_onenote,
+                        f"OneNote со встроенным файлом «{att.filename}»",
+                    )
+                )
+                rest.discard("onenote_embedded_file")
+                rest.discard("onenote_attachment")
             if rest:
                 pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
@@ -507,10 +549,52 @@ def _score_content(
         "weight_archive_password_match": cfg.weight_archive_password_match,
         "weight_oob_delivery": cfg.weight_oob_delivery,
         "weight_cloud_lure": cfg.weight_cloud_lure,
+        "weight_cid_phishing": cfg.weight_cid_phishing,
+        "weight_form_action_suspicious": cfg.weight_form_action_suspicious,
+        "weight_wrap_lure": cfg.weight_wrap_lure,
+        "weight_campaign_divergence": cfg.weight_campaign_divergence,
     }
     for sig in signals:
         pts = weight_map.get(sig.weight_key, 8)
         parts.append(ScoreContribution("content", pts, sig.detail))
+
+    # Proxy wrap × lure composite (SafeLinks / Mail.ru / VK / Bitrix + lure)
+    wrap_kinds = {
+        "microsoft_safelinks",
+        "mailru_away",
+        "vk_away",
+        "bitrix_redir",
+        "yandex_redir",
+        "ok_redir",
+        "kaspersky_wrap",
+        "drweb_wrap",
+    }
+    has_wrap = any(u.changed for u in result.url_rewrites) or any(
+        (getattr(u, "rewriter", "") or "") in wrap_kinds for u in result.url_rewrites
+    )
+    sig_kinds = {s.kind for s in signals} | set(result.content_signals or [])
+    has_lure = bool(
+        URGENCY_RE.search(blob)
+        or sig_kinds.intersection(
+            {
+                "credential_harvest",
+                "archive_password",
+                "archive_password_match",
+                "qr_lure",
+                "qr_credential",
+            }
+        )
+    )
+    if has_wrap and has_lure and "wrap_lure" not in sig_kinds:
+        parts.append(
+            ScoreContribution(
+                "content",
+                cfg.weight_wrap_lure,
+                "URL-wrap (SafeLinks/Mail.ru/VK/…) + lure (urgency/credential/archive/QR)",
+            )
+        )
+        if "wrap_lure" not in (result.content_signals or []):
+            result.content_signals = list(result.content_signals or []) + ["wrap_lure"]
 
     return _apply_cap(parts, cfg.cap_content, "content")
 
@@ -540,6 +624,7 @@ def _score_lookalike(
         brands=brands,
     )
     seen_kinds: set[str] = set()
+    display_pts = 0
     for hit in hits:
         if hit.kind in seen_kinds and hit.kind != "levenshtein":
             continue
@@ -547,13 +632,24 @@ def _score_lookalike(
         if hit.kind == "idn":
             pts = cfg.weight_idn
         elif hit.kind == "display_spoof":
-            pts = cfg.weight_display_spoof
+            # Cap display-spoof so spoof cases don't all pin at 100 with compounds
+            room = max(0, cfg.cap_display_spoof - display_pts)
+            pts = min(cfg.weight_display_spoof, room)
+            display_pts += pts
         else:
             pts = cfg.weight_lookalike
+        if pts <= 0:
+            continue
         parts.append(ScoreContribution("lookalike", pts, hit.detail))
         if len(parts) >= 3:
             break
-    return _apply_cap(parts, cfg.cap_lookalike, "lookalike")
+    # Prefer tighter lookalike budget when display_spoof dominated
+    lookalike_cap = (
+        min(cfg.cap_lookalike, cfg.cap_display_spoof)
+        if display_pts > 0
+        else cfg.cap_lookalike
+    )
+    return _apply_cap(parts, lookalike_cap, "lookalike")
 
 
 def _score_compounds(
@@ -562,15 +658,20 @@ def _score_compounds(
     *,
     prior_breakdown: list[ScoreContribution] | None = None,
 ) -> tuple[int, list[ScoreContribution]]:
-    """Compound boosts: SPF fail + lookalike; Reply-To mismatch + weak auth."""
+    """Compound boosts: SPF+lookalike, Reply-To, Return-Path, ARC, reply-chain, campaign."""
     parts: list[ScoreContribution] = []
     mid = result.mail_identity
 
     spf_bad = False
+    spf_softfail_only = False
     dmarc_pass = False
     dmarc_fail = False
+    dmarc_none = False
     spf_fail = False
     reply_mismatch = False
+    return_path_mismatch = False
+    arc_fail = False
+    reply_chain = False
 
     for h in result.headers:
         name = (h.name or "").lower()
@@ -581,16 +682,33 @@ def _score_compounds(
                 spf_bad = True
                 if val == "fail":
                     spf_fail = True
+                elif val == "softfail":
+                    spf_softfail_only = True
             if "dmarc" in name:
                 if val == "pass":
                     dmarc_pass = True
                 if val == "fail":
                     dmarc_fail = True
+                if val in ("none", "permerror", "temperror"):
+                    dmarc_none = True
+            if name.startswith("arc") and val == "fail":
+                arc_fail = True
         if "softfail" in val or "softfail" in note:
             if "spf" in name or "spf" in note or "auth" in name:
                 spf_bad = True
+                if "fail" not in val.replace("softfail", ""):
+                    spf_softfail_only = True
         if "reply-to mismatch" in name:
             reply_mismatch = True
+        if "return-path mismatch" in name:
+            return_path_mismatch = True
+        # Only real ARC fail / ARC result fail — not "Auth fail без ARC"
+        if name == "arc result" and val == "fail":
+            arc_fail = True
+        if name == "arc" and "fail" in val and "нет" not in val:
+            arc_fail = True
+        if "reply-chain anomaly" in name:
+            reply_chain = True
 
     if mid:
         spf_m = (mid.spf or "").lower()
@@ -599,19 +717,29 @@ def _score_compounds(
             spf_bad = True
             if spf_m == "fail":
                 spf_fail = True
+            elif spf_m == "softfail":
+                spf_softfail_only = True
         if dmarc_m == "pass":
             dmarc_pass = True
         if dmarc_m == "fail":
             dmarc_fail = True
+        if dmarc_m in ("none", "permerror", "temperror", ""):
+            if dmarc_m != "pass":
+                dmarc_none = dmarc_m in ("none", "permerror", "temperror") or not dmarc_m
 
     prior = prior_breakdown or []
     lookalike_hit = any(c.category == "lookalike" and c.points > 0 for c in prior)
 
+    # SPF softfail alone must NOT stack unless lookalike/display_spoof also fires.
+    # Hard SPF fail is already scored in headers — use half compound to avoid pin@100.
     if spf_bad and lookalike_hit:
+        pts = cfg.weight_spf_lookalike
+        if spf_fail:
+            pts = max(4, cfg.weight_spf_lookalike // 2)
         parts.append(
             ScoreContribution(
                 "compound",
-                cfg.weight_spf_lookalike,
+                pts,
                 "SPF softfail/fail + lookalike/display-spoof",
             )
         )
@@ -625,6 +753,73 @@ def _score_compounds(
                 "Reply-To mismatch при слабой auth (нет DMARC pass / fail)",
             )
         )
+
+    # Return-Path ≠ From + weak DMARC / no alignment / softfail
+    weak_dmarc = (not dmarc_pass) or dmarc_fail or dmarc_none or spf_softfail_only or spf_fail
+    if return_path_mismatch and weak_dmarc:
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_return_path_mismatch,
+                "Return-Path ≠ From при слабой DMARC/auth — усиление mismatch",
+            )
+        )
+
+    if arc_fail:
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_arc_fail,
+                "ARC-Authentication-Results fail",
+            )
+        )
+
+    if reply_chain:
+        # Credential/BEC already in content; always score the header anomaly
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_reply_chain_anomaly,
+                "Reply-chain spoof: From ≠ prior Message-ID domain / Re:+чужой From",
+            )
+        )
+
+    # Campaign divergence (batch peers or content signal)
+    if "campaign_divergence" in (result.content_signals or []):
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_campaign_divergence,
+                "Кампания: один ключ, разные From-домены (≥2 писем)",
+            )
+        )
+    elif result.file_rows and len(result.file_rows) >= 2:
+        by_key: dict[str, set[str]] = {}
+        for row in result.file_rows:
+            key = (row.campaign_key or "").strip()
+            if not key:
+                continue
+            sender = (row.sender or "").strip().lower()
+            dom = ""
+            if "@" in sender:
+                addr = sender
+                if "<" in sender and ">" in sender:
+                    addr = sender.split("<", 1)[1].split(">", 1)[0]
+                dom = addr.rsplit("@", 1)[-1].strip(">")
+            if dom:
+                by_key.setdefault(key, set()).add(dom)
+        if any(len(doms) >= 2 for doms in by_key.values()):
+            parts.append(
+                ScoreContribution(
+                    "compound",
+                    cfg.weight_campaign_divergence,
+                    "Кампания: один ключ, разные From-домены (≥2 писем)",
+                )
+            )
+            if "campaign_divergence" not in (result.content_signals or []):
+                result.content_signals = list(result.content_signals or []) + [
+                    "campaign_divergence"
+                ]
 
     total = sum(c.points for c in parts)
     return total, parts
@@ -738,6 +933,10 @@ def _score_mitigations(
         "html_polyglot",
         "rar_archive",
         "yara_match",
+        "office_dde",
+        "ole_package",
+        "pdf_openaction_uri",
+        "onenote_embedded_file",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
@@ -752,6 +951,10 @@ def _score_mitigations(
         "archive_password_match",
         "oob_delivery",
         "cloud_lure",
+        "cid_phishing",
+        "form_action_suspicious",
+        "wrap_lure",
+        "campaign_divergence",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
     # Display-name spoof must block allowlist-From mitigation

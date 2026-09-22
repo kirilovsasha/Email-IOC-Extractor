@@ -1,0 +1,9 @@
+From: noreply@kаspi.kz
+To: user@company.local
+Subject: Kaspi Gold — подтвердите вход
+Message-ID: <hg1@evil.top>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Authentication-Results: mx.company.local; spf=fail; dkim=fail; dmarc=fail
+
+Войдите в кабинет: https://kаspi.kz/login

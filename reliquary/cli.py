@@ -100,7 +100,13 @@ def _resolve_inputs(args: argparse.Namespace) -> list[str]:
         if key not in seen:
             seen.add(key)
             out.append(p)
-    return expand_input_paths([p for p in out if is_supported(p) or Path(p).suffix.lower() == ".mbox"])
+    return expand_input_paths(
+        [
+            p
+            for p in out
+            if is_supported(p) or Path(p).suffix.lower() in {".mbox", ".pst"}
+        ]
+    )
 
 
 def _configure_stdio() -> None:
@@ -163,7 +169,13 @@ def main(argv: list[str] | None = None) -> int:
         "--feedback-weights",
         metavar="OUT.json",
         default=None,
-        help="Предложить ±2 weight overrides из FP/FN feedback → JSON",
+        help="Предложить ±2 weight + threshold/cap overrides из FP/FN feedback → JSON",
+    )
+    parser.add_argument(
+        "--feedback-tune",
+        metavar="OUT.json",
+        default=None,
+        help="То же, что --feedback-weights (веса + пороги/caps)",
     )
     parser.add_argument(
         "--archive-password",
@@ -186,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "path",
         nargs="?",
-        help="Письмо (.eml/.msg/.mbox) или папка с письмами",
+        help="Письмо (.eml/.msg/.mbox/.pst) или папка с письмами",
     )
     parser.add_argument(
         "files",
@@ -384,12 +396,18 @@ def main(argv: list[str] | None = None) -> int:
         print(feedback_summary())
         return 0
 
-    if getattr(args, "feedback_weights", None):
-        from reliquary.core.feedback import suggest_weight_overrides, write_weight_suggestions
+    if getattr(args, "feedback_weights", None) or getattr(args, "feedback_tune", None):
+        from reliquary.core.feedback import (
+            suggest_threshold_overrides,
+            suggest_weight_overrides,
+            write_weight_suggestions,
+        )
 
-        out = write_weight_suggestions(args.feedback_weights)
+        out_path = getattr(args, "feedback_weights", None) or args.feedback_tune
+        out = write_weight_suggestions(out_path)
         sug = suggest_weight_overrides()
-        print(f"Wrote {out} ({len(sug)} weight keys)")
+        thr = suggest_threshold_overrides()
+        print(f"Wrote {out} ({len(sug)} weight keys, {len(thr)} threshold/cap keys)")
         return 0
 
     if not args.path and not args.text and not args.files:

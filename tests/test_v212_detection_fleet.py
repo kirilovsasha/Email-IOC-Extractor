@@ -28,9 +28,11 @@ def test_display_spoof_has_dedicated_weight() -> None:
         "display" in (c.reason or "").lower() or "Имя" in (c.reason or "")
         for c in (r.verdict.breakdown or [])
     )
-    # Dedicated weight should appear as lookalike contribution >= default lookalike
+    # Dedicated display_spoof weight appears as lookalike contribution
     lookalike_pts = [c.points for c in (r.verdict.breakdown or []) if c.category == "lookalike"]
-    assert lookalike_pts and max(lookalike_pts) >= VerdictConfig().weight_lookalike
+    assert lookalike_pts and max(lookalike_pts) >= min(
+        VerdictConfig().weight_display_spoof, VerdictConfig().cap_display_spoof
+    )
 
 
 def test_lnk_dangerous_flag_and_ioc() -> None:

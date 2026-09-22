@@ -99,6 +99,30 @@ def segment_for(result) -> str:
         return "messenger"
     if "qr_lure" in signals or "qr_credential" in signals:
         return "qr_lure"
+    if "wrap_lure" in signals:
+        return "wrap_lure"
+    if "cid_phishing" in signals:
+        return "cid_phishing"
+    if "form_action_suspicious" in signals:
+        return "form_action"
+    if "campaign_divergence" in signals:
+        return "campaign"
+    if "office_dde" in att_flags:
+        return "office_dde"
+    if "ole_package" in att_flags:
+        return "ole_package"
+    if "pdf_openaction_uri" in att_flags:
+        return "pdf_openaction"
+    if any(h.name == "ARC result" or (h.name == "ARC" and "fail" in (h.value or "").lower()) for h in (result.headers or [])):
+        if any(
+            (h.name or "").lower() in ("arc result", "arc") and "fail" in (h.value or "").lower()
+            for h in (result.headers or [])
+        ):
+            return "arc_fail"
+    if any("reply-chain" in (h.name or "").lower() for h in (result.headers or [])):
+        return "reply_chain"
+    if any("return-path mismatch" in (h.name or "").lower() for h in (result.headers or [])):
+        return "return_path"
     if "archive_nested_email" in att_flags or "nested_email" in att_flags:
         return "nested_mail"
     if any(u.changed for u in (result.url_rewrites or [])):

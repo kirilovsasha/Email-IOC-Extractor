@@ -24,12 +24,13 @@ SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 
 
 def test_formats_catalog_email_only():
-    assert SUPPORTED_SUFFIXES == frozenset({".eml", ".msg", ".mbox"})
+    assert SUPPORTED_SUFFIXES == frozenset({".eml", ".msg", ".mbox", ".pst"})
     for s in (".pptx", ".pptm", ".docm", ".xlsm"):
         assert s in OFFICE_OOXML_SUFFIXES
         assert s not in SUPPORTED_SUFFIXES
     assert is_supported("x.EML")
     assert is_supported("x.mbox")
+    assert is_supported("x.pst")
     assert not is_supported("x.bin")
     assert not is_supported("x.txt")
     assert not is_supported("x.docx")

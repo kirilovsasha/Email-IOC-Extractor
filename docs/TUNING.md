@@ -60,6 +60,15 @@ BEC-маркеры ЕРИП/УНП/р/с; display-spoof «Беларусбанк
 KZ/UA пресеты: [`kz_gov/`](../org_profile.example/kz_gov/), [`ua_gov/`](../org_profile.example/ua_gov/).
 Feedback → `python scripts/feedback_weights.py` или `--feedback-weights OUT.json`.
 
+2.17: `weight_wrap_lure` (12), `weight_return_path_mismatch` (10), `weight_arc_fail` (12),
+`weight_reply_chain_anomaly` (14), `weight_campaign_divergence` (10),
+`weight_office_dde` (18), `weight_ole_package` (16), `weight_pdf_openaction_uri` (14),
+`weight_cid_phishing` (12), `weight_form_action_suspicious` (14), `cap_display_spoof` (28).
+Сегменты: `wrap_lure` / `arc_fail` / `reply_chain` / `return_path` / `campaign` /
+`office_dde` / `ole_package` / `pdf_openaction` / `cid_phishing` / `form_action`.
+Feedback также пишет threshold/cap suggestions (`suggest_threshold_overrides`,
+`--feedback-tune`). PST: optional `pip install .[pst]` (pypff).
+
 Вердикт JSON (2.15+): поля `confidence` (`high`|`medium`|`low`) и `confidence_note`.
 
 ## Calibration loop

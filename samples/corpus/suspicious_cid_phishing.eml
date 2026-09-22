@@ -1,0 +1,12 @@
+From: alert@evil.top
+To: user@company.local
+Subject: Secure message
+Message-ID: <cid1@evil.top>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Authentication-Results: mx.company.local; spf=none; dkim=none; dmarc=none
+
+<html><body>
+<img src="cid:banner001" width="600" height="200"/>
+<a href="https://evil.top/login"> </a>
+</body></html>
