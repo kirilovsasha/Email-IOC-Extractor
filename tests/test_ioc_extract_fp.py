@@ -81,6 +81,30 @@ def test_multi_label_weird_tld_still_allowed() -> None:
     assert "report.pdf" not in by.get("domain", set())
 
 
+def test_homoglyph_label_is_one_domain() -> None:
+    """A Cyrillic letter inside a label must not yield a second, shorter domain."""
+    kaspi = "k\u0430spi.kz"  # Cyrillic а
+    sber = "sb\u0435rbank.ru"  # Cyrillic е
+    google = "g\u043e\u043egle.com"  # Cyrillic о
+    by = _by_type(
+        f"From: noreply@{kaspi}\n"
+        f"Login https://{kaspi}/login\n"
+        f"also {sber} and {google}\n"
+        "separate host spi.kz stays\n"
+        "broken ka\u200bspi.kz token\n"
+    )
+    domains = by.get("domain", set())
+    assert kaspi in domains
+    assert sber in domains
+    assert google in domains
+    assert "kaspi.kz" in domains  # zero-width break folded into the real host
+    assert "spi.kz" in domains
+    assert "rbank.ru" not in domains
+    assert "gle.com" not in domains
+    assert "ogle.com" not in domains
+    assert f"noreply@{kaspi}" in by.get("email", set())
+
+
 def test_real_domains_complete() -> None:
     by = _by_type(
         "Visit https://secure-login.sberbank.ru/path and www.gosuslugi.ru "

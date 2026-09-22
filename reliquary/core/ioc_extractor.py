@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+import unicodedata
 from urllib.parse import unquote, urlparse
 
 from reliquary.core.defang import refang as defang
@@ -530,6 +531,37 @@ def _domain_in_angle_msgid(text: str, start: int, end: int) -> bool:
     return True
 
 
+def _is_ignorable_host_char(ch: str) -> bool:
+    """Soft hyphen / zero-width / combining marks that must not split a label."""
+    if ch in "\u00ad\u200b\u200c\u200d\ufeff":
+        return True
+    return unicodedata.category(ch) in {"Cf", "Mn"}
+
+
+def _extend_domain_left_label(text: str, start: int, end: int) -> tuple[int, str]:
+    """Glue Unicode letters the ASCII domain regex skipped inside one label.
+
+    ``kаspi.kz`` (Cyrillic а) is one host. Matching at ``spi.kz`` is a suffix,
+    not a second domain. Invisible breaks (``ka\\u200bspi.kz``) are dropped.
+    """
+    left = start
+    extra: list[str] = []
+    while left > 0:
+        ch = text[left - 1]
+        if _is_ignorable_host_char(ch):
+            left -= 1
+            continue
+        if ch.isalnum() or ch == "-":
+            extra.append(ch)
+            left -= 1
+            continue
+        break
+    raw = text[start:end]
+    if not extra:
+        return start, raw
+    return left, "".join(reversed(extra)) + raw
+
+
 def _expand_domain_left(text: str, start: int, domain: str) -> str | None:
     """Pull preceding ``label.`` segments so ``mx1.mail.x`` is not truncated to ``mail.x``.
 
@@ -830,9 +862,29 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
 
     for m in DOMAIN_RE.finditer(cleaned):
         raw = m.group(0).rstrip(".")
-        if _domain_in_angle_msgid(cleaned, m.start(), m.end()):
+        start, raw = _extend_domain_left_label(cleaned, m.start(), m.end())
+        raw = raw.rstrip(".")
+        end = m.end()
+        if start != m.start() and not _valid_domain(raw, free_text=True):
+            start, raw = m.start(), m.group(0).rstrip(".")
+        if _domain_in_angle_msgid(cleaned, start, end):
             continue
-        expanded = _expand_domain_left(cleaned, m.start(), raw)
+        at = start
+        while at > 0 and _is_ignorable_host_char(cleaned[at - 1]):
+            at -= 1
+        if at > 0 and cleaned[at - 1] == "@":
+            local_end = at - 1
+            local_start = local_end
+            while local_start > 0 and (
+                cleaned[local_start - 1].isalnum() or cleaned[local_start - 1] in "._%+-"
+            ):
+                local_start -= 1
+            local = cleaned[local_start:local_end]
+            if local and _valid_domain(raw, free_text=True):
+                add(f"{local.lower()}@{raw.lower()}", IocType.EMAIL, m)
+                add(raw.lower(), IocType.DOMAIN, m, ["from_email"])
+            continue
+        expanded = _expand_domain_left(cleaned, start, raw)
         if expanded is None:
             continue
         domain = expanded.lower().rstrip(".")
