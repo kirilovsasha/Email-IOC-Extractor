@@ -182,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=[],
         metavar="PWD",
-        help="Пароль для encrypted ZIP/7z/RAR (можно несколько раз; не логируется)",
+        help="Пароль для encrypted ZIP/7z (RAR не расшифровывается; можно несколько раз; не логируется)",
     )
     parser.add_argument(
         "--enable-yara",

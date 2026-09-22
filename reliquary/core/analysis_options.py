@@ -18,7 +18,7 @@ class AnalysisOptions:
     profile_dir: str | Path | None = None
     max_workers: int = 0  # 0 = auto
     skip_broken: bool = True
-    # Session passwords for encrypted ZIP/7z/RAR (never persisted)
+    # Session passwords for encrypted ZIP/7z (RAR unlock is unsupported; never persisted)
     archive_passwords: tuple[str, ...] = ()
     yara_rules_path: str | Path | None = None
     enable_yara: bool = False

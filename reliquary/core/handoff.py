@@ -245,8 +245,9 @@ def render_handoff(
     """Build a compact triage block for paste into a ticket.
 
     Optional ``template`` / ``template_path`` uses placeholders:
-    ``{product} {version} {verdict} {score} {summary} {reasons}
-    {breakdown} {file} {from} {subject} {msg_id} {auth} {iocs} {batch}``.
+    ``{product} {version} {verdict} {score} {summary} {reasons} {actions}
+    {breakdown} {file} {from} {subject} {msg_id} {auth} {iocs} {batch}
+    {chains} {att_flags} {campaign} {spoof}``.
 
     When ``handoff_by_level`` or ``handoff_{level}.txt`` next to the app is set,
     the template is chosen from the verdict level (falls back to ``handoff_extra.txt``).

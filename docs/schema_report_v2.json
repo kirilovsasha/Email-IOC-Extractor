@@ -7,6 +7,19 @@
   "required": ["schema_version"],
   "properties": {
     "schema_version": { "type": "integer", "const": 2 },
+    "source_path": { "type": "string" },
+    "source_kind": { "type": "string" },
+    "subject": { "type": "string" },
+    "sender": { "type": "string" },
+    "recipients": { "type": "array", "items": { "type": "string" } },
+    "headers": { "type": "array" },
+    "raw_headers": { "type": "object", "additionalProperties": { "type": "string" } },
+    "url_rewrites": { "type": "array" },
+    "attachments": { "type": "array" },
+    "raw_text_preview": { "type": "string" },
+    "html_preview": { "type": "string" },
+    "errors": { "type": "array", "items": { "type": "string" } },
+    "file_rows": { "type": "array" },
     "unwrap_chains": {
       "type": "array",
       "items": {
@@ -42,21 +55,34 @@
       "type": "object",
       "properties": {
         "app_version": { "type": "string" },
-        "overrides_loaded": { "type": "object", "additionalProperties": { "type": "string" } }
+        "analyzed_at": { "type": "string" },
+        "source_sha256": { "type": "string" },
+        "source_size": { "type": ["integer", "null"] },
+        "filters_applied": { "type": "object" },
+        "overrides_loaded": { "type": "object", "additionalProperties": { "type": "string" } },
+        "profile_dir": { "type": "string" }
       }
     },
     "mail_identity": {
       "type": ["object", "null"],
       "properties": {
         "from_header": { "type": "string" },
+        "return_path": { "type": "string" },
+        "reply_to": { "type": "string" },
         "subject": { "type": "string" },
         "message_id": { "type": "string" },
+        "date": { "type": "string" },
         "in_reply_to": { "type": "string" },
         "references": { "type": "string" },
         "auto_submitted": { "type": "string" },
+        "list_id": { "type": "string" },
+        "list_unsubscribe": { "type": "string" },
+        "precedence": { "type": "string" },
         "spf": { "type": "string" },
         "dkim": { "type": "string" },
-        "dmarc": { "type": "string" }
+        "dmarc": { "type": "string" },
+        "received_hops": { "type": "integer" },
+        "first_received": { "type": "string" }
       }
     },
     "verdict": {
@@ -66,6 +92,7 @@
         "score": { "type": "integer", "minimum": 0, "maximum": 100 },
         "summary": { "type": "string" },
         "reasons": { "type": "array", "items": { "type": "string" } },
+        "actions": { "type": "array" },
         "breakdown": { "type": "array" },
         "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
         "confidence_note": { "type": "string" },

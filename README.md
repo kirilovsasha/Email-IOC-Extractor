@@ -64,9 +64,12 @@ ZIP/7z unlock и опциональный YARA остаются.
 3. 🔎 При шуме ослабьте фильтры («к разбору», SafeLinks, allowlist) или включите **все типы** IOC.
 4. 🎫 **Тикет** (Ctrl+H) → буфер для ITSM; либо JSON / CSV / Batch CSV (Ctrl+E).
 5. 📁 Пакет писем → вкладка **Пакет**: файл · вердикт · score · причина · peers кампании;
-   Ctrl+N/P — следующее письмо; клик **`[сравнить с …]`** или двойной клик по строке — diff с peer.
+   Ctrl+N/P — следующее письмо; Ctrl+Shift+N/P — только suspicious/malicious;
+   клик **`[сравнить с …]`** или двойной клик по строке — diff с peer.
+   На вердикте строка кампании, если From-домены в группе разошлись.
 6. Ctrl+Shift+V — компактный режим (только вердикт, без панели исходника).
-7. ПКМ → Feedback FP/FN (`analyst_feedback.ndjson`); пароль архива (сессия).
+7. ПКМ по IOC → **В allowlist**, **Сменить вердикт…**, Feedback FP / FN / подтвердить
+   (`analyst_feedback.ndjson`); пароль ZIP/7z на сессию. RAR с паролем не расшифровывается.
 8. ⚙️ **Настройки** → импорт org profile; тема / contrast / фильтры IOC.
 
 ---
@@ -76,7 +79,7 @@ ZIP/7z unlock и опциональный YARA остаются.
 | | Область | Содержание |
 |---|---------|------------|
 | 📧 | Письмо | `.eml` / `.msg` / `.mbox` / `.pst` / папка / RFC822 / drag-drop |
-| ⚖️ | Вердикт | score · confidence · breakdown (+/−) · причины |
+| ⚖️ | Вердикт | score · confidence · breakdown (+/−) · причины · строка кампании |
 | 📎 | Доказательства | вложения · URL rewrite · IOC-таблица |
 | 📁 | Пакет | сводка + peers кампании + diff |
 | 📋 | Буфер | В тикет · копирование IOC |
@@ -97,11 +100,12 @@ ZIP/7z unlock и опциональный YARA остаются.
 | Ctrl+C / Ctrl+Shift+C | 📋 IOC / defanged |
 | Ctrl+Shift+V | 📐 Компактный вердикт |
 | Ctrl+N / Ctrl+P | 📁 Следующее / предыдущее письмо пакета |
+| Ctrl+Shift+N / Ctrl+Shift+P | 📁 Следующее / предыдущее suspicious или malicious |
 | Ctrl+L | 🌓 Тема light / dark |
 | Ctrl+D | 📏 Плотность IOC (compact / normal / comfortable) |
 | Ctrl± | 🔍 Масштаб UI |
-| 1–6 | 📑 Вкладки результатов (Вердикт … Ошибки) |
-| Ctrl+F | 🔎 Поиск по IOC |
+| 1–6 | 📑 Вердикт, Вложения, URL, IOC, Пакет, Ошибки (клавиша действует и если вкладка скрыта) |
+| Ctrl+F | 🔎 Поиск по IOC, причинам вердикта и именам вложений |
 
 Prefs: `ui_prefs.json` рядом с EXE
 (`appearance_mode`, `ioc_density`, `verdict_compact`, пути overrides, …). Без БД.
@@ -129,7 +133,7 @@ reliquary mail.eml --profile org_profile.example/m365
 reliquary mail.eml --profile org_profile.example/by_gov
 reliquary mail.eml --profile org_pack.zip
 
-# архив / YARA (2.16+: bundled yara_rules/default.yar, auto if yara installed)
+# архив ZIP/7z (RAR не расшифровывается) / YARA (2.16+: bundled yara_rules/default.yar, auto if yara installed)
 reliquary mail.eml --archive-password 'secret'
 reliquary mail.eml --enable-yara --yara-rules rules.yar
 
@@ -187,11 +191,11 @@ remote template, опционально YARA\*\*\*.
 
 | | Сигнал | Примеры |
 |---|--------|---------|
-| 📨 | Заголовки | SPF / DKIM / DMARC, alignment, ARC, Reply-To / Return-Path, display-name spoof (RU/BY), Received |
-| 📝 | Тело | urgency, credential / OWA, BEC / ЕРИП, href≠label, скрытый HTML, формы, cloud lure |
+| 📨 | Заголовки | SPF / DKIM / DMARC, alignment, ARC, Reply-To / Return-Path, Resent-From, Message-ID ≠ From, display-name spoof (RU/BY/KZ/UA), Received |
+| 📝 | Тело | urgency, credential / OWA, BEC / ЕРИП, href≠label, скрытый HTML, формы, cloud lure, ClickFix, image-only HTML, поддельный Authentication-Results |
 | 🔗 | URL | SafeLinks / Proofpoint / Barracuda / Mimecast / Mail.ru / Yandex / VK / Bitrix / amoCRM / 1C / gov RU·BY unwrap (офлайн) |
 | 🎭 | Lookalike | IDN / punycode, homoglyph, Levenshtein к брендам (`brands.txt`) |
-| 📎 | Вложения | double ext, macros, encrypted archives (+ session password), nested mail, TNEF, ISO+LNK, QR-URL |
+| 📎 | Вложения | double ext, macros, Excel 4.0/XLM, encrypted ZIP/7z (session password; RAR не расшифровывается), encrypted Office + пароль в теле, nested mail, TNEF, ISO+LNK, QR-URL |
 | 🎯 | IOC | IP, домены, URL, хеши — evidence для экспорта / тикета |
 
 ### ⚖️ Вердикт (score 0–100)
@@ -199,6 +203,7 @@ remote template, опционально YARA\*\*\*.
 Сумма вкладов по категориям с **caps** (headers / attachments / urls / content / lookalike)
 и **mitigations** (DMARC+DKIM pass, trusted Received hop, allowlisted From,
 auto-reply / calendar / …).
+Календарная митигация не применяется, если в ICS есть URL или `ATTACH`.
 Auth/allowlist-смягчения не копятся при auth fail/softfail/none или HIGH-заголовках;
 при опасных вложениях, BEC/credential/cloud lure или display-spoof смягчения в целом
 не применяются (allowlisted From — никогда при display-spoof).
@@ -256,10 +261,11 @@ Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`,
 
 ### ✏️ Плейсхолдеры тикета (handoff)
 
-`{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{breakdown}`  
-`{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`
+`{product}` `{version}` `{verdict}` `{score}` `{summary}` `{reasons}` `{actions}` `{breakdown}`  
+`{file}` `{from}` `{subject}` `{msg_id}` `{auth}` `{iocs}` `{batch}`  
+`{chains}` `{att_flags}` `{campaign}` `{spoof}`
 
-Порядок шаблона: явный путь → `handoff_{level}.txt` (profile / app dir) → `handoff_extra.txt` → встроенный блок.
+Порядок шаблона: явный путь → `handoff_by_level` (org profile) → `handoff_{level}.txt` (profile / app dir) → `handoff_extra.txt` → встроенный блок.
 
 В JSON / meta: `schema_version`, `app_version`, `overrides_loaded`, `profile_dir`.
 
@@ -339,7 +345,8 @@ reliquary/
             # feedback, mbox_ingest, pst_ingest, diff, exporters, handoff,
             # allowlist, org_profile, batch, calibration
   gui/      # app + mixins: layout, analysis, clipboard, result_panels,
-            # hotkeys, prefs_actions, settings_dialog, about, ioc_table
+            # hotkeys, filters_actions, export_actions, analyst_actions,
+            # prefs_actions, settings_dialog, about, ioc_table, tabs
 samples/corpus/          # golden EMLs + expected.json (103)
 org_profile.example/     # m365 / google / banking / ru_gov / by_gov / kz_gov / ua_gov / …
 docs/TUNING.md           # калибровка verdict_extra.json

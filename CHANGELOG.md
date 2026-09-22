@@ -19,6 +19,9 @@
 - После FP/FN: сильнейший сигнал `+N` и подсказка `--feedback-tune` (веса не меняются)
 - Поиск подсвечивает причины вердикта и имена вложений
 
+### Docs
+- README / ANALYST сверены с 2.18: Ctrl+Shift+N/P, сигналы ClickFix / XLM / image-only / fake auth / Resent-From, плейсхолдеры тикета, пароль только для ZIP/7z
+
 ## 2.17.1
 
 ### IOC precision
