@@ -104,7 +104,7 @@ class LayoutMixin:
             src, text="Папка", width=64, font=btn_font, command=self.open_folder, **BTN_SECONDARY
         )
         btn_folder.pack(side="left")
-        HoverTip(btn_folder, "Рекурсивно разобрать все .eml / .msg / .mbox в папке")
+        HoverTip(btn_folder, "Рекурсивно разобрать все .eml / .msg / .mbox / .pst в папке")
 
         hand_shell, hand = toolbar_group(actions, "Буфер", compact=True)
         self._hand_shell = hand_shell

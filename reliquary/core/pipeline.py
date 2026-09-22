@@ -194,6 +194,50 @@ def annotate_campaigns(rows: list[FileTriageRow]) -> None:
             row.campaign_peers = [n for n in names if n != Path(row.path).name]
 
 
+def _from_domain(sender: str) -> str:
+    sender = (sender or "").strip().lower()
+    if not sender:
+        return ""
+    if "<" in sender and ">" in sender:
+        sender = sender.split("<", 1)[1].split(">", 1)[0]
+    if "@" in sender:
+        return sender.rsplit("@", 1)[-1].strip(">")
+    return ""
+
+
+def campaign_divergence_keys(results: list[AnalysisResult]) -> set[str]:
+    """Return campaign_keys shared by ≥2 mails with different From domains."""
+    by_key: dict[str, set[str]] = {}
+    for r in results:
+        key = campaign_key_for(r)
+        if not key:
+            continue
+        sender = r.sender or (r.mail_identity.from_header if r.mail_identity else "") or ""
+        dom = _from_domain(sender)
+        if dom:
+            by_key.setdefault(key, set()).add(dom)
+    return {k for k, doms in by_key.items() if len(doms) >= 2}
+
+
+def apply_campaign_divergence(results: list[AnalysisResult]) -> None:
+    """Mark content_signals + re-render verdict when campaign From domains diverge."""
+    divergent = campaign_divergence_keys(results)
+    if not divergent:
+        return
+    for r in results:
+        key = campaign_key_for(r)
+        if key not in divergent:
+            continue
+        if "campaign_divergence" not in (r.content_signals or []):
+            r.content_signals = list(r.content_signals or []) + ["campaign_divergence"]
+        if r.source_kind == "email" and r.verdict is not None:
+            from reliquary.core.verdict import load_verdict_config, render_verdict
+
+            cfg = load_verdict_config()
+            r.verdict = render_verdict(r, cfg)
+
+
+
 
 def _top_ioc_strings(iocs: list[Ioc], n: int = 5) -> list[str]:
     ranked = sorted(iocs, key=_ioc_priority, reverse=True)
@@ -943,6 +987,10 @@ def merge_results(
 
     rows = [file_triage_row(r) for r in results]
     annotate_campaigns(rows)
+    apply_campaign_divergence(results)
+    # Refresh rows after divergence re-score
+    rows = [file_triage_row(r) for r in results]
+    annotate_campaigns(rows)
 
     merged = AnalysisResult(
         source_path=f"{label} ({len(results)} files)",
@@ -998,6 +1046,14 @@ def merge_results(
         attachments=list(merged.attachments),
         raw_text_preview=merged.raw_text_preview,
         errors=list(merged.errors),
+        content_signals=list(
+            dict.fromkeys(
+                sig
+                for r in results
+                for sig in (r.content_signals or [])
+            )
+        ),
+        file_rows=rows,
     )
     cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
     merged.verdict = render_verdict(email_only, cfg, brands_path=opts.brands_path)

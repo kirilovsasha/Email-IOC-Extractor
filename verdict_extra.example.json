@@ -46,7 +46,7 @@
   "weight_mailing_list": -8,
   "weight_url_shortener": 10,
   "weight_messenger_only": 14,
-  "weight_display_spoof": 24,
+  "weight_display_spoof": 20,
   "weight_pdf_uri_action": 12,
   "weight_cab_archive": 14,
   "weight_lnk_dangerous": 22,
@@ -73,5 +73,16 @@
   "weight_html_polyglot": 18,
   "weight_rar_archive": 10,
   "weight_spf_lookalike": 14,
-  "weight_reply_to_spoof": 10
+  "weight_reply_to_spoof": 10,
+  "weight_wrap_lure": 12,
+  "weight_return_path_mismatch": 10,
+  "weight_arc_fail": 12,
+  "weight_reply_chain_anomaly": 14,
+  "weight_campaign_divergence": 10,
+  "weight_office_dde": 18,
+  "weight_ole_package": 16,
+  "weight_pdf_openaction_uri": 14,
+  "weight_cid_phishing": 12,
+  "weight_form_action_suspicious": 14,
+  "cap_display_spoof": 28
 }

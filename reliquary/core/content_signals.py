@@ -70,9 +70,28 @@ QR_LURE_RE = re.compile(
 )
 
 HIDDEN_STYLE_RE = re.compile(
-    r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0|"
+    r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?:px|pt|em)?|"
     r"opacity\s*:\s*0|color\s*:\s*#?fff(?:fff)?|"
-    r"mso-hide\s*:\s*all)"
+    r"mso-hide\s*:\s*all|"
+    r"position\s*:\s*absolute\s*;\s*left\s*:\s*-|"
+    r"left\s*:\s*-\d{3,}|"
+    r"font-size\s*:\s*0\s*;|"
+    r"max-height\s*:\s*0|max-width\s*:\s*0|"
+    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0)"
+)
+
+_SUSPICIOUS_FORM_TLDS = (
+    ".xyz",
+    ".top",
+    ".club",
+    ".gq",
+    ".tk",
+    ".ml",
+    ".cf",
+    ".ga",
+    ".zip",
+    ".mov",
+    ".ru.com",
 )
 
 SHORTENER_RE = re.compile(
@@ -206,26 +225,79 @@ def _html_forms(soup: BeautifulSoup) -> list[ContentSignal]:
     forms = soup.find_all("form")
     if not forms:
         return []
+    out: list[ContentSignal] = []
     has_password = any(
         str(inp.get("type") or "").lower() == "password"
         for form in forms
         for inp in form.find_all("input")
     )
     if has_password:
-        return [
+        out.append(
             ContentSignal(
                 "html_password_form",
                 "HTML-форма с полем password",
                 "weight_credential_harvest",
             )
-        ]
-    return [
-        ContentSignal(
-            "html_form",
-            f"HTML-формы в письме: {len(forms)}",
-            "weight_html_form",
         )
-    ]
+    else:
+        out.append(
+            ContentSignal(
+                "html_form",
+                f"HTML-формы в письме: {len(forms)}",
+                "weight_html_form",
+            )
+        )
+    for form in forms:
+        action = unescape(str(form.get("action") or "")).strip()
+        if not action or action.startswith(("#", "mailto:", "javascript:")):
+            continue
+        try:
+            host = (urlparse(action if "://" in action else f"//{action}").hostname or "").lower()
+        except (ValueError, TypeError, AttributeError):
+            host = ""
+        raw_ip = bool(re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", host or ""))
+        bad_tld = any(
+            (host or "").endswith(tld) or f"{tld}/" in action.lower()
+            for tld in _SUSPICIOUS_FORM_TLDS
+        )
+        if raw_ip or bad_tld:
+            out.append(
+                ContentSignal(
+                    "form_action_suspicious",
+                    f"form action → подозрительный хост: {action[:80]}",
+                    "weight_form_action_suspicious",
+                )
+            )
+            break
+    return out
+
+
+def _cid_phishing(soup: BeautifulSoup, html: str) -> list[ContentSignal]:
+    """CID-only phishing: cid: images + http links + almost no visible text."""
+    if not html:
+        return []
+    cid_imgs = soup.find_all("img", src=True)
+    has_cid = any(str(img.get("src") or "").lower().startswith("cid:") for img in cid_imgs)
+    if not has_cid:
+        return []
+    has_http_a = any(
+        str(a.get("href") or "").lower().startswith(("http://", "https://"))
+        for a in soup.find_all("a", href=True)
+    )
+    if not has_http_a:
+        return []
+    visible = _visible_text(soup)
+    # Strip whitespace / punctuation — almost no readable copy
+    letters = re.sub(r"[\s\W_]+", "", visible, flags=re.UNICODE)
+    if len(letters) <= 40:
+        return [
+            ContentSignal(
+                "cid_phishing",
+                "CID-картинки + http-ссылка при почти пустом тексте — CID-phishing",
+                "weight_cid_phishing",
+            )
+        ]
+    return []
 
 
 def analyze_content_signals(
@@ -352,6 +424,7 @@ def analyze_content_signals(
             signals.extend(_href_mismatch(soup))
             signals.extend(_hidden_text(html, soup))
             signals.extend(_html_forms(soup))
+            signals.extend(_cid_phishing(soup, html))
 
     has_credential = any(s.kind == "credential_harvest" for s in signals) or bool(
         CREDENTIAL_RE.search(blob)

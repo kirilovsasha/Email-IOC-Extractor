@@ -76,6 +76,33 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                 )
             )
 
+    # Reply-chain anomaly: In-Reply-To/References present but From domain
+    # differs from Message-ID domain in the prior thread, or Re:/Отв: with
+    # unrelated From (credential/BEC scored separately).
+    in_reply = (msg.get("In-Reply-To") or "").strip()
+    references = (msg.get("References") or "").strip()
+    subject_raw = msg.get("Subject") or ""
+    prior_blob = f"{in_reply} {references}".strip()
+    if prior_blob and from_addr and "@" in from_addr:
+        from_dom = from_addr.split("@")[-1].lower()
+        prior_mids = re.findall(r"<[^>]+@([^>]+)>", prior_blob)
+        prior_doms = {d.strip().lower() for d in prior_mids if d.strip()}
+        re_subj = bool(re.match(r"(?i)^(re|fw|fwd|отв|пересл)\s*:", subject_raw.strip()))
+        if prior_doms and from_dom and from_dom not in prior_doms and not any(
+            from_dom.endswith("." + d) or d.endswith("." + from_dom) for d in prior_doms
+        ):
+            findings.append(
+                HeaderFinding(
+                    "Reply-chain anomaly",
+                    f"From={from_dom} vs prior Msg-ID domain(s)={', '.join(sorted(prior_doms)[:3])}",
+                    Severity.HIGH,
+                    "Ответ в треде, но From-домен не совпадает с Message-ID в References/In-Reply-To",
+                )
+            )
+        elif re_subj and in_reply and from_addr:
+            # Re: subject + In-Reply-To but no usable prior domain — still note lightly
+            pass
+
     if sender:
         findings.append(HeaderFinding("Sender", sender, Severity.INFO, "Заголовок Sender"))
 
@@ -156,15 +183,36 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
         # ARC present when forwarded; absence with broken auth is noted lightly
         arc_results = _get_all(msg, "ARC-Authentication-Results")
         arc_seal = _get_all(msg, "ARC-Seal")
+        arc_blob = " | ".join(arc_results).lower()
         if arc_results or arc_seal:
+            arc_fail = bool(
+                re.search(
+                    r"(?:spf|dkim|dmarc)\s*=\s*fail|\bi\s*=\s*\d+[^\n;]*fail",
+                    arc_blob,
+                )
+            )
             findings.append(
                 HeaderFinding(
                     "ARC",
-                    f"results={len(arc_results)} seal={len(arc_seal)}",
-                    Severity.INFO,
-                    "Есть ARC — письмо могло быть переслано через доверенный посредник",
+                    f"results={len(arc_results)} seal={len(arc_seal)}"
+                    + (" fail" if arc_fail else ""),
+                    Severity.HIGH if arc_fail else Severity.INFO,
+                    (
+                        "ARC-Authentication-Results: fail — цепочка ARC не подтверждает подлинность"
+                        if arc_fail
+                        else "Есть ARC — письмо могло быть переслано через доверенный посредник"
+                    ),
                 )
             )
+            if arc_fail:
+                findings.append(
+                    HeaderFinding(
+                        "ARC result",
+                        "fail",
+                        Severity.HIGH,
+                        "ARC i=/auth fail — сигнал подделки при форварде/подмене",
+                    )
+                )
         elif re.search(r"spf\s*=\s*fail|dkim\s*=\s*fail|dmarc\s*=\s*fail", auth_blob):
             findings.append(
                 HeaderFinding(

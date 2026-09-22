@@ -132,7 +132,7 @@ class AnalysisActionsMixin:
         if not paths:
             messagebox.showinfo(
                 __app_name__,
-                "В папке нет писем (.eml / .msg / .mbox).",
+                "В папке нет писем (.eml / .msg / .mbox / .pst).",
             )
             return
         try:
@@ -199,7 +199,7 @@ class AnalysisActionsMixin:
             self.after(
                 0,
                 lambda: messagebox.showinfo(
-                    __app_name__, "Нет писем (.eml / .msg / .mbox) для разбора"
+                    __app_name__, "Нет писем (.eml / .msg / .mbox / .pst) для разбора"
                 ),
             )
             return

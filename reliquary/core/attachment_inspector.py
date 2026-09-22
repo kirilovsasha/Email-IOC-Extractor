@@ -73,7 +73,12 @@ SCRIPT_URL_RE = re.compile(
 )
 
 _PDF_JS_RE = re.compile(rb"/(?:JavaScript|JS|OpenAction|AA|Launch)\b")
+_PDF_OPENACTION_RE = re.compile(rb"/OpenAction\b")
 _PDF_URI_RE = re.compile(rb"/URI\s*\(")
+_ONENOTE_EMBED_RE = re.compile(
+    rb"(?i)(FileData|embeddedFile|EmbeddedFile|OneNote\.Package|ONEDOC|"
+    rb"fileDataStore|Embedded File Object)"
+)
 _HTML_SMUGGLE_RE = re.compile(
     rb"(?i)(data:text/html|atob\s*\(|Blob\s*\(|msSaveOrOpenBlob|"
     rb"ActiveXObject|fromCharCode|unescape\s*\(|String\.fromCharCode|"
@@ -658,6 +663,9 @@ def _scan_pdf_payload(data: bytes) -> tuple[list[str], list[str]]:
     if _PDF_URI_RE.search(head):
         flags.append("pdf_uri_action")
         notes.append("PDF: найдены /URI-действия (возможны внешние ссылки)")
+    if _PDF_OPENACTION_RE.search(head) and _PDF_URI_RE.search(head):
+        flags.append("pdf_openaction_uri")
+        notes.append("PDF: OpenAction + /URI вместе — типичный PDF-lure")
     return flags, notes
 
 
@@ -726,6 +734,12 @@ def _ole_streams(data: bytes) -> tuple[list[str], list[str], list[str]]:
         if any("objectpool" in s.lower() or "ole10native" in s.lower() for s in streams):
             flags.append("ole_embedded_object")
             notes.append("В OLE есть встроенные OLE-объекты")
+        if any(
+            "ole10native" in s.lower() or s.lower().endswith("/package") or s.lower() == "package"
+            for s in streams
+        ):
+            flags.append("ole_package")
+            notes.append("OLE Package / Ole10Native — встроенный исполняемый пакет")
         notes.append(f"OLE потоков: {len(streams)}")
     except (OSError, RuntimeError, ValueError, ImportError) as exc:
         notes.append(f"OLE разбор ограничен ({type(exc).__name__}): {exc}")
@@ -856,6 +870,13 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
     if ext in {".one", ".onepkg"} or lower.endswith(".one.tmp"):
         flags.append("onenote_attachment")
         notes.append("OneNote-вложение — возможен встроенный фишинговый контент")
+        sample = data[: min(len(data), 1024 * 1024)]
+        if _ONENOTE_EMBED_RE.search(sample):
+            flags.append("onenote_embedded_file")
+            notes.append("OneNote: маркеры FileData / embeddedFile — встроенный файл")
+        elif b"FileData" in sample or b"embeddedFile" in sample:
+            flags.append("onenote_embedded_file")
+            notes.append("OneNote: маркеры встроенного файла")
 
     if ext in ARCHIVE_EXTENSIONS:
         flags.append("archive")
@@ -934,6 +955,12 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         ole_streams = streams
         flags.extend(oflags)
         notes.extend(onotes)
+        if b"Ole10Native" in data[: min(len(data), 512 * 1024)] and "ole_package" not in flags:
+            flags.append("ole_package")
+            notes.append("OLE: найден поток Ole10Native (Package)")
+        if b"Package" in data[:4096] and "ole_package" not in flags and b"Ole10Native" in data:
+            flags.append("ole_package")
+            notes.append("OLE Package stream")
 
     # ZIP / OOXML
     if data[:2] == b"PK":
@@ -952,11 +979,17 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
             flags.extend(zflags)
             notes.extend(znotes)
             try:
-                from reliquary.core.office_extract import detect_office_remote_template
+                from reliquary.core.office_extract import (
+                    detect_office_dde,
+                    detect_office_remote_template,
+                )
 
                 if detect_office_remote_template(data):
                     flags.append("office_remote_template")
                     notes.append("OOXML: remote template / TargetMode=External http(s)")
+                if detect_office_dde(data):
+                    flags.append("office_dde")
+                    notes.append("OOXML: Excel DDE / formula injection markers")
             except (OSError, ValueError, TypeError, RuntimeError, ImportError):
                 pass
 

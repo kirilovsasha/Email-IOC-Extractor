@@ -1,11 +1,11 @@
-Content-Type: text/plain; charset="utf-8"
-MIME-Version: 1.0
-Content-Transfer-Encoding: base64
 From: friend@vk-notice.xyz
 To: user@company.local
-Subject: =?utf-8?b?0KHQvtC+0LHRidC10L3QuNC1IFZL?=
+Subject: Urgent: message waiting
 Message-ID: <vk_away@vk-notice.xyz>
 Authentication-Results: mx; spf=none; dkim=none; dmarc=none
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
 
-0KHRgdGL0LvQutCwOiBodHRwczovL3ZrLmNvbS9hd2F5LnBocD90bz1odHRwcyUzQSUyRiUyRmV2
-aWwudG9wJTJGbG9naW4=
+Please review immediately.
+Link: https://vk.com/away.php?to=https%3A%2F%2Fevil.top%2Fpage

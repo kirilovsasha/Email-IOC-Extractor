@@ -2,6 +2,17 @@
 
 Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 
+## Done in 2.17
+
+- Wrap×lure composite; Return-Path mismatch + weak auth; SPF softfail FP control
+- ARC fail + reply-chain anomaly scoring
+- Campaign divergence as verdict signal (batch)
+- Feedback → threshold/cap suggestions beyond ±2 weights
+- Attachment depth: Excel DDE, OLE Package, OneNote file-data, PDF OpenAction+/URI
+- HTML depth: CID phishing, form action IP/TLD, deeper hidden styles
+- Homoglyph expand; YARA pack v2; PST MVP (optional pypff / clear skip)
+- `cap_display_spoof` to reduce spoof score pinning
+
 ## Done in 2.16
 
 - Messenger/QR lure + QR+credential composite; RU BEC markers expansion
@@ -29,7 +40,8 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - [x] Narrow remaining broad `except Exception` in prefs/pipeline
 - [x] Tighten golden corpus score windows + BY brands/spoof/BEC
 - [x] Detection quality 2.16 (lures / polyglot / remote template / YARA pack)
-- [ ] Deeper PST support (read-only extract → eml) if fleet demands
+- [x] Detection next 2.17 (wrap-lure / ARC / campaign / DDE / PST MVP / caps)
+- [ ] Deeper PST support (full folder tree / attachments) if fleet demands pypff builds
 
 ## Later
 
@@ -37,7 +49,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - [ ] Optional offline rule packs beyond YARA (Sigma-lite for mail?)
 - [ ] Campaign graph view in GUI
 - [ ] Authenticode-by-default release lane
-- [ ] Inbox-driven weight pack from analyst_feedback.ndjson aggregates (beyond ±2 suggestions)
+- [ ] Inbox-driven weight pack from analyst_feedback.ndjson aggregates
 
 ## Non-goals
 
