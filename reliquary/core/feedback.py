@@ -127,7 +127,41 @@ _SEGMENT_WEIGHTS: dict[str, tuple[str, ...]] = {
     "office_external": ("weight_office_external_data",),
     "bec_callback": ("weight_bec_callback",),
     "payment_tokens": ("weight_payment_tokens",),
+    "clickfix": ("weight_clickfix",),
+    "image_only": ("weight_image_only_body",),
+    "fake_auth": ("weight_fake_auth_results",),
+    "office_xlm": ("weight_office_xlm",),
+    "resent_from": ("weight_resent_from_mismatch",),
+    "msgid_from": ("weight_header_low",),
 }
+
+
+def format_feedback_ack(
+    kind: str,
+    segment: str,
+    contributions: list[Any],
+) -> str:
+    """RU note after FP/FN: strongest scored line and the tune hint. Weights stay put."""
+    lines = [f"Записано ({kind}). Сегмент: {segment or '—'}."]
+    ranked = sorted(
+        [c for c in contributions if int(getattr(c, "points", 0) or 0) > 0],
+        key=lambda c: int(getattr(c, "points", 0) or 0),
+        reverse=True,
+    )
+    if ranked:
+        top = ranked[0]
+        lines.append(
+            f"Сильнее всего: +{int(top.points)} [{top.category}] {top.reason}"
+        )
+    keys = _SEGMENT_WEIGHTS.get((segment or "").strip().lower(), ())
+    if kind in ("fp", "fn") and keys:
+        step = "+2" if kind == "fn" else "−2"
+        lines.append(
+            f"--feedback-tune предложил бы {step} к: {', '.join(keys)}. Веса не изменены."
+        )
+    else:
+        lines.append("Веса не изменены.")
+    return "\n".join(lines)
 
 
 def suggest_weight_overrides(rows: list[dict[str, Any]] | None = None) -> dict[str, int]:

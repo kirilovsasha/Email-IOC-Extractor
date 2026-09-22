@@ -127,7 +127,7 @@ class AnalystActionsMixin:
     def _record_feedback(self, kind: str) -> None:
         """FP / FN / confirm → analyst_feedback.ndjson рядом с EXE."""
         from reliquary.core.calibration import segment_for
-        from reliquary.core.feedback import FeedbackEvent, append_feedback
+        from reliquary.core.feedback import FeedbackEvent, append_feedback, format_feedback_ack
 
         if not self.result or not self.result.verdict:
             messagebox.showinfo(__app_name__, "Сначала разберите письмо")
@@ -172,4 +172,5 @@ class AnalystActionsMixin:
             )
         )
         self._set_status(f"Feedback {kind} → {path.name}")
-        messagebox.showinfo(__app_name__, f"Записано в {path.name}")
+        note_text = format_feedback_ack(kind, seg, list(v.breakdown or []))
+        messagebox.showinfo(__app_name__, f"{note_text}\n\nФайл: {path.name}")

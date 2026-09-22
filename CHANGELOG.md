@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.18.0
+
+### Детекция
+- ClickFix: Win+R, powershell -enc, mshta, «выполните команду»
+- Excel 4.0 / XLM (`xl/macrosheets`, маркер Excel 4.0 в OLE). VBA по-прежнему `ooxml_vba`
+- HTML почти без текста: картинка и http-ссылка (`image_only_body`), без OCR
+- Поддельный Authentication-Results / spf=pass в теле письма
+- В разборе score строка LOW предпочитает расхождение домена Message-ID и From
+- Resent-From с другим доменом — отдельный вес
+- Календарная митигация не применяется, если в ICS есть URL или ATTACH
+- Пароль в теле вместе с шифрованным Office даёт тот же композит, что и архив
+- PST: обход папок в имени `.eml` и вложения в multipart, если библиотека их отдаёт
+
+### Интерфейс
+- На вердикте строка кампании, если From-домены разошлись
+- Ctrl+Shift+N / Ctrl+Shift+P — следующее suspicious/malicious в пакете
+- После FP/FN: сильнейший сигнал `+N` и подсказка `--feedback-tune` (веса не меняются)
+- Поиск подсвечивает причины вердикта и имена вложений
+
 ## 2.17.1
 
 ### IOC precision

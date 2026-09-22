@@ -84,6 +84,21 @@ def truncate_middle(text: str, max_len: int = 96) -> str:
     return text[:left] + "…" + text[-right:]
 
 
+def _hold_band(
+    current: bool | None,
+    width: int,
+    *,
+    hide_below: int,
+    show_above: int,
+) -> bool:
+    """Stay in the previous on/off state inside the gap between the two edges."""
+    if current is None:
+        return width >= show_above
+    if current:
+        return width >= hide_below
+    return width >= show_above
+
+
 class IocTable(ctk.CTkFrame):
     """Master list + detail inspector. Layout adapts on resize."""
 
@@ -117,7 +132,11 @@ class IocTable(ctk.CTkFrame):
         self._resize_after: str | None = None
         self._last_width = 0
         self._meta_full = ""
+        self._meta_wrap = 420
         self._narrow_inspector = False
+        self._wide_inspector: bool | None = None
+        self._flags_on: bool | None = None
+        self._file_on: bool | None = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -384,7 +403,7 @@ class IocTable(ctk.CTkFrame):
         if event.widget is not self:
             return
         w = int(event.width)
-        if abs(w - self._last_width) < 8:
+        if abs(w - self._last_width) < 16:
             return
         self._last_width = w
         if self._resize_after:
@@ -392,29 +411,40 @@ class IocTable(ctk.CTkFrame):
                 self.after_cancel(self._resize_after)
             except Exception:  # noqa: BLE001
                 pass
-        self._resize_after = self.after(60, self._apply_responsive_layout)
+        # Apply only after the drag pauses so columns do not pop in and out.
+        self._resize_after = self.after(240, self._apply_responsive_layout)
 
     def _apply_responsive_layout(self) -> None:
         self._resize_after = None
         w = max(self.winfo_width(), 200)
 
-        show_flags = w >= 520
-        show_file = self._want_file and w >= 640
-        self._show_file = show_file
-        try:
-            if show_flags:
-                self.tree.column("flags", width=140, minwidth=70, stretch=False)
-            else:
-                self.tree.column("flags", width=0, minwidth=0, stretch=False)
-            if show_file:
-                self.tree.column("file", width=110, minwidth=60, stretch=False)
-            else:
-                self.tree.column("file", width=0, minwidth=0, stretch=False)
-            self.tree.column("value", stretch=True)
-        except Exception:  # noqa: BLE001
-            pass
+        prev_flags = self._flags_on
+        prev_show_file = self._show_file
+        self._flags_on = _hold_band(self._flags_on, w, hide_below=480, show_above=560)
+        self._file_on = _hold_band(self._file_on, w, hide_below=600, show_above=680)
+        show_flags = self._flags_on
+        show_file = self._want_file and self._file_on
+        if show_flags != prev_flags or show_file != prev_show_file or prev_flags is None:
+            self._show_file = show_file
+            try:
+                if show_flags:
+                    self.tree.column("flags", width=140, minwidth=70, stretch=False)
+                else:
+                    self.tree.column("flags", width=0, minwidth=0, stretch=False)
+                if show_file:
+                    self.tree.column("file", width=110, minwidth=60, stretch=False)
+                else:
+                    self.tree.column("file", width=0, minwidth=0, stretch=False)
+                self.tree.column("value", stretch=True)
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            self._show_file = show_file
 
-        narrow = w < 560
+        self._wide_inspector = _hold_band(
+            self._wide_inspector, w, hide_below=520, show_above=600
+        )
+        narrow = not self._wide_inspector
         if narrow != self._narrow_inspector:
             self._narrow_inspector = narrow
             try:
@@ -429,8 +459,12 @@ class IocTable(ctk.CTkFrame):
                 pass
 
         tip = getattr(self, "_meta_full", "") or ""
+        wrap = max(160, w - 36)
+        if abs(wrap - self._meta_wrap) < 48:
+            return
+        self._meta_wrap = wrap
         try:
-            self._detail_meta.configure(wraplength=max(160, w - 36), text=tip)
+            self._detail_meta.configure(wraplength=wrap, text=tip)
         except Exception:  # noqa: BLE001
             pass
 

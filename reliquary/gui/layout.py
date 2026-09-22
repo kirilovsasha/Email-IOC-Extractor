@@ -13,14 +13,13 @@ from reliquary.gui.filters_actions import (
 )
 from reliquary.gui.ioc_table import IocTable
 from reliquary.gui.theme import (
-    BTN_H,
     BTN_PRIMARY,
     BTN_SECONDARY,
     COLORS,
     ctk_font,
     ctk_mono,
 )
-from reliquary.gui.tooltips import FilterChip, HoverTip, toolbar_group
+from reliquary.gui.tooltips import FilterChip, HoverTip, vsep
 
 _PLACEHOLDER = (
     "Откройте .eml / .msg или вставьте исходник письма (RFC822).\n\n"
@@ -80,97 +79,89 @@ class LayoutMixin:
             border_width=1,
             border_color=COLORS["border"],
         )
-        chrome.pack(fill="x", padx=12, pady=(6, 4))
+        chrome.pack(fill="x", padx=12, pady=(4, 2))
         self._chrome = chrome
 
+        # One short row. Titled pills used to stack into three lines and
+        # ate the letter/verdict area.
         actions = ctk.CTkFrame(chrome, fg_color="transparent")
-        actions.pack(fill="x", padx=6, pady=(6, 4))
-        actions.grid_columnconfigure(0, weight=0)
-        actions.grid_columnconfigure(1, weight=0)
-        actions.grid_columnconfigure(2, weight=1)
+        actions.pack(fill="x", padx=6, pady=(4, 2))
         self._actions = actions
 
-        btn_font = ctk_font("caption")
-        menu_font = ctk_font("caption")
+        btn_font = ctk_font("dense")
+        menu_font = ctk_font("dense")
+        primary = {**BTN_PRIMARY, "height": 26}
+        secondary = {**BTN_SECONDARY, "height": 26}
+        menu_kw = dict(
+            height=26,
+            font=menu_font,
+            dropdown_font=menu_font,
+            fg_color=COLORS["surface"],
+            button_color=COLORS["border"],
+            button_hover_color=COLORS["accent_dim"],
+            dropdown_fg_color=COLORS["surface"],
+            text_color=COLORS["text"],
+            dropdown_text_color=COLORS["text"],
+        )
 
-        src_shell, src = toolbar_group(actions, "Письмо", compact=True)
-        self._src_shell = src_shell
         btn_open = ctk.CTkButton(
-            src, text="Открыть", width=84, font=btn_font, command=self.open_files, **BTN_PRIMARY
+            actions, text="Открыть", width=76, font=btn_font, command=self.open_files, **primary
         )
         btn_open.pack(side="left", padx=(0, 4))
         HoverTip(btn_open, "Открыть .eml / .msg (Ctrl+O). Несколько файлов — пакетный вердикт")
         btn_folder = ctk.CTkButton(
-            src, text="Папка", width=64, font=btn_font, command=self.open_folder, **BTN_SECONDARY
+            actions, text="Папка", width=60, font=btn_font, command=self.open_folder, **secondary
         )
         btn_folder.pack(side="left")
         HoverTip(btn_folder, "Рекурсивно разобрать все .eml / .msg / .mbox / .pst в папке")
 
-        hand_shell, hand = toolbar_group(actions, "Буфер", compact=True)
-        self._hand_shell = hand_shell
+        vsep(actions, height=22)
+
         btn_handoff = ctk.CTkButton(
-            hand,
+            actions,
             text="В тикет",
-            width=72,
+            width=68,
             font=btn_font,
             command=self.copy_handoff,
-            **BTN_SECONDARY,
+            **secondary,
         )
         btn_handoff.pack(side="left", padx=(0, 4))
         HoverTip(btn_handoff, "Скопировать блок triage для тикета (вердикт + IOC; Msg-ID внутри текста)")
         ctk.CTkOptionMenu(
-            hand,
+            actions,
             variable=self._copy_format,
             values=list(_COPY_FORMATS),
-            width=118,
-            height=BTN_H,
-            font=menu_font,
-            dropdown_font=menu_font,
-            fg_color=COLORS["surface"],
-            button_color=COLORS["border"],
-            button_hover_color=COLORS["accent_dim"],
-            dropdown_fg_color=COLORS["surface"],
-            text_color=COLORS["text"],
-            dropdown_text_color=COLORS["text"],
+            width=108,
+            **menu_kw,
         ).pack(side="left", padx=(0, 4))
         btn_copy = ctk.CTkButton(
-            hand, text="IOC", width=52, font=btn_font, command=self.copy_iocs, **BTN_PRIMARY
+            actions, text="IOC", width=46, font=btn_font, command=self.copy_iocs, **primary
         )
         btn_copy.pack(side="left")
         HoverTip(btn_copy, "Скопировать видимые IOC в выбранном формате")
 
-        exp_shell, exp = toolbar_group(actions, "Экспорт", compact=True)
-        self._exp_shell = exp_shell
+        vsep(actions, height=22)
+
         ctk.CTkOptionMenu(
-            exp,
+            actions,
             variable=self._export_choice,
             values=list(EXPORT_CHOICES),
-            width=110,
-            height=BTN_H,
-            font=menu_font,
-            dropdown_font=menu_font,
-            fg_color=COLORS["surface"],
-            button_color=COLORS["border"],
-            button_hover_color=COLORS["accent_dim"],
-            dropdown_fg_color=COLORS["surface"],
-            text_color=COLORS["text"],
-            dropdown_text_color=COLORS["text"],
+            width=96,
+            **menu_kw,
         ).pack(side="left", padx=(0, 4))
         btn_export = ctk.CTkButton(
-            exp,
+            actions,
             text="Сохранить",
-            width=90,
+            width=84,
             font=btn_font,
             command=self._export_clicked,
-            **BTN_PRIMARY,
+            **primary,
         )
-        btn_export.pack(side="left", padx=(0, 4))
+        btn_export.pack(side="left")
         HoverTip(
             btn_export,
             "JSON = полный отчёт с вердиктом · CSV = таблица IOC",
         )
-
-        self._place_toolbar("wide")
 
         # Filter bar: search + primary «к разбору»; types/noise in expandable panel
         filt_bar = ctk.CTkFrame(chrome, fg_color="transparent")
@@ -179,15 +170,19 @@ class LayoutMixin:
         self.search_entry = ctk.CTkEntry(
             filt_bar,
             textvariable=self._search_var,
-            placeholder_text="Поиск IOC…  Ctrl+F",
+            placeholder_text="Поиск IOC, причин, вложений…  Ctrl+F",
             height=28,
             fg_color=COLORS["surface_alt"],
             border_color=COLORS["border"],
             corner_radius=8,
             font=ctk_font("dense"),
         )
+        self._filt_bar = filt_bar
         self.search_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
-        HoverTip(self.search_entry, "Поиск по value / type / tags / context")
+        HoverTip(
+            self.search_entry,
+            "Поиск по IOC, причинам вердикта и именам вложений",
+        )
 
         FilterChip(
             filt_bar,
@@ -236,14 +231,17 @@ class LayoutMixin:
             font=ctk_font("dense"),
         ).pack(side="left")
 
+        # Child of the window, shown with place() — packing it into the
+        # chrome pushed the letter and verdict panes down.
         self._filters_panel = ctk.CTkFrame(
-            chrome,
+            self,
+            width=640,
+            height=108,
             fg_color=COLORS["surface_alt"],
             corner_radius=8,
             border_width=1,
             border_color=COLORS["border"],
         )
-        # packed on demand by _toggle_filters_panel
 
         panel_inner = ctk.CTkFrame(self._filters_panel, fg_color="transparent")
         panel_inner.pack(fill="x", padx=10, pady=8)
@@ -344,8 +342,11 @@ class LayoutMixin:
         self.focus_clear_btn.pack_forget()
 
         # —— Body: письмо слева · вердикт/доказательства справа ——
+        # grid_propagate False: children (long subject, tab text) must not
+        # resize the panes. Weights alone scale them with the window.
         body = ctk.CTkFrame(self, fg_color=COLORS["bg"])
         body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        body.grid_propagate(False)
         body.grid_columnconfigure(0, weight=2, minsize=200)
         body.grid_columnconfigure(1, weight=5, minsize=320)
         body.grid_rowconfigure(0, weight=1)
@@ -354,11 +355,12 @@ class LayoutMixin:
         # Left: email source
         left = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        left.grid_propagate(True)
+        left.grid_propagate(False)
         self._left = left
 
-        left_head = ctk.CTkFrame(left, fg_color="transparent")
+        left_head = ctk.CTkFrame(left, fg_color="transparent", height=28)
         left_head.pack(fill="x", padx=12, pady=(10, 4))
+        left_head.pack_propagate(False)
         ctk.CTkLabel(
             left_head,
             text="Письмо",
@@ -371,7 +373,6 @@ class LayoutMixin:
             font=ctk_font("caption"),
             text_color=COLORS["muted"],
             anchor="e",
-            wraplength=180,
         )
         self.source_meta.pack(side="right", fill="x", expand=True, padx=(8, 0))
 
@@ -398,6 +399,7 @@ class LayoutMixin:
         # Right: results
         right = ctk.CTkFrame(body, fg_color=COLORS["surface"], corner_radius=8)
         right.grid(row=0, column=1, sticky="nsew")
+        right.grid_propagate(False)
         self._right = right
 
         summary = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
@@ -427,7 +429,10 @@ class LayoutMixin:
         # Alias for older helpers; type breakdown lives in filter_hint, not beside badge.
         self.ioc_breakdown = self.ioc_summary_label
 
-        self._job_row = ctk.CTkFrame(right, fg_color=COLORS["surface_alt"], corner_radius=6)
+        self._job_row = ctk.CTkFrame(
+            right, fg_color=COLORS["surface_alt"], corner_radius=6, height=36
+        )
+        self._job_row.pack_propagate(False)
         self.status = ctk.CTkLabel(
             self._job_row,
             text="",
@@ -467,22 +472,28 @@ class LayoutMixin:
             state="disabled",
         )
 
+        # Fixed slot: hint text may wrap, but it must not push the tabs.
+        self._hint_slot = ctk.CTkFrame(right, fg_color="transparent", height=40)
+        self._hint_slot.pack(fill="x", padx=12, pady=(0, 4))
+        self._hint_slot.pack_propagate(False)
         self.filter_hint = ctk.CTkLabel(
-            right,
+            self._hint_slot,
             text=self._hint_default,
             font=ctk_font("body"),
             text_color=COLORS["muted"],
             anchor="w",
-            wraplength=720,
+            justify="left",
+            wraplength=640,
         )
-        self.filter_hint.pack(fill="x", padx=12, pady=(0, 4))
+        self.filter_hint.pack(fill="both", expand=True)
 
         # Context tabs
         self._tab_host = ctk.CTkFrame(right, fg_color=COLORS["surface"])
         self._tab_host.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        self._tab_key_by_label: dict[str, str] = {}
-        self._tab_label_by_key: dict[str, str] = {}
+        self._tab_key_by_label = {"Вердикт": "mail"}
+        self._tab_label_by_key = {"mail": "Вердикт"}
+        self._tab_seg_labels = ("Вердикт",)
         self._active_tab_key = "mail"
         self._tab_var = ctk.StringVar(value="Вердикт")
 
@@ -646,6 +657,9 @@ class LayoutMixin:
         self.url_box = self._make_text(self._tab_frames["url"])
         self.att_box = self._make_text(self._tab_frames["att"])
         self.err_box = self._make_text(self._tab_frames["err"])
+        self._put(self.att_box, "Вложений нет — откройте письмо\n", "empty")
+        self._put(self.url_box, "URL не найдены — откройте письмо\n", "empty")
+        self._put(self.err_box, "Ошибок разбора нет\n", "empty")
         self._sync_result_tabs(None)
         self._show_tab_frame("mail")
 
@@ -653,29 +667,12 @@ class LayoutMixin:
         self.bind("<Control-O>", lambda _e: self.open_files())
         self.bind("<Control-Return>", lambda _e: self.analyze_text_area())
         self.bind("<Control-KP_Enter>", lambda _e: self.analyze_text_area())
+        self.bind("<Escape>", self._close_filters_on_escape, add="+")
+        self.bind_all("<Button-1>", self._filters_outside_click, add="+")
 
+        # Resize only restacks the optional filter panel after the drag
+        # settles. Column weights scale the panes; do not retune minsize here.
         self.bind("<Configure>", self._on_window_configure, add="+")
-        self.after(80, self._apply_window_layout)
-
-    def _place_toolbar(self, mode: str) -> None:
-        """Reflow action groups so they don't clip on a narrow window."""
-        if mode == self._toolbar_mode:
-            return
-        self._toolbar_mode = mode
-        for w in (self._src_shell, self._hand_shell, self._exp_shell):
-            w.grid_forget()
-        if mode == "stack":
-            self._src_shell.grid(row=0, column=0, columnspan=3, sticky="ew", padx=0, pady=2)
-            self._hand_shell.grid(row=1, column=0, columnspan=3, sticky="ew", padx=0, pady=2)
-            self._exp_shell.grid(row=2, column=0, columnspan=3, sticky="ew", padx=0, pady=2)
-        elif mode == "wrap":
-            self._src_shell.grid(row=0, column=0, sticky="nw", padx=(0, 4), pady=2)
-            self._hand_shell.grid(row=0, column=1, sticky="nw", padx=(0, 4), pady=2)
-            self._exp_shell.grid(row=1, column=0, columnspan=3, sticky="ew", padx=0, pady=2)
-        else:
-            self._src_shell.grid(row=0, column=0, sticky="nw", padx=(0, 4), pady=2)
-            self._hand_shell.grid(row=0, column=1, sticky="nw", padx=(0, 4), pady=2)
-            self._exp_shell.grid(row=0, column=2, sticky="nw", pady=2)
 
     def _place_summary(self, stacked: bool) -> None:
         # Summary is a fixed one-row composition (verdict + evidence count).

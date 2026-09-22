@@ -98,6 +98,11 @@
   "weight_payment_tokens": 10,
   "weight_password_lure_file": 16,
   "weight_freemail_bec": 12,
+  "weight_clickfix": 16,
+  "weight_image_only_body": 14,
+  "weight_fake_auth_results": 12,
+  "weight_office_xlm": 22,
+  "weight_resent_from_mismatch": 12,
   "suspicious_tlds": [".xyz", ".top", ".club", ".gq", ".tk", ".ml", ".cf", ".ga", ".zip", ".mov", ".cfd", ".sbs", ".click", ".bond", ".ru.com"],
   "cap_display_spoof": 28
 }

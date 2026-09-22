@@ -129,6 +129,12 @@ class VerdictConfig:
     weight_payment_tokens: int = 10
     weight_password_lure_file: int = 16
     weight_freemail_bec: int = 12
+    # 2.18 — ClickFix, image-only HTML, fake auth in body, XLM, Resent-From
+    weight_clickfix: int = 16
+    weight_image_only_body: int = 14
+    weight_fake_auth_results: int = 12
+    weight_office_xlm: int = 22
+    weight_resent_from_mismatch: int = 12
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6

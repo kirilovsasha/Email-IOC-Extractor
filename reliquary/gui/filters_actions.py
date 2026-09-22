@@ -8,6 +8,14 @@ from typing import Any
 from reliquary.core.filter_state import FilterState
 from reliquary.core.models import AnalysisResult
 
+def _widget_inside(widget: object, ancestor: object) -> bool:
+    while widget is not None:
+        if widget is ancestor:
+            return True
+        widget = getattr(widget, "master", None)
+    return False
+
+
 # Filter strip for email evidence (hide = drop noise; focus = narrow list).
 HIDE_NOISE_FILTERS = (
     (
@@ -116,13 +124,63 @@ class FiltersActionsMixin:
             pass
 
     def _toggle_filters_panel(self) -> None:
-        open_ = not bool(self._filters_open.get())
+        self._set_filters_open(not bool(self._filters_open.get()))
+
+    def _set_filters_open(self, open_: bool) -> None:
         self._filters_open.set(open_)
         if open_:
-            self._filters_panel.pack(fill="x", padx=6, pady=(0, 6))
+            self._position_filters_overlay()
+            try:
+                self._filters_panel.lift()
+            except Exception:  # noqa: BLE001
+                pass
         else:
-            self._filters_panel.pack_forget()
+            try:
+                self._filters_panel.place_forget()
+            except Exception:  # noqa: BLE001
+                pass
         self._update_filter_chrome()
+
+    def _position_filters_overlay(self) -> None:
+        """Float the filter chips under the search row without moving panes."""
+        bar = self._filt_bar
+        try:
+            width = int(bar.winfo_width())
+            if width < 40:
+                return
+            x = int(bar.winfo_rootx()) - int(self.winfo_rootx())
+            y = int(bar.winfo_rooty()) - int(self.winfo_rooty()) + int(bar.winfo_height()) + 4
+            win_w = max(int(self.winfo_width()), 1)
+            scale = float(self._filters_panel._get_widget_scaling() or 1)
+        except Exception:  # noqa: BLE001
+            return
+        if scale <= 0:
+            scale = 1.0
+        try:
+            # place() scales x/y again; winfo values are already in screen pixels.
+            # relwidth is not scaled, so it tracks the search row in real pixels.
+            self._filters_panel.place(
+                x=int(x / scale),
+                y=int(y / scale),
+                relwidth=width / win_w,
+            )
+            self._filters_panel.lift()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _filters_outside_click(self, event: object) -> None:
+        if not bool(self._filters_open.get()):
+            return
+        widget = getattr(event, "widget", None)
+        if _widget_inside(widget, self._filters_panel) or _widget_inside(widget, self._filt_toggle):
+            return
+        self._set_filters_open(False)
+
+    def _close_filters_on_escape(self, _event: object = None) -> str | None:
+        if not bool(self._filters_open.get()):
+            return None
+        self._set_filters_open(False)
+        return "break"
 
     def _reset_filters(self) -> None:
         self.cat_vars["Сеть"].set(True)

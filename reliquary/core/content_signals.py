@@ -153,6 +153,29 @@ CLOUD_LURE_RE = re.compile(
     r")"
 )
 
+CLICKFIX_RE = re.compile(
+    r"(?i)("
+    r"\bwin\s*\+\s*r\b|"
+    r"windows\s*\+\s*r\b|"
+    r"клавиш\w{0,8}\s+win\b|"
+    r"нажмите\s+win\b|"
+    r"powershell(?:\.exe)?\s+(?:-enc|-e\b|-encodedcommand)|"
+    r"\bmshta(?:\.exe)?\b|"
+    r"certutil(?:\.exe)?\s+-urlcache|"
+    r"вставьте\s+команду|"
+    r"выполните\s+команду|"
+    r"\brun\s+dialog\b|"
+    r"press\s+(?:the\s+)?windows\s+key"
+    r")"
+)
+
+FAKE_AUTH_RE = re.compile(
+    r"(?i)(authentication-results\s*:|spf\s*=\s*pass|dkim\s*=\s*pass|dmarc\s*=\s*pass)"
+)
+_HEADERISH_AUTH_RE = re.compile(
+    r"(?i)^(authentication-results|received-spf|dkim-signature|arc-authentication-results)\s*:"
+)
+
 
 @dataclass(frozen=True)
 class ContentSignal:
@@ -366,6 +389,62 @@ def _url_userinfo(blob: str) -> list[ContentSignal]:
     ]
 
 
+def _fake_auth_in_body(text: str, html: str) -> ContentSignal | None:
+    """SPF/DKIM/DMARC pass painted into the body, not a real header."""
+    blobs: list[str] = []
+    if html:
+        blobs.append(html)
+    lines: list[str] = []
+    for line in (text or "").splitlines():
+        if _HEADERISH_AUTH_RE.match(line.strip()):
+            continue
+        lines.append(line)
+    if lines:
+        blobs.append("\n".join(lines))
+    match = None
+    for blob in blobs:
+        match = FAKE_AUTH_RE.search(blob)
+        if match:
+            break
+    if not match:
+        return None
+    return ContentSignal(
+        "fake_auth_results",
+        f"В теле письма поддельный Authentication-Results: {match.group(0)[:48]}",
+        "weight_fake_auth_results",
+    )
+
+
+def _image_only_body(soup: BeautifulSoup) -> list[ContentSignal]:
+    """HTML with pictures and a link, almost no readable text (no OCR)."""
+    imgs = soup.find_all("img")
+    if not imgs:
+        return []
+    non_cid = [
+        str(img.get("src") or "")
+        for img in imgs
+        if not str(img.get("src") or "").lower().startswith("cid:")
+    ]
+    if not non_cid:
+        return []
+    has_link = any(
+        str(a.get("href") or "").lower().startswith(("http://", "https://"))
+        for a in soup.find_all("a", href=True)
+    )
+    if not has_link:
+        return []
+    letters = re.sub(r"[\s\W_]+", "", soup.get_text(" ", strip=True), flags=re.UNICODE)
+    if len(letters) > 40:
+        return []
+    return [
+        ContentSignal(
+            "image_only_body",
+            "HTML почти без текста: картинка и http-ссылка",
+            "weight_image_only_body",
+        )
+    ]
+
+
 def _payment_token_signal(blob: str) -> ContentSignal | None:
     """IBAN / БИК+счёт / карта / СБП only together with payment-change language."""
     if not blob or not PAYMENT_CHANGE_RE.search(blob):
@@ -396,6 +475,7 @@ def analyze_content_signals(
     has_urls: bool = False,
     has_attachments: bool = False,
     has_encrypted_archive: bool = False,
+    has_office_encrypted: bool = False,
     suspicious_tlds: tuple[str, ...] | None = None,
 ) -> list[ContentSignal]:
     """Return unique content signals from plain text and optional HTML body."""
@@ -435,12 +515,26 @@ def analyze_content_signals(
 
     signals.extend(_url_userinfo(blob))
 
+    click = CLICKFIX_RE.search(blob)
+    if click:
+        signals.append(
+            ContentSignal(
+                "clickfix",
+                f"ClickFix / Win+R / команда в теле: {click.group(0)[:60]}",
+                "weight_clickfix",
+            )
+        )
+
+    fake_auth = _fake_auth_in_body(text or "", html or "")
+    if fake_auth is not None:
+        signals.append(fake_auth)
+
     if ARCHIVE_PASSWORD_RE.search(blob):
-        if has_encrypted_archive:
+        if has_encrypted_archive or has_office_encrypted:
             signals.append(
                 ContentSignal(
                     "archive_password_match",
-                    "Пароль архива в теле + шифрованное вложение",
+                    "Пароль в теле + шифрованный архив или Office",
                     "weight_archive_password_match",
                 )
             )
@@ -530,6 +624,8 @@ def analyze_content_signals(
             signals.extend(_hidden_text(html, soup))
             signals.extend(_html_forms(soup, tlds))
             signals.extend(_cid_phishing(soup, html))
+            if not any(s.kind == "cid_phishing" for s in signals):
+                signals.extend(_image_only_body(soup))
     signals.extend(_dangerous_schemes(blob, soup))
 
     has_credential = any(s.kind == "credential_harvest" for s in signals) or bool(

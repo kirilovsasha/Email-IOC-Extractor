@@ -374,6 +374,19 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                     "Домен Message-ID отличается от From (не всегда malicious)",
                 )
             )
+    resent = msg.get("Resent-From") or ""
+    _, resent_addr = parseaddr(resent)
+    resent_dom = _addr_domain(resent_addr)
+    from_dom_hdr = _addr_domain(from_addr)
+    if resent_dom and from_dom_hdr and not _same_domain(resent_dom, from_dom_hdr):
+        findings.append(
+            HeaderFinding(
+                "Resent-From domain",
+                f"{resent_dom} vs {from_dom_hdr}",
+                Severity.MEDIUM,
+                "Домен Resent-From отличается от From",
+            )
+        )
 
     # Urgent / social engineering subject cues are handled in verdict; keep X-Priority
     priority = msg.get("X-Priority") or msg.get("Importance") or ""

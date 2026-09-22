@@ -17,9 +17,10 @@ def desired_result_tabs(
     Labels stay short and stable (no verdict level in the tab — that lives
     in the summary badge) so the segmented bar does not jump on refresh/EXE.
     """
-    _ = compact  # kept for API compatibility; labels are always compact/stable
+    _ = compact, filtered_count  # kept for callers; tab set does not follow the filter count
+    # Verdict stays. Other tabs appear only when that facet has data.
     if result is None:
-        return [("mail", "Вердикт"), ("ioc", "IOC")]
+        return [("mail", "Вердикт")]
 
     tabs: list[tuple[str, str]] = [("mail", "Вердикт")]
 
@@ -32,7 +33,8 @@ def desired_result_tabs(
         total = len(result.url_rewrites)
         tabs.append(("url", f"URL {total}"))
 
-    tabs.append(("ioc", f"IOC {filtered_count}"))
+    if result.iocs:
+        tabs.append(("ioc", f"IOC {len(result.iocs)}"))
 
     rows = result.file_rows or []
     if len(rows) >= 2:

@@ -7,7 +7,7 @@ from collections import Counter
 
 import customtkinter as ctk
 
-from reliquary import __app_name__, __version__
+from reliquary import __app_name__
 from reliquary.core.defang import defang_value
 from reliquary.core.filter_state import CAT_PREF_KEYS, CATEGORY_TYPES
 from reliquary.core.models import AnalysisResult, Ioc
@@ -104,6 +104,9 @@ class ExtractorApp(
         self._batch_row_tags: dict[str, str] = {}
         self._search_after_id: str | None = None
         self._layout_after: str | None = None
+        self._layout_w = 0
+        self._hint_wrap = 640
+        self._job_track = False
         self._tabs_compact = False
         self._toolbar_mode = ""
         self._summary_stacked = False
@@ -182,79 +185,31 @@ class ExtractorApp(
     def _on_window_configure(self, event: tk.Event) -> None:  # type: ignore[type-arg]
         if event.widget is not self:
             return
+        w = int(getattr(event, "width", 0) or 0)
+        if bool(self._filters_open.get()):
+            self._position_filters_overlay()
+        # Ignore the noise of a drag; panes already scale with grid weights.
+        if w and abs(w - self._layout_w) < 24:
+            return
+        self._layout_w = w
         if self._layout_after:
             try:
                 self.after_cancel(self._layout_after)
             except Exception:  # noqa: BLE001
                 pass
-        self._layout_after = self.after(80, self._apply_window_layout)
+        self._layout_after = self.after(280, self._apply_window_layout)
 
     def _apply_window_layout(self) -> None:
-        """Adapt labels / columns when the main window is resized."""
+        """Settle hint wrapping after a resize. Do not move the main panes."""
         self._layout_after = None
         try:
-            w = max(self.winfo_width(), 400)
-        except Exception:  # noqa: BLE001
-            return
-
-        if w < 980:
-            self._place_toolbar("stack")
-        elif w < 1180:
-            self._place_toolbar("wrap")
-        else:
-            self._place_toolbar("wide")
-
-        try:
-            right_w = max(self._right.winfo_width() - 36, 180)
-            left_w = max(self._left.winfo_width() - 36, 140)
-            # Summary stays one row (verdict + evidence); no stacked reflow.
-            self._place_summary(False)
-            self.filter_hint.configure(wraplength=right_w)
-            self.source_meta.configure(wraplength=max(left_w - 90, 80))
-            self.ioc_empty_label.configure(wraplength=max(right_w - 20, 160))
-        except Exception:  # noqa: BLE001
-            right_w = 480
-
-        # Tab labels are stable; skip compact/full rebuild that caused EXE jumps.
-        self._tabs_compact = False
-
-        try:
-            if w < 900:
-                self._header_meta.configure(text=f"v{__version__}")
-            elif w < 1100:
-                self._header_meta.configure(text=f"v{__version__}  ·  .eml / .msg / .mbox / .pst")
-            else:
-                self._header_meta.configure(
-                    text=f"v{__version__}  ·  офлайн  ·  .eml / .msg / .mbox / .pst"
-                )
+            right_w = max(self._right.winfo_width() - 48, 200)
+            if abs(right_w - self._hint_wrap) >= 64:
+                self._hint_wrap = right_w
+                self.filter_hint.configure(wraplength=right_w)
         except Exception:  # noqa: BLE001
             pass
 
-        try:
-            if getattr(self, "_verdict_compact", False):
-                self._body.grid_columnconfigure(0, weight=0, minsize=0)
-                self._body.grid_columnconfigure(1, weight=1, minsize=320)
-            elif w < 1000:
-                self._body.grid_columnconfigure(0, weight=2, minsize=160)
-                self._body.grid_columnconfigure(1, weight=5, minsize=260)
-            else:
-                self._body.grid_columnconfigure(0, weight=2, minsize=200)
-                self._body.grid_columnconfigure(1, weight=5, minsize=320)
-        except (AttributeError, tk.TclError):
-            pass
-
-        stack_filters = w < 1080
-        if stack_filters != self._filters_stacked:
-            self._filters_stacked = stack_filters
-            try:
-                if stack_filters:
-                    self._types_shell.grid(row=0, column=0, columnspan=2, sticky="nw", padx=0, pady=(0, 8))
-                    self._hide_shell.grid(row=1, column=0, columnspan=2, sticky="nw")
-                else:
-                    self._types_shell.grid(row=0, column=0, sticky="nw", padx=(0, 12), pady=0)
-                    self._hide_shell.grid(row=0, column=1, sticky="nw")
-            except Exception:  # noqa: BLE001
-                pass
     # ---------------------------------------------------------- placeholder
     def _bind_placeholder(self) -> None:
         widget = getattr(self.input_box, "textbox", None) or getattr(
@@ -497,7 +452,12 @@ class ExtractorApp(
     def _sync_job_row(self, *, busy: bool | None = None) -> None:
         if busy is not None:
             self._job_busy = busy
-        show = self._job_busy or bool(self._failed_paths)
+        # A single letter must not insert the progress strip: it appears and
+        # disappears in one beat and shoves the verdict block.
+        show = bool(self._failed_paths) or (self._job_busy and self._job_track)
+        self._apply_job_row(show)
+
+    def _apply_job_row(self, show: bool) -> None:
         self._progress.pack_forget()
         self._stop_btn.pack_forget()
         self._retry_btn.pack_forget()
@@ -574,8 +534,8 @@ class ExtractorApp(
         self._tab_key_by_label = key_by_label
         self._tab_label_by_key = label_by_key
 
-        # Rebuild segmented values only when the set of labels actually changes —
-        # avoids width jumps and EXE lag on every filter keystroke.
+        # Rebuild the bar only when the set of tabs changes. The button
+        # height stays fixed, so the letter and verdict panes do not move.
         if labels != prev_labels:
             self._tab_seg_labels = tuple(labels)
             self._tab_seg.configure(values=labels)
@@ -585,7 +545,7 @@ class ExtractorApp(
         elif "mail" in label_by_key:
             select_key = "mail"
         else:
-            select_key = desired[0][0] if desired else "ioc"
+            select_key = desired[0][0]
         select_label = label_by_key[select_key]
         try:
             if self._tab_var.get() != select_label:
@@ -732,6 +692,51 @@ class ExtractorApp(
             self._fill_attachments(self.result)
             self._fill_mail_tab(self.result)
             self._fill_errors(self.result)
+        self._highlight_search_in_panels()
+
+    def _highlight_search_in_panels(self) -> None:
+        """Underline the query in verdict reasons and attachment names."""
+        query = ""
+        try:
+            query = str(self._search_var.get() or "").strip()
+        except (AttributeError, tk.TclError):
+            return
+        for name in ("mail_box", "att_box", "url_box"):
+            box = getattr(self, name, None)
+            if box is None:
+                continue
+            widget = self._tk(box)
+            if widget is None:
+                continue
+            try:
+                widget.tag_remove("search_hit", "1.0", "end")
+            except tk.TclError:
+                continue
+            if len(query) < 2:
+                continue
+            start = "1.0"
+            first = ""
+            while True:
+                try:
+                    start = widget.search(query, start, tk.END, nocase=True)
+                except tk.TclError:
+                    break
+                if not start:
+                    break
+                end = f"{start}+{len(query)}c"
+                try:
+                    widget.tag_add("search_hit", start, end)
+                except tk.TclError:
+                    break
+                if not first:
+                    first = start
+                start = end
+            if first:
+                try:
+                    widget.tag_config("search_hit", background=COLORS["accent_dim"])
+                    widget.see(first)
+                except tk.TclError:
+                    pass
 
     def _update_verdict_badge(self, result: AnalysisResult) -> None:
         v = result.verdict
@@ -745,14 +750,24 @@ class ExtractorApp(
         )
 
     def show_about(self) -> None:
-        show_about_dialog(
-            appearance_mode=self._appearance_mode,
-            ioc_density=self._ioc_density,
-            result=self.result,
-            profile_dir=self._profile_dir,
-            verdict_path=self._verdict_path,
-            verdict_warnings=getattr(self, "_verdict_extra_warnings", None),
-        )
+        # Defer past the button release so the dialog is not created under the click.
+        self.after(10, self._open_about)
+
+    def _open_about(self) -> None:
+        try:
+            show_about_dialog(
+                parent=self,
+                appearance_mode=self._appearance_mode,
+                ioc_density=self._ioc_density,
+                result=self.result,
+                profile_dir=self._profile_dir,
+                verdict_path=self._verdict_path,
+                verdict_warnings=getattr(self, "_verdict_extra_warnings", None),
+            )
+        except Exception as exc:  # noqa: BLE001
+            from tkinter import messagebox
+
+            messagebox.showerror(__app_name__, f"О программе: {exc}", parent=self)
 
 
 def run() -> None:

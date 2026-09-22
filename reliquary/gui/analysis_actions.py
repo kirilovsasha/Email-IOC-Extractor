@@ -16,6 +16,20 @@ from reliquary.core.org_profile import load_org_profile
 from reliquary.core.pipeline import analyze_text
 
 
+def _source_meta_line(kind: str, name: str, subject: str) -> str:
+    """One line for the letter header — wrapping here grows the left pane."""
+    subject = " ".join(subject.split())
+    if subject and name:
+        text = f"{name}  ·  {subject}"
+    elif name:
+        text = f"{kind}  ·  {name}" if kind else name
+    else:
+        text = subject or kind
+    if len(text) > 68:
+        return text[:67].rstrip() + "…"
+    return text
+
+
 class AnalysisActionsMixin:
     """Requires ExtractorApp prefs, widgets, and ``_apply_result`` helpers."""
 
@@ -69,6 +83,7 @@ class AnalysisActionsMixin:
             messagebox.showinfo(__app_name__, "Вставьте исходник письма (RFC822) слева")
             return
         self._cancel_batch = False
+        self._job_track = False
         self._sync_job_row(busy=True)
         self._set_status("Разбор письма…")
         threading.Thread(target=self._run_text, args=(text,), daemon=True).start()
@@ -207,6 +222,7 @@ class AnalysisActionsMixin:
 
     def _analyze_paths(self, paths: list[str]) -> None:
         self._cancel_batch = False
+        self._job_track = len(paths) > 1
         self._focus_source_file = ""
         names = ", ".join(Path(p).name for p in paths[:3])
         extra = f" (+{len(paths) - 3})" if len(paths) > 3 else ""
@@ -302,10 +318,7 @@ class AnalysisActionsMixin:
         self._set_failed(failed or [])
         kind = result.source_kind
         name = Path(result.source_path).name if result.source_path else ""
-        if result.subject:
-            self.source_meta.configure(text=f"{name}  ·  {result.subject}")
-        else:
-            self.source_meta.configure(text=f"{kind}  ·  {name}" if name else kind)
+        self.source_meta.configure(text=_source_meta_line(kind, name, result.subject or ""))
 
         if preload_text:
             preview = result.raw_text_preview or ""

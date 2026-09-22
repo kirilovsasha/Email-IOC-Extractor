@@ -69,6 +69,11 @@ Feedback → `python scripts/feedback_weights.py` или `--feedback-weights OUT
 Feedback также пишет threshold/cap suggestions (`suggest_threshold_overrides`,
 `--feedback-tune`). PST: optional `pip install .[pst]` (libratom; pypff тоже подходит).
 
+2.18: `weight_clickfix` (16), `weight_image_only_body` (14), `weight_fake_auth_results` (12),
+`weight_office_xlm` (22), `weight_resent_from_mismatch` (12).
+Календарная митигация не применяется, если в ICS есть `http` или `ATTACH`.
+Message-ID ≠ From остаётся в корзине LOW (`weight_header_low`) и вытесняет другие LOW-заметки в разборе.
+
 Вердикт JSON (2.15+): поля `confidence` (`high`|`medium`|`low`) и `confidence_note`.
 
 ## Calibration loop

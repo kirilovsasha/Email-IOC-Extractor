@@ -74,9 +74,24 @@ def _score_headers(
     display_spoof = False
     best: dict[Severity, str] = {}
     counts: dict[Severity, int] = {}
+    msgid_note = ""
+    resent_added = False
     for h in result.headers:
         if h.name == "Display-name spoof":
             display_spoof = True
+            continue
+        if h.name == "Message-ID domain":
+            msgid_note = h.note or "Домен Message-ID отличается от From"
+        if h.name == "Resent-From domain":
+            if not resent_added:
+                parts.append(
+                    ScoreContribution(
+                        "headers",
+                        cfg.weight_resent_from_mismatch,
+                        h.note or "Домен Resent-From отличается от From",
+                    )
+                )
+                resent_added = True
             continue
         if h.name in compound_headers:
             continue
@@ -85,6 +100,8 @@ def _score_headers(
         counts[h.severity] = counts.get(h.severity, 0) + 1
         if h.severity not in best:
             best[h.severity] = h.note or h.name
+    if msgid_note:
+        best[Severity.LOW] = msgid_note
     for sev in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW):
         if sev not in best:
             continue
@@ -165,6 +182,7 @@ def _score_attachments(
         "rtf_ole",
         "office_encrypted",
         "office_external_data",
+        "office_xlm",
         "iso_contains_script",
         "disk_contains_script",
     }
@@ -502,6 +520,15 @@ def _score_attachments(
                 rest.discard("rtf_objupdate")
                 rest.discard("rtf_equation")
                 rest.discard("rtf_ole")
+            if "office_xlm" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_xlm,
+                        f"Excel 4.0 / XLM «{att.filename}»",
+                    )
+                )
+                rest.discard("office_xlm")
             if "office_external_data" in rest:
                 parts.append(
                     ScoreContribution(
@@ -710,6 +737,7 @@ def _score_content(
         for a in result.attachments
     )
     has_enc = any("encrypted_archive" in (a.risk_flags or []) for a in result.attachments)
+    has_office_enc = any("office_encrypted" in (a.risk_flags or []) for a in result.attachments)
     signals = analyze_content_signals(
         result.raw_text_preview,
         result.html_preview,
@@ -717,6 +745,7 @@ def _score_content(
         has_urls=has_urls,
         has_attachments=has_att,
         has_encrypted_archive=has_enc,
+        has_office_encrypted=has_office_enc,
         suspicious_tlds=cfg.suspicious_tlds,
     )
     _append_lure_compounds(result, signals)
@@ -751,6 +780,9 @@ def _score_content(
         "weight_payment_tokens": cfg.weight_payment_tokens,
         "weight_password_lure_file": cfg.weight_password_lure_file,
         "weight_freemail_bec": cfg.weight_freemail_bec,
+        "weight_clickfix": cfg.weight_clickfix,
+        "weight_image_only_body": cfg.weight_image_only_body,
+        "weight_fake_auth_results": cfg.weight_fake_auth_results,
     }
     for sig in signals:
         pts = weight_map.get(sig.weight_key, 8)
@@ -1170,6 +1202,7 @@ def _score_mitigations(
         "rtf_exploit",
         "office_encrypted",
         "office_external_data",
+        "office_xlm",
         "iso_contains_script",
         "disk_contains_script",
     }
@@ -1196,6 +1229,9 @@ def _score_mitigations(
         "payment_tokens",
         "password_lure_file",
         "freemail_bec",
+        "clickfix",
+        "image_only_body",
+        "fake_auth_results",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
     # Display-name spoof must block allowlist-From mitigation
@@ -1327,8 +1363,27 @@ def _calendar_surface(result: AnalysisResult, blob: str) -> bool:
 
 def _ics_contains_url(result: AnalysisResult, blob: str) -> bool:
     """True when the calendar payload itself carries an http(s) link."""
+    return _ics_payload_matches(result, blob, re.compile(r"(?i)https?://"), re.compile(br"(?i)https?://"))
+
+
+def _ics_has_attach(result: AnalysisResult, blob: str) -> bool:
+    """True when the calendar payload carries an ATTACH property."""
+    return _ics_payload_matches(
+        result,
+        blob,
+        re.compile(r"(?im)^ATTACH[;:]"),
+        re.compile(br"(?im)^ATTACH[;:]"),
+    )
+
+
+def _ics_payload_matches(
+    result: AnalysisResult,
+    blob: str,
+    text_re: re.Pattern[str],
+    raw_re: re.Pattern[bytes],
+) -> bool:
     for match in _VCAL_BLOCK_RE.finditer(blob or ""):
-        if re.search(r"(?i)https?://", match.group(0)):
+        if text_re.search(match.group(0)):
             return True
     for att in result.attachments:
         name = (att.filename or "").lower()
@@ -1336,7 +1391,7 @@ def _ics_contains_url(result: AnalysisResult, blob: str) -> bool:
         if mime != "text/calendar" and not name.endswith((".ics", ".ical")):
             continue
         raw = att.data or b""
-        if re.search(br"(?i)https?://", raw):
+        if raw_re.search(raw):
             return True
     return False
 
@@ -1364,7 +1419,9 @@ def _benign_marker_parts(
                 "Автоответ / Out-of-Office — смягчение score",
             )
         )
-    if _calendar_surface(result, blob) and not _ics_contains_url(result, blob):
+    if _calendar_surface(result, blob) and not (
+        _ics_contains_url(result, blob) or _ics_has_attach(result, blob)
+    ):
         parts.append(
             ScoreContribution(
                 "mitigation",

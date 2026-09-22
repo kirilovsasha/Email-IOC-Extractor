@@ -41,6 +41,7 @@
 | Ctrl+C / Ctrl+Shift+C | IOC / defanged |
 | Ctrl+Shift+V | Компактный вердикт |
 | Ctrl+N / Ctrl+P | Следующее / предыдущее в пакете |
+| Ctrl+Shift+N / Ctrl+Shift+P | Следующее / предыдущее suspicious или malicious |
 | Ctrl+L | Тема |
 | Ctrl+D | Плотность IOC |
 | Ctrl+F | Поиск IOC |

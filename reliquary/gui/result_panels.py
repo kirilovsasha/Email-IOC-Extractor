@@ -11,6 +11,41 @@ from reliquary.core.models import AnalysisResult
 from reliquary.gui.theme import SEVERITY_LABELS_RU
 
 
+def _sender_domain(sender: str) -> str:
+    text = (sender or "").strip().lower()
+    if "<" in text and ">" in text:
+        text = text.split("<", 1)[1].split(">", 1)[0]
+    if "@" not in text:
+        return ""
+    return text.rsplit("@", 1)[-1].strip(">").strip()
+
+
+def campaign_banner_text(result: AnalysisResult) -> str:
+    """One line when this mail shares a campaign_key with peers."""
+    rows = list(result.file_rows or [])
+    if len(rows) < 2:
+        return ""
+    current = Path(result.source_path or "").name
+    mine = next((row for row in rows if Path(row.path).name == current), None)
+    if mine is None or not mine.campaign_peers:
+        return ""
+    group = [row for row in rows if row.campaign_key and row.campaign_key == mine.campaign_key]
+    if len(group) < 2:
+        group = [mine]
+    domains: list[str] = []
+    for row in group:
+        dom = _sender_domain(row.sender)
+        if dom and dom not in domains:
+            domains.append(dom)
+    count = len(mine.campaign_peers) + 1
+    if len(domains) >= 2:
+        shown = ", ".join(domains[:4])
+        return f"Кампания: {count} писем · From разошлись: {shown}"
+    if domains:
+        return f"Кампания: {count} писем · From: {domains[0]}"
+    return f"Кампания: {count} писем"
+
+
 class ResultPanelsMixin:
     """Requires ExtractorApp widgets: *_box, ioc_table, helpers _put/_clear_box/_tk."""
 
@@ -524,9 +559,11 @@ class ResultPanelsMixin:
             self._put(self.mail_box, f"  {v.summary}\n", "value")
             note = getattr(v, "confidence_note", "") or ""
             if note:
-                self._put(self.mail_box, f"  Почему: {note}\n\n", "muted")
-            else:
-                self._put(self.mail_box, "\n", "value")
+                self._put(self.mail_box, f"  Почему: {note}\n", "muted")
+            banner = campaign_banner_text(result)
+            if banner:
+                self._put(self.mail_box, f"  {banner}\n", "warn")
+            self._put(self.mail_box, "\n", "value")
             if v.breakdown:
                 self._put(self.mail_box, "  Разбор score\n", "label")
                 for b in v.breakdown:

@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.17.1
+**Mail. Extract. Decide.** · v2.18.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg` / `.mbox` / `.pst`): заголовки,
 вложения, URL rewrite, IOC как доказательства и **вердикт**

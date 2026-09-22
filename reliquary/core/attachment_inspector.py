@@ -226,6 +226,12 @@ def _inventory_zip(
             if nested_mail:
                 flags.append("archive_nested_email")
                 notes.append("Вложенные письма в архиве: " + ", ".join(nested_mail[:8]))
+            if any(
+                "macrosheets" in n.replace("\\", "/").lower()
+                for n in names
+            ):
+                flags.append("office_xlm")
+                notes.append("Excel 4.0 / XLM: xl/macrosheets")
 
             nested_archives = [
                 zi
@@ -1059,6 +1065,9 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         ole_streams = streams
         flags.extend(oflags)
         notes.extend(onotes)
+        if b"Excel 4.0" in data[: min(len(data), 1_500_000)] and "office_xlm" not in flags:
+            flags.append("office_xlm")
+            notes.append("OLE: маркер Excel 4.0 (XLM)")
         if b"Ole10Native" in data[: min(len(data), 512 * 1024)] and "ole_package" not in flags:
             flags.append("ole_package")
             notes.append("OLE: найден поток Ole10Native (Package)")
@@ -1072,6 +1081,10 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         if b"word/vbaProject.bin" in data or b"xl/vbaProject.bin" in data or b"ppt/vbaProject.bin" in data:
             flags.append("ooxml_vba")
             notes.append("В OOXML найден vbaProject.bin — макросы")
+        if b"xl/macrosheets" in data or b"xl\\macrosheets" in data:
+            if "office_xlm" not in flags:
+                flags.append("office_xlm")
+                notes.append("Excel 4.0 / XLM: xl/macrosheets")
         if ext in ARCHIVE_EXTENSIONS or ext == ".zip" or mime == "application/zip":
             entries, zflags, znotes = _inventory_zip(data)
             archive_entries = entries + archive_entries

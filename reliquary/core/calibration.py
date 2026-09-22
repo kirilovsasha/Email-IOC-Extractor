@@ -119,6 +119,14 @@ def segment_for(result) -> str:
         return "form_action"
     if "campaign_divergence" in signals:
         return "campaign"
+    if "clickfix" in signals:
+        return "clickfix"
+    if "image_only_body" in signals:
+        return "image_only"
+    if "fake_auth_results" in signals:
+        return "fake_auth"
+    if "office_xlm" in att_flags:
+        return "office_xlm"
     if "office_dde" in att_flags:
         return "office_dde"
     if "ole_package" in att_flags:
@@ -153,6 +161,10 @@ def segment_for(result) -> str:
         return "orphan_reply"
     if any((h.name or "") == "Mailer brand mismatch" for h in (result.headers or [])):
         return "mailer_brand"
+    if any((h.name or "") == "Resent-From domain" for h in (result.headers or [])):
+        return "resent_from"
+    if any((h.name or "") == "Message-ID domain" for h in (result.headers or [])):
+        return "msgid_from"
     if "archive_nested_email" in att_flags or "nested_email" in att_flags:
         return "nested_mail"
     if any(u.changed for u in (result.url_rewrites or [])):

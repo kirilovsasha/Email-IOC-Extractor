@@ -2,6 +2,14 @@
 
 Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 
+## Done in 2.18
+
+- ClickFix, image-only HTML, fake auth in body, Excel 4.0/XLM
+- Message-ID domain surfaced in the LOW header line; Resent-From mismatch
+- Calendar mitigation skipped on ICS URL or ATTACH; password + encrypted Office
+- PST folder prefix + attachment bytes when the library exposes them
+- GUI: campaign banner, risky batch step, feedback +N
+
 ## Done in 2.17.1
 
 - IOC precision: Message-ID / In-Reply-To / References not treated as email/domain IOC

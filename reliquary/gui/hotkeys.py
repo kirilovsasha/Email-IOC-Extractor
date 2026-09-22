@@ -40,6 +40,10 @@ class HotkeysMixin:
         self.bind("<Control-N>", lambda _e: self._batch_next_mail(1))
         self.bind("<Control-p>", lambda _e: self._batch_next_mail(-1))
         self.bind("<Control-P>", lambda _e: self._batch_next_mail(-1))
+        self.bind("<Control-Shift-n>", lambda _e: self._batch_next_mail(1, risky_only=True))
+        self.bind("<Control-Shift-N>", lambda _e: self._batch_next_mail(1, risky_only=True))
+        self.bind("<Control-Shift-p>", lambda _e: self._batch_next_mail(-1, risky_only=True))
+        self.bind("<Control-Shift-P>", lambda _e: self._batch_next_mail(-1, risky_only=True))
         self.bind("<Control-plus>", lambda _e: self._bump_scale(1))
         self.bind("<Control-equal>", lambda _e: self._bump_scale(1))
         self.bind("<Control-minus>", lambda _e: self._bump_scale(-1))
@@ -133,10 +137,24 @@ class HotkeysMixin:
         except (AttributeError, tk.TclError):
             pass
 
-    def _batch_next_mail(self, direction: int) -> str:
-        """Ctrl+N / Ctrl+P — следующее/предыдущее письмо пакета + peer-diff при наличии."""
-        batch = getattr(self, "_batch_results", None) or []
-        if len(batch) < 2:
+    def _batch_next_mail(self, direction: int, *, risky_only: bool = False) -> str:
+        """Ctrl+N / Ctrl+P — следующее письмо. Ctrl+Shift+N — только suspicious/malicious."""
+        batch = list(getattr(self, "_batch_results", None) or [])
+        if risky_only:
+            batch = [
+                r
+                for r in batch
+                if r.verdict and r.verdict.level.value in ("suspicious", "malicious")
+            ]
+            if hasattr(self, "_set_batch_verdict_chip"):
+                self._set_batch_verdict_chip("подозр.+")
+            if not batch:
+                self._set_status("В пакете нет suspicious/malicious")
+                return "break"
+        if len(batch) < 2 and not risky_only:
+            self._set_status("Пакет: нужно ≥2 письма")
+            return "break"
+        if len(batch) < 1:
             self._set_status("Пакет: нужно ≥2 письма")
             return "break"
         paths = [r.source_path for r in batch]
@@ -144,9 +162,9 @@ class HotkeysMixin:
         cur_path = current.source_path if current else ""
         try:
             idx = paths.index(cur_path)
+            nxt = (idx + direction) % len(paths)
         except ValueError:
-            idx = 0
-        nxt = (idx + direction) % len(paths)
+            nxt = 0 if direction > 0 else len(paths) - 1
         target = batch[nxt]
         # Reuse analysis result already in memory
         self.result = target
