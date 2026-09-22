@@ -34,11 +34,6 @@ class AnalysisActionsMixin:
     """Requires ExtractorApp prefs, widgets, and ``_apply_result`` helpers."""
 
     def _analysis_options(self) -> AnalysisOptions:
-        pwds = tuple(
-            p
-            for p in getattr(self, "_archive_passwords", ()) or ()
-            if isinstance(p, str) and p.strip()
-        )
         opts = AnalysisOptions(
             allowlist_path=getattr(self, "_allowlist_path", None),
             verdict_path=getattr(self, "_verdict_path", None),
@@ -47,7 +42,6 @@ class AnalysisActionsMixin:
             profile_dir=getattr(self, "_profile_dir", None),
             max_workers=int(self._prefs.get("max_workers") or 0),
             skip_broken=bool(self._prefs.get("skip_broken", True)),
-            archive_passwords=pwds,
             yara_rules_path=str(self._prefs.get("yara_rules_path") or "") or None,
             enable_yara=bool(self._prefs.get("enable_yara", False)),
         )
@@ -162,33 +156,6 @@ class AnalysisActionsMixin:
             ):
                 return
         self._analyze_paths(paths)
-
-    def unlock_encrypted_and_reanalyze(self) -> None:
-        """Запросить пароль архива и переразобрать текущее письмо."""
-        from tkinter import simpledialog
-
-        if not self.result or not self.result.source_path:
-            messagebox.showinfo(__app_name__, "Сначала откройте письмо с архивом")
-            return
-        has_enc = any(
-            "encrypted_archive" in (a.risk_flags or []) for a in (self.result.attachments or [])
-        )
-        if not has_enc:
-            messagebox.showinfo(__app_name__, "Нет вложений с флагом encrypted_archive")
-            return
-        pwd = simpledialog.askstring(
-            __app_name__,
-            "Пароль архива (только для этой сессии, не сохраняется):",
-            parent=self,
-            show="*",
-        )
-        if not pwd:
-            return
-        existing = list(getattr(self, "_archive_passwords", ()) or ())
-        if pwd not in existing:
-            existing.append(pwd)
-        self._archive_passwords = tuple(existing)
-        self._analyze_paths([self.result.source_path])
 
     def _on_drop(self, files) -> None:
         from reliquary.core.formats import SUPPORTED_SUFFIXES

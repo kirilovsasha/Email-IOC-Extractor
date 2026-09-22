@@ -7,20 +7,14 @@ import io
 import re
 import zipfile
 from pathlib import Path
-from typing import Iterable
 
 import filetype
 
 from reliquary.core.models import AttachmentInfo
 
-MAX_KEEP_BYTES = 8 * 1024 * 1024  # hard cap for nested-email payload
+MAX_KEEP_BYTES = 8 * 1024 * 1024  # hard cap for bytes kept on the attachment
 MAX_ARCHIVE_ENTRIES = 200
-MAX_NEST_DEPTH = 4
-MAX_NESTED_MEMBER_BYTES = 5 * 1024 * 1024
-MAX_NESTED_MEMBERS = 12
-# Zip-bomb heuristics: reject members with extreme inflate ratios / cumulative bytes
-MAX_INFLATE_RATIO = 100
-MAX_TOTAL_INFLATED_BYTES = 40 * 1024 * 1024
+# Declared sizes only — member bytes are not inflated (sandbox does that).
 MAX_ARCHIVE_UNCOMPRESSED_SUM = 80 * 1024 * 1024
 
 DANGEROUS_EXTENSIONS = {
@@ -158,18 +152,11 @@ def _zip_encrypted(data: bytes) -> bool:
     return False
 
 
-def _inventory_zip(
-    data: bytes,
-    *,
-    depth: int = 0,
-    inflated_budget: list[int] | None = None,
-) -> tuple[list[str], list[str], list[str]]:
-    """Return (entries, risk_flags, notes) for a ZIP/OOXML container. No full extract."""
+def _inventory_zip(data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Names and flags from the ZIP directory. Member bytes are not unpacked."""
     entries: list[str] = []
     flags: list[str] = []
     notes: list[str] = []
-    if inflated_budget is None:
-        inflated_budget = [0]
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             infos = [zi for zi in zf.infolist() if not zi.is_dir()]
@@ -179,7 +166,7 @@ def _inventory_zip(
             if encrypted or _zip_encrypted(data):
                 flags.append("encrypted_archive")
                 notes.append(
-                    "⚠ ЗАЩИЩЁН ПАРОЛЕМ: ZIP encrypted — имена видны, содержимое не извлечено"
+                    "⚠ ЗАЩИЩЁН ПАРОЛЕМ: ZIP encrypted — сигнал, содержимое не распаковывается"
                 )
 
             # Declared uncompressed sum (zip-bomb signal without reading)
@@ -240,59 +227,9 @@ def _inventory_zip(
             ]
             if nested_archives:
                 flags.append("nested_archive")
-                notes.append("Внутри есть вложенный архив")
-
-            if depth < MAX_NEST_DEPTH and nested_archives:
-                peeked = 0
-                for zi in nested_archives:
-                    if peeked >= MAX_NESTED_MEMBERS:
-                        notes.append(
-                            f"Вложенные архивы: разобраны первые {MAX_NESTED_MEMBERS}"
-                        )
-                        break
-                    if inflated_budget[0] >= MAX_TOTAL_INFLATED_BYTES:
-                        flags.append("zip_bomb_suspect")
-                        notes.append("⚠ Zip-bomb: лимит раздутых байт — вложенные пропущены")
-                        break
-                    if zi.file_size > MAX_NESTED_MEMBER_BYTES:
-                        notes.append(
-                            f"Пропуск крупного вложенного архива: {Path(zi.filename).name}"
-                        )
-                        continue
-                    csize = max(1, int(zi.compress_size or 0))
-                    fsize = max(0, int(zi.file_size or 0))
-                    if fsize and (fsize / csize) > MAX_INFLATE_RATIO:
-                        flags.append("zip_bomb_suspect")
-                        notes.append(
-                            f"⚠ Zip-bomb ratio: {Path(zi.filename).name} "
-                            f"({fsize}/{csize})"
-                        )
-                        continue
-                    try:
-                        nested_data = zf.read(zi)
-                    except (KeyError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
-                        notes.append(
-                            f"Не прочитан {zi.filename} ({type(exc).__name__}): {exc}"
-                        )
-                        continue
-                    if len(nested_data) > MAX_NESTED_MEMBER_BYTES:
-                        notes.append(
-                            f"Пропуск: inflated {Path(zi.filename).name} "
-                            f"> {MAX_NESTED_MEMBER_BYTES}"
-                        )
-                        continue
-                    inflated_budget[0] += len(nested_data)
-                    peeked += 1
-                    n_entries, n_flags, n_notes = _inventory_zip(
-                        nested_data, depth=depth + 1, inflated_budget=inflated_budget
-                    )
-                    prefix = zi.filename.rstrip("/")
-                    entries.extend(f"{prefix}::{e}" for e in n_entries[:80])
-                    for fl in n_flags:
-                        if fl not in flags:
-                            flags.append(fl)
-                    for note in n_notes[:4]:
-                        notes.append(f"[{Path(zi.filename).name}] {note}")
+                notes.append(
+                    "Внутри есть вложенный архив — содержимое не распаковывается (песочница)"
+                )
 
     except zipfile.BadZipFile:
         notes.append("ZIP: повреждённый или нестандартный контейнер")
@@ -565,67 +502,10 @@ def extract_nested_mail_from_archive(
     data: bytes,
     *,
     container_name: str = "archive",
-    passwords: Iterable[str] | None = None,
 ) -> tuple[list["AttachmentInfo"], list[str]]:
-    """Extract .eml/.msg members from ZIP (or RAR if tool available)."""
-    notes: list[str] = []
-    extracted: list[AttachmentInfo] = []
-    lower = container_name.lower()
-    pwds = [p for p in (passwords or []) if (p or "").strip()]
-
-    def _add(name: str, payload: bytes) -> None:
-        if len(payload) > MAX_NESTED_MEMBER_BYTES:
-            notes.append(f"Пропуск крупного вложенного письма: {name}")
-            return
-        info = inspect_bytes(name, payload, keep_bytes=True)
-        if "nested_email" not in info.risk_flags:
-            info.risk_flags.append("nested_email")
-        info.notes.append(f"Извлечено из архива «{Path(container_name).name}»")
-        extracted.append(info)
-
-    if data[:2] == b"PK" or lower.endswith(".zip"):
-        try:
-            with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                encrypted = any(zi.flag_bits & 0x1 for zi in zf.infolist())
-                if encrypted:
-                    if not pwds:
-                        notes.append("ZIP зашифрован — вложенные письма не извлечены")
-                        return extracted, notes
-                    from reliquary.core.archive_unlock import extract_zip_with_passwords
-
-                    members, xnotes = extract_zip_with_passwords(data, pwds)
-                    notes.extend(xnotes)
-                    for name, payload in members:
-                        if Path(name).suffix.lower() in NESTED_MAIL_EXT:
-                            _add(name, payload)
-                        if len(extracted) >= MAX_NESTED_MEMBERS:
-                            break
-                    return extracted, notes
-                for zi in zf.infolist():
-                    if zi.is_dir():
-                        continue
-                    if Path(zi.filename).suffix.lower() not in NESTED_MAIL_EXT:
-                        continue
-                    if zi.file_size > MAX_NESTED_MEMBER_BYTES:
-                        notes.append(f"Пропуск: {zi.filename} слишком большой")
-                        continue
-                    try:
-                        payload = zf.read(zi)
-                    except (KeyError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
-                        notes.append(f"{zi.filename}: {exc}")
-                        continue
-                    _add(Path(zi.filename).name, payload)
-                    if len(extracted) >= MAX_NESTED_MEMBERS:
-                        break
-        except zipfile.BadZipFile as exc:
-            notes.append(f"ZIP nested-mail: {exc}")
-        return extracted, notes
-
-    if data[:4] == b"Rar!" or lower.endswith(".rar"):
-        notes.append("RAR nested-mail: вложенные письма из RAR не извлекаются")
-        return extracted, notes
-
-    return extracted, notes
+    """Do not unpack archive members. That belongs in a sandbox."""
+    del data, container_name
+    return [], ["Архив не распаковывается: содержимое разбирается в песочнице"]
 
 
 def _parse_lnk_target(data: bytes) -> tuple[list[str], list[str]]:

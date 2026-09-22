@@ -97,33 +97,34 @@ def test_archive_unlock_password(tmp_path: Path) -> None:
     if not encrypted:
         pytest.skip("produced zip is not encrypted")
     members, notes = extract_zip_with_passwords(raw, ["secret"])
-    assert members, notes
+    assert members == []
+    assert notes
 
 
-def test_unlock_attachment_updates_flags() -> None:
-    # Non-encrypted: unlock should still inventory members when password unused path
+def test_unlock_attachment_keeps_encrypted_signal() -> None:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("a.txt", b"hi")
     att = inspect_bytes("a.zip", buf.getvalue(), keep_bytes=True)
-    # Without encryption, unlock_attachment still extracts via zip path
     if "encrypted_archive" not in att.risk_flags:
         att.risk_flags.append("encrypted_archive")
     updated, kids, notes = unlock_attachment(att, ["x"])
-    # Wrong password → notes explain failure OR success on plain zip
-    assert isinstance(notes, list)
+    assert kids == []
+    assert notes
     assert updated is att
+    assert "encrypted_archive" in updated.risk_flags
+    assert "archive_unlocked" not in (updated.risk_flags or [])
 
 
-def test_pipeline_archive_password_option() -> None:
+def test_pipeline_archive_password_does_not_extract() -> None:
     sample = CORPUS / "malicious_encrypted_zip.eml"
     if not sample.is_file():
         pytest.skip("corpus sample missing")
     opts = AnalysisOptions(archive_passwords=("1234",))
     r = analyze_file(sample, options=opts)
     assert r.verdict is not None
-    # Password may or may not decrypt corpus zip depending on encoding; no crash
     assert r.source_kind == "email"
+    assert not any("archive_unlocked" in (a.risk_flags or []) for a in r.attachments)
 
 
 def test_yara_scan_graceful_without_package() -> None:

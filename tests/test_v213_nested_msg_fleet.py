@@ -22,15 +22,14 @@ from reliquary.core.verdict import VerdictConfig, render_verdict
 CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
 
-def test_nested_mail_extracted_from_zip() -> None:
+def test_nested_mail_in_zip_is_signal_only() -> None:
     r = analyze_file(CORPUS / "suspicious_nested_mail_in_zip.eml")
     assert r.verdict is not None
     flags = {f for a in r.attachments for f in a.risk_flags}
     assert "archive_nested_email" in flags
-    assert any(a.filename.endswith(".eml") for a in r.attachments)
+    assert not any(a.filename == "notice.eml" for a in r.attachments)
     urls = [i.value for i in r.iocs if i.ioc_type.value == "url"]
-    assert any("evil-phish.top" in u for u in urls)
-    assert segment_for(r) in {"nested_mail", "phishing_content", "attachment", "other"}
+    assert not any("evil-phish.top" in u for u in urls)
 
 
 def test_password_zip_match_signal() -> None:
@@ -165,7 +164,7 @@ def test_extract_nested_helper_direct() -> None:
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("inner.eml", inner)
     kids, notes = extract_nested_mail_from_archive(buf.getvalue(), container_name="x.zip")
-    assert len(kids) == 1
-    assert "nested_email" in kids[0].risk_flags
+    assert kids == []
+    assert notes
     info = inspect_bytes("x.zip", buf.getvalue())
     assert "archive_nested_email" in info.risk_flags

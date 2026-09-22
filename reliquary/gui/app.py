@@ -120,7 +120,6 @@ class ExtractorApp(
         self._brands_path = str(self._prefs.get("brands_path") or "") or None
         self._profile_dir = str(self._prefs.get("profile_dir") or "") or None
         self._handoff_by_level: dict[str, str] | None = None
-        self._archive_passwords: tuple[str, ...] = ()
         self._job_busy = False
         self._hint_default = "Откройте письмо или вставьте RFC822 · затем вкладка «Вердикт»"
         self._flash_after_id: str | None = None
@@ -382,10 +381,6 @@ class ExtractorApp(
             menu.add_command(
                 label="Заметка: шифрованный архив",
                 command=self._copy_encrypted_archive_note,
-            )
-            menu.add_command(
-                label="Пароль архива и переразбор…",
-                command=self.unlock_encrypted_and_reanalyze,
             )
         try:
             menu.tk_popup(x_root, y_root)

@@ -629,33 +629,9 @@ def _enrich_parsed_result(
 
     blob = f"{parsed.text}\n{parsed.html}"
 
-    # Expand nested mail from ZIP/RAR and TNEF into attachment list (bounded)
+    # Archives are signals (names, encryption). Payloads are not unpacked.
     expanded: list = []
-    passwords = tuple(opts.archive_passwords or ())
     for att in list(result.attachments):
-        if (
-            att.data
-            and passwords
-            and "encrypted_archive" in (att.risk_flags or [])
-        ):
-            try:
-                from reliquary.core.archive_unlock import unlock_attachment
-
-                _att, kids, unotes = unlock_attachment(att, passwords)
-                result.errors.extend(unotes)
-                expanded.extend(kids)
-            except (OSError, ValueError, TypeError, RuntimeError) as exc:
-                result.errors.append(f"Unlock {att.filename}: {exc}")
-        if att.data and "archive_nested_email" in (att.risk_flags or []):
-            from reliquary.core.attachment_inspector import extract_nested_mail_from_archive
-
-            kids, knotes = extract_nested_mail_from_archive(
-                att.data, container_name=att.filename, passwords=passwords
-            )
-            result.errors.extend(knotes)
-            expanded.extend(kids)
-            if kids:
-                att.notes.append(f"Извлечено вложенных писем: {len(kids)}")
         if att.data and "tnef_attachment" in (att.risk_flags or []):
             try:
                 from reliquary.core.attachment_inspector import inspect_bytes

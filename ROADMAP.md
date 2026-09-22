@@ -9,6 +9,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - Calendar mitigation skipped on ICS URL or ATTACH; password + encrypted Office
 - PST folder prefix + attachment bytes when the library exposes them
 - GUI: campaign banner, risky batch step, feedback +N
+- Archives are signals only: no unpack of ZIP/7z/RAR members (sandbox)
 
 ## Done in 2.17.1
 

@@ -178,13 +178,6 @@ def main(argv: list[str] | None = None) -> int:
         help="То же, что --feedback-weights (веса + пороги/caps)",
     )
     parser.add_argument(
-        "--archive-password",
-        action="append",
-        default=[],
-        metavar="PWD",
-        help="Пароль для encrypted ZIP/7z (RAR не расшифровывается; можно несколько раз; не логируется)",
-    )
-    parser.add_argument(
         "--enable-yara",
         action="store_true",
         help="Офлайн YARA scan (нужен pip install .[yara] и rules рядом с EXE)",
@@ -422,9 +415,6 @@ def main(argv: list[str] | None = None) -> int:
     opts.profile_dir = args.profile_dir or opts.profile_dir
     opts.max_workers = args.workers
     opts.skip_broken = not args.no_skip_broken
-    pwds = tuple(p for p in (getattr(args, "archive_password", None) or []) if p)
-    if pwds:
-        opts.archive_passwords = pwds
     if getattr(args, "enable_yara", False):
         opts.enable_yara = True
     if getattr(args, "yara_rules_path", None):

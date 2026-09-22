@@ -48,8 +48,8 @@ pip install -e ".[pst]"    # разбор Outlook .pst (libratom)
 ### 📦 Одна EXE-сборка
 
 CI / `build_exe.bat` публикуют **`EmailIOCExtractor.exe`** (core + QR).
-Разделения Lite/Full нет. RAR-вложения детектятся без listing членов;
-ZIP/7z unlock и опциональный YARA остаются.
+Разделения Lite/Full нет. RAR-вложения детектятся без listing членов.
+Запароленный архив — сигнал, без расшифровки. Опциональный YARA остаётся.
 
 В Release notes публикуется **SHA256** одного EXE.
 
@@ -69,7 +69,7 @@ ZIP/7z unlock и опциональный YARA остаются.
    На вердикте строка кампании, если From-домены в группе разошлись.
 6. Ctrl+Shift+V — компактный режим (только вердикт, без панели исходника).
 7. ПКМ по IOC → **В allowlist**, **Сменить вердикт…**, Feedback FP / FN / подтвердить
-   (`analyst_feedback.ndjson`); пароль ZIP/7z на сессию. RAR с паролем не расшифровывается.
+   (`analyst_feedback.ndjson`). Запароленный архив — сигнал, содержимое не извлекается.
 8. ⚙️ **Настройки** → импорт org profile; тема / contrast / фильтры IOC.
 
 ---
@@ -133,8 +133,7 @@ reliquary mail.eml --profile org_profile.example/m365
 reliquary mail.eml --profile org_profile.example/by_gov
 reliquary mail.eml --profile org_pack.zip
 
-# архив ZIP/7z (RAR не расшифровывается) / YARA (2.16+: bundled yara_rules/default.yar, auto if yara installed)
-reliquary mail.eml --archive-password 'secret'
+# YARA (2.16+: bundled yara_rules/default.yar, auto if yara installed)
 reliquary mail.eml --enable-yara --yara-rules rules.yar
 
 # самопроверка / feedback
@@ -195,7 +194,7 @@ remote template, опционально YARA\*\*\*.
 | 📝 | Тело | urgency, credential / OWA, BEC / ЕРИП, href≠label, скрытый HTML, формы, cloud lure, ClickFix, image-only HTML, поддельный Authentication-Results |
 | 🔗 | URL | SafeLinks / Proofpoint / Barracuda / Mimecast / Mail.ru / Yandex / VK / Bitrix / amoCRM / 1C / gov RU·BY unwrap (офлайн) |
 | 🎭 | Lookalike | IDN / punycode, homoglyph, Levenshtein к брендам (`brands.txt`) |
-| 📎 | Вложения | double ext, macros, Excel 4.0/XLM, encrypted ZIP/7z (session password; RAR не расшифровывается), encrypted Office + пароль в теле, nested mail, TNEF, ISO+LNK, QR-URL |
+| 📎 | Вложения | double ext, macros, Excel 4.0/XLM, архив (имена и флаги, без распаковки), encrypted Office + пароль в теле, вложенное письмо как MIME, TNEF, ISO+LNK, QR-URL |
 | 🎯 | IOC | IP, домены, URL, хеши — evidence для экспорта / тикета |
 
 ### ⚖️ Вердикт (score 0–100)
@@ -253,7 +252,7 @@ Override: `verdict_extra.json`
 см. [`org_profile.example/README.md`](org_profile.example/README.md).
 
 CLI: `--allowlist` · `--verdict` · `--handoff-template` · `--profile` ·
-`--post-export-hook` · `--archive-password` · `--enable-yara` · `--yara-rules` ·
+`--post-export-hook` · `--enable-yara` · `--yara-rules` ·
 `--feedback-weights` · `--feedback-tune`  
 Prefs: `allowlist_path`, `verdict_path`, `handoff_template_path`, `profile_dir`, `brands_path`,
 `post_export_hook`, `post_export_hook_allow_external`, `disable_post_export_hook`,

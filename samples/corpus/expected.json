@@ -470,9 +470,9 @@
     ]
   },
   "suspicious_nested_archive.eml": {
-    "level": "malicious",
-    "score_min": 69,
-    "score_max": 89
+    "level": "suspicious",
+    "score_min": 49,
+    "score_max": 59
   },
   "suspicious_nested_depth2.eml": {
     "level": "malicious",
@@ -495,8 +495,8 @@
   },
   "suspicious_nested_mail_in_zip.eml": {
     "level": "malicious",
-    "score_min": 90,
-    "score_max": 100
+    "score_min": 60,
+    "score_max": 71
   },
   "suspicious_nested_unwrap.eml": {
     "level": "malicious",
