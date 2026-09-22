@@ -64,10 +64,22 @@ def _score_headers(
         Severity.MEDIUM: cfg.weight_header_medium,
         Severity.LOW: cfg.weight_header_low,
     }
-    # Best finding per severity tier (avoid N× same weight)
+    # Lookalike owns the main display-spoof weight. A small header nudge keeps
+    # Reply-To + spoof above the malicious line without a second full HIGH.
+    compound_headers = {
+        "Sender mismatch",
+        "Orphan reply",
+        "Mailer brand mismatch",
+    }
+    display_spoof = False
     best: dict[Severity, str] = {}
     counts: dict[Severity, int] = {}
     for h in result.headers:
+        if h.name == "Display-name spoof":
+            display_spoof = True
+            continue
+        if h.name in compound_headers:
+            continue
         if h.severity not in tier_weight:
             continue
         counts[h.severity] = counts.get(h.severity, 0) + 1
@@ -85,6 +97,14 @@ def _score_headers(
                     f"Доп. {sev.value} header findings (×{counts[sev]})",
                 )
             )
+    if display_spoof:
+        parts.append(
+            ScoreContribution(
+                "headers",
+                cfg.weight_header_low,
+                "Display-name spoof (основной вес — в lookalike)",
+            )
+        )
     return _apply_cap(parts, cfg.cap_headers, "headers")
 
 
@@ -133,7 +153,20 @@ def _score_attachments(
         "office_dde",
         "ole_package",
         "pdf_openaction_uri",
+        "pdf_launch",
+        "pdf_submitform",
+        "pdf_gotor",
         "onenote_embedded_file",
+        "lure_shortcut",
+        "lure_shortcut_target",
+        "rtf_exploit",
+        "rtf_objupdate",
+        "rtf_equation",
+        "rtf_ole",
+        "office_encrypted",
+        "office_external_data",
+        "iso_contains_script",
+        "disk_contains_script",
     }
     seen_flags: set[str] = set()
     soft_noted = False
@@ -150,6 +183,16 @@ def _score_attachments(
                         f"Шифрованный архив «{att.filename}» — содержимое не извлечено офлайн",
                     )
                 )
+                rest.discard("encrypted_archive")
+            if "office_encrypted" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_encrypted,
+                        f"Зашифрованный Office «{att.filename}» — содержимое не извлечено",
+                    )
+                )
+                rest.discard("office_encrypted")
                 rest.discard("encrypted_archive")
             if "iso_image" in rest or "disk_image" in rest:
                 parts.append(
@@ -281,16 +324,25 @@ def _score_attachments(
                     )
                 )
                 rest.discard("iso_contains_lnk")
-            if "iso_contains_exe" in rest or "disk_contains_exe" in rest:
+            if "iso_contains_exe" in rest or "disk_contains_exe" in rest or (
+                "iso_contains_script" in rest or "disk_contains_script" in rest
+            ):
+                kinds: list[str] = []
+                if "iso_contains_exe" in rest or "disk_contains_exe" in rest:
+                    kinds.append(".exe/.dll/.scr")
+                if "iso_contains_script" in rest or "disk_contains_script" in rest:
+                    kinds.append("скрипт")
                 parts.append(
                     ScoreContribution(
                         "attachments",
                         cfg.weight_iso_exe,
-                        f"Образ «{att.filename}» содержит .exe/.dll/.scr",
+                        f"Образ «{att.filename}» содержит {' + '.join(kinds)}",
                     )
                 )
                 rest.discard("iso_contains_exe")
                 rest.discard("disk_contains_exe")
+                rest.discard("iso_contains_script")
+                rest.discard("disk_contains_script")
                 rest.discard("archive_dangerous_member")
             if "office_remote_template" in rest:
                 parts.append(
@@ -406,6 +458,59 @@ def _score_attachments(
                 )
                 rest.discard("onenote_embedded_file")
                 rest.discard("onenote_attachment")
+            if "pdf_launch" in rest or "pdf_submitform" in rest or "pdf_gotor" in rest:
+                which = [
+                    name
+                    for name in ("pdf_launch", "pdf_submitform", "pdf_gotor")
+                    if name in rest
+                ]
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_pdf_launch,
+                        f"PDF «{att.filename}»: {', '.join(which)}",
+                    )
+                )
+                rest.discard("pdf_launch")
+                rest.discard("pdf_submitform")
+                rest.discard("pdf_gotor")
+            if "lure_shortcut" in rest or "lure_shortcut_target" in rest:
+                target = next(
+                    (e for e in (att.archive_entries or []) if e),
+                    "",
+                )
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_lure_shortcut,
+                        f"Файл-ярлык «{att.filename}»"
+                        + (f" → {target[:80]}" if target else ""),
+                    )
+                )
+                rest.discard("lure_shortcut")
+                rest.discard("lure_shortcut_target")
+                rest.discard("dangerous_extension")
+            if "rtf_exploit" in rest or "rtf_objupdate" in rest or "rtf_equation" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_rtf_exploit,
+                        f"RTF «{att.filename}»: objupdate / Equation / OLE",
+                    )
+                )
+                rest.discard("rtf_exploit")
+                rest.discard("rtf_objupdate")
+                rest.discard("rtf_equation")
+                rest.discard("rtf_ole")
+            if "office_external_data" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_external_data,
+                        f"OOXML внешние данные «{att.filename}» (connections/WEBSERVICE/HYPERLINK)",
+                    )
+                )
+                rest.discard("office_external_data")
             if rest:
                 pts = cfg.weight_attachment_flag * min(2, len(rest))
                 parts.append(
@@ -474,7 +579,7 @@ def _score_urls(
             )
         )
 
-    suspicious_tlds = (".xyz", ".top", ".club", ".gq", ".tk", ".ml", ".cf", ".ga", ".zip", ".mov")
+    suspicious_tlds = cfg.suspicious_tlds or ()
     for ioc in result.iocs:
         if ioc.ioc_type.value in ("domain", "url"):
             val = ioc.value.lower()
@@ -488,6 +593,91 @@ def _score_urls(
                 )
                 break
     return _apply_cap(parts, cfg.cap_urls, "urls")
+
+
+def _from_domain(result: AnalysisResult) -> str:
+    raw = ""
+    if result.mail_identity and result.mail_identity.from_header:
+        raw = result.mail_identity.from_header
+    elif result.sender:
+        raw = result.sender
+    if "<" in raw and ">" in raw:
+        raw = raw.split("<", 1)[1].split(">", 1)[0]
+    raw = raw.strip().lower().strip(">")
+    if "@" not in raw:
+        return ""
+    return raw.rsplit("@", 1)[-1].strip()
+
+
+_FREEMAIL_DOMAINS = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "mail.ru",
+        "bk.ru",
+        "inbox.ru",
+        "list.ru",
+        "yandex.ru",
+        "ya.ru",
+        "yandex.com",
+        "outlook.com",
+        "hotmail.com",
+        "live.com",
+        "icloud.com",
+        "rambler.ru",
+        "yahoo.com",
+    }
+)
+_LURE_FILE_SUFFIXES = (
+    ".html",
+    ".htm",
+    ".url",
+    ".iqy",
+    ".slk",
+    ".settingcontent-ms",
+    ".library-ms",
+    ".searchconnector-ms",
+    ".appref-ms",
+    ".diagcab",
+    ".hta",
+    ".scf",
+    ".chm",
+)
+
+
+def _append_lure_compounds(result: AnalysisResult, signals: list) -> None:
+    """Password+lure-file and freemail+BEC, scored with the content cap."""
+    from reliquary.core.content_signals import ContentSignal
+
+    kinds = {s.kind for s in signals}
+    lure_file = any(
+        (a.filename or "").lower().endswith(_LURE_FILE_SUFFIXES)
+        or "lure_shortcut" in (a.risk_flags or [])
+        or "html_attachment" in (a.risk_flags or [])
+        for a in result.attachments
+    )
+    if (
+        lure_file
+        and kinds.intersection({"archive_password", "archive_password_match"})
+        and "password_lure_file" not in kinds
+    ):
+        signals.append(
+            ContentSignal(
+                "password_lure_file",
+                "Пароль в теле и вложение HTML/ярлык",
+                "weight_password_lure_file",
+            )
+        )
+    if "bec_payment" in kinds and "freemail_bec" not in kinds:
+        dom = _from_domain(result)
+        if dom in _FREEMAIL_DOMAINS:
+            signals.append(
+                ContentSignal(
+                    "freemail_bec",
+                    f"BEC с freemail From ({dom})",
+                    "weight_freemail_bec",
+                )
+            )
 
 
 def _score_content(
@@ -527,7 +717,9 @@ def _score_content(
         has_urls=has_urls,
         has_attachments=has_att,
         has_encrypted_archive=has_enc,
+        suspicious_tlds=cfg.suspicious_tlds,
     )
+    _append_lure_compounds(result, signals)
     # Persist kinds on result for export / corpus
     if signals and not result.content_signals:
         result.content_signals = [s.kind for s in signals]
@@ -553,6 +745,12 @@ def _score_content(
         "weight_form_action_suspicious": cfg.weight_form_action_suspicious,
         "weight_wrap_lure": cfg.weight_wrap_lure,
         "weight_campaign_divergence": cfg.weight_campaign_divergence,
+        "weight_dangerous_scheme": cfg.weight_dangerous_scheme,
+        "weight_url_userinfo": cfg.weight_url_userinfo,
+        "weight_bec_callback": cfg.weight_bec_callback,
+        "weight_payment_tokens": cfg.weight_payment_tokens,
+        "weight_password_lure_file": cfg.weight_password_lure_file,
+        "weight_freemail_bec": cfg.weight_freemail_bec,
     }
     for sig in signals:
         pts = weight_map.get(sig.weight_key, 8)
@@ -821,6 +1019,33 @@ def _score_compounds(
                     "campaign_divergence"
                 ]
 
+    for h in result.headers:
+        if h.name == "Sender mismatch" and h.severity == Severity.HIGH:
+            parts.append(
+                ScoreContribution(
+                    "compound",
+                    cfg.weight_sender_mismatch,
+                    "Sender ≠ From без DMARC pass",
+                )
+            )
+            break
+    if any(h.name == "Orphan reply" for h in result.headers):
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_orphan_reply,
+                "Тема Re:/Отв: без In-Reply-To и References",
+            )
+        )
+    if any(h.name == "Mailer brand mismatch" for h in result.headers):
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_mailer_brand,
+                "Скриптовый X-Mailer при display-name бренда",
+            )
+        )
+
     total = sum(c.points for c in parts)
     return total, parts
 
@@ -936,7 +1161,17 @@ def _score_mitigations(
         "office_dde",
         "ole_package",
         "pdf_openaction_uri",
+        "pdf_launch",
+        "pdf_submitform",
+        "pdf_gotor",
         "onenote_embedded_file",
+        "lure_shortcut",
+        "lure_shortcut_target",
+        "rtf_exploit",
+        "office_encrypted",
+        "office_external_data",
+        "iso_contains_script",
+        "disk_contains_script",
     }
     has_high_att = any(high_att.intersection(a.risk_flags) for a in result.attachments)
     bad_content = {
@@ -955,6 +1190,12 @@ def _score_mitigations(
         "form_action_suspicious",
         "wrap_lure",
         "campaign_divergence",
+        "dangerous_scheme",
+        "url_userinfo",
+        "bec_callback",
+        "payment_tokens",
+        "password_lure_file",
+        "freemail_bec",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
     # Display-name spoof must block allowlist-From mitigation
@@ -1069,6 +1310,37 @@ _CALENDAR_RE = re.compile(
     r"you are invited|calendar invite|приглашение|запрос на собрание|"
     r"план[её]рк)"
 )
+_VCAL_BLOCK_RE = re.compile(
+    r"(?is)BEGIN:VCALENDAR.{0,8000}?END:VCALENDAR"
+)
+
+
+def _calendar_surface(result: AnalysisResult, blob: str) -> bool:
+    if _CALENDAR_RE.search(blob):
+        return True
+    return any(
+        (a.mime_guess or "").lower() == "text/calendar"
+        or (a.filename or "").lower().endswith((".ics", ".ical"))
+        for a in result.attachments
+    )
+
+
+def _ics_contains_url(result: AnalysisResult, blob: str) -> bool:
+    """True when the calendar payload itself carries an http(s) link."""
+    for match in _VCAL_BLOCK_RE.finditer(blob or ""):
+        if re.search(r"(?i)https?://", match.group(0)):
+            return True
+    for att in result.attachments:
+        name = (att.filename or "").lower()
+        mime = (att.mime_guess or "").lower()
+        if mime != "text/calendar" and not name.endswith((".ics", ".ical")):
+            continue
+        raw = att.data or b""
+        if re.search(br"(?i)https?://", raw):
+            return True
+    return False
+
+
 _CORP_SIG_RE = re.compile(
     r"(?i)(с уважением|best regards|kind regards|confidentiality notice|"
     r"это сообщение и любые вложения|disclaimer|юридическ\w+\s+оговорк)"
@@ -1092,11 +1364,7 @@ def _benign_marker_parts(
                 "Автоответ / Out-of-Office — смягчение score",
             )
         )
-    if _CALENDAR_RE.search(blob) or any(
-        (a.mime_guess or "").lower() == "text/calendar"
-        or a.filename.lower().endswith((".ics", ".ical"))
-        for a in result.attachments
-    ):
+    if _calendar_surface(result, blob) and not _ics_contains_url(result, blob):
         parts.append(
             ScoreContribution(
                 "mitigation",

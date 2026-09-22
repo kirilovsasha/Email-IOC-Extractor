@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from reliquary.core.verdict_config import DEFAULT_SUSPICIOUS_TLDS
+
 CREDENTIAL_RE = re.compile(
     r"(?i)\b("
     r"login|sign[\s-]?in|log[\s-]?in|password|passwd|passcode|"
@@ -80,18 +82,33 @@ HIDDEN_STYLE_RE = re.compile(
     r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0)"
 )
 
-_SUSPICIOUS_FORM_TLDS = (
-    ".xyz",
-    ".top",
-    ".club",
-    ".gq",
-    ".tk",
-    ".ml",
-    ".cf",
-    ".ga",
-    ".zip",
-    ".mov",
-    ".ru.com",
+DANGEROUS_SCHEME_RE = re.compile(
+    r"(?i)(?:search-ms|ms-msdt|ms-officecmd|ms-appinstaller|vbscript|mhtml|file)\s*:"
+)
+USERINFO_URL_RE = re.compile(
+    r"(?i)\bhttps?://([^\s/@<>\"']*\.[^\s/@<>\"']*)@[^\s/<>\"']+"
+)
+PAYMENT_CHANGE_RE = re.compile(
+    r"(?i)("
+    r"смен\w{0,8}\s+реквизит|"
+    r"нов\w{2,8}\s+реквизит|"
+    r"изменил\w{0,6}\s+(?:реквизит|плат[её]жн|банковск)|"
+    r"change\s+(?:of\s+)?(?:bank(?:ing)?|payment)\s+details|"
+    r"updated?\s+(?:bank|payment)\s+details|"
+    r"новые\s+банковск"
+    r")"
+)
+IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")
+CALLBACK_RE = re.compile(
+    r"(?i)("
+    r"не\s+отвечайте\s+на\s+(?:это\s+)?письм|"
+    r"не\s+пишите.{0,24}перезвон|"
+    r"перезвоните|"
+    r"позвоните\s+(?:мне|нам|по\s+номер)|"
+    r"call\s+(?:me|us)\s+back|"
+    r"do\s+not\s+reply.{0,48}\bcall\b|"
+    r"только\s+по\s+телефон"
+    r")"
 )
 
 SHORTENER_RE = re.compile(
@@ -221,7 +238,9 @@ def _hidden_text(html: str, soup: BeautifulSoup) -> list[ContentSignal]:
     return []
 
 
-def _html_forms(soup: BeautifulSoup) -> list[ContentSignal]:
+def _html_forms(
+    soup: BeautifulSoup, tlds: tuple[str, ...]
+) -> list[ContentSignal]:
     forms = soup.find_all("form")
     if not forms:
         return []
@@ -249,7 +268,17 @@ def _html_forms(soup: BeautifulSoup) -> list[ContentSignal]:
         )
     for form in forms:
         action = unescape(str(form.get("action") or "")).strip()
-        if not action or action.startswith(("#", "mailto:", "javascript:")):
+        action_l = action.lower()
+        if action_l.startswith("javascript:"):
+            out.append(
+                ContentSignal(
+                    "dangerous_scheme",
+                    f"form action javascript: {action[:60]}",
+                    "weight_dangerous_scheme",
+                )
+            )
+            break
+        if not action or action_l.startswith(("#", "mailto:")):
             continue
         try:
             host = (urlparse(action if "://" in action else f"//{action}").hostname or "").lower()
@@ -258,7 +287,7 @@ def _html_forms(soup: BeautifulSoup) -> list[ContentSignal]:
         raw_ip = bool(re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", host or ""))
         bad_tld = any(
             (host or "").endswith(tld) or f"{tld}/" in action.lower()
-            for tld in _SUSPICIOUS_FORM_TLDS
+            for tld in tlds
         )
         if raw_ip or bad_tld:
             out.append(
@@ -300,6 +329,65 @@ def _cid_phishing(soup: BeautifulSoup, html: str) -> list[ContentSignal]:
     return []
 
 
+def _dangerous_schemes(blob: str, soup: BeautifulSoup | None) -> list[ContentSignal]:
+    """URI schemes used as mail lures (search-ms, ms-msdt, file, javascript, …)."""
+    hits: list[str] = []
+    match = DANGEROUS_SCHEME_RE.search(blob or "")
+    if match:
+        hits.append(match.group(0)[:40])
+    if soup is not None:
+        for tag in soup.find_all(href=True):
+            href = unescape(str(tag.get("href") or "")).strip()
+            if href.lower().startswith("javascript:"):
+                hits.append("javascript:")
+                break
+    if not hits:
+        return []
+    return [
+        ContentSignal(
+            "dangerous_scheme",
+            f"Опасная URI-схема: {hits[0]}",
+            "weight_dangerous_scheme",
+        )
+    ]
+
+
+def _url_userinfo(blob: str) -> list[ContentSignal]:
+    """https://brand.tld@attacker.tld — visible brand is the userinfo, not the host."""
+    match = USERINFO_URL_RE.search(blob or "")
+    if not match:
+        return []
+    return [
+        ContentSignal(
+            "url_userinfo",
+            f"URL с userinfo (бренд перед @): {match.group(0)[:80]}",
+            "weight_url_userinfo",
+        )
+    ]
+
+
+def _payment_token_signal(blob: str) -> ContentSignal | None:
+    """IBAN / БИК+счёт / карта / СБП only together with payment-change language."""
+    if not blob or not PAYMENT_CHANGE_RE.search(blob):
+        return None
+    bits: list[str] = []
+    if IBAN_RE.search(blob):
+        bits.append("IBAN")
+    if re.search(r"\b04\d{7}\b", blob) and re.search(r"\b\d{20}\b", blob):
+        bits.append("БИК+счёт")
+    if re.search(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b", blob):
+        bits.append("карта")
+    if re.search(r"(?i)\bсбп\b", blob) and re.search(r"(?:\+7|8)[\s(-]?\d{3}", blob):
+        bits.append("СБП")
+    if not bits:
+        return None
+    return ContentSignal(
+        "payment_tokens",
+        "Смена реквизитов + " + ", ".join(bits),
+        "weight_payment_tokens",
+    )
+
+
 def analyze_content_signals(
     text: str,
     html: str = "",
@@ -308,6 +396,7 @@ def analyze_content_signals(
     has_urls: bool = False,
     has_attachments: bool = False,
     has_encrypted_archive: bool = False,
+    suspicious_tlds: tuple[str, ...] | None = None,
 ) -> list[ContentSignal]:
     """Return unique content signals from plain text and optional HTML body."""
     signals: list[ContentSignal] = []
@@ -330,6 +419,21 @@ def analyze_content_signals(
                 "weight_bec_payment",
             )
         )
+
+    payment = _payment_token_signal(blob)
+    if payment is not None:
+        signals.append(payment)
+
+    if CALLBACK_RE.search(blob):
+        signals.append(
+            ContentSignal(
+                "bec_callback",
+                "Callback-фишинг: просят не отвечать на письмо и позвонить",
+                "weight_bec_callback",
+            )
+        )
+
+    signals.extend(_url_userinfo(blob))
 
     if ARCHIVE_PASSWORD_RE.search(blob):
         if has_encrypted_archive:
@@ -414,6 +518,7 @@ def analyze_content_signals(
             )
         )
 
+    tlds = suspicious_tlds or DEFAULT_SUSPICIOUS_TLDS
     soup: BeautifulSoup | None = None
     if html and ("<" in html):
         try:
@@ -423,8 +528,9 @@ def analyze_content_signals(
         if soup is not None:
             signals.extend(_href_mismatch(soup))
             signals.extend(_hidden_text(html, soup))
-            signals.extend(_html_forms(soup))
+            signals.extend(_html_forms(soup, tlds))
             signals.extend(_cid_phishing(soup, html))
+    signals.extend(_dangerous_schemes(blob, soup))
 
     has_credential = any(s.kind == "credential_harvest" for s in signals) or bool(
         CREDENTIAL_RE.search(blob)

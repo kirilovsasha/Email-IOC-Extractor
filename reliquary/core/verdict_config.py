@@ -20,6 +20,26 @@ URGENCY_RE = re.compile(
 
 _EXTRA_NAME = "verdict_extra.json"
 
+# Zones that show up in phishing URL/form hosts. Override via verdict_extra.json
+# key ``suspicious_tlds`` (list of strings, with or without a leading dot).
+DEFAULT_SUSPICIOUS_TLDS: tuple[str, ...] = (
+    ".xyz",
+    ".top",
+    ".club",
+    ".gq",
+    ".tk",
+    ".ml",
+    ".cf",
+    ".ga",
+    ".zip",
+    ".mov",
+    ".cfd",
+    ".sbs",
+    ".click",
+    ".bond",
+    ".ru.com",
+)
+
 
 @dataclass
 class VerdictConfig:
@@ -94,6 +114,21 @@ class VerdictConfig:
     weight_pdf_openaction_uri: int = 14
     weight_cid_phishing: int = 12
     weight_form_action_suspicious: int = 14
+    # Header / URL / attachment / BEC depth (scored under existing category caps)
+    weight_sender_mismatch: int = 14
+    weight_orphan_reply: int = 12
+    weight_mailer_brand: int = 12
+    weight_dangerous_scheme: int = 18
+    weight_url_userinfo: int = 16
+    weight_pdf_launch: int = 18
+    weight_lure_shortcut: int = 20
+    weight_rtf_exploit: int = 18
+    weight_office_encrypted: int = 22
+    weight_office_external_data: int = 16
+    weight_bec_callback: int = 14
+    weight_payment_tokens: int = 10
+    weight_password_lure_file: int = 16
+    weight_freemail_bec: int = 12
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6
@@ -113,9 +148,12 @@ class VerdictConfig:
     cap_display_spoof: int = 28
     # Max absolute mitigation (floor on how much score can be reduced)
     cap_mitigation: int = 30
+    # Not an int weight — list override lives in verdict_extra.json
+    suspicious_tlds: tuple[str, ...] = DEFAULT_SUSPICIOUS_TLDS
 
 
-_CONFIG_KEYS = frozenset(f.name for f in fields(VerdictConfig))
+_NON_INT_KEYS = frozenset({"suspicious_tlds"})
+_CONFIG_KEYS = frozenset(f.name for f in fields(VerdictConfig) if f.name not in _NON_INT_KEYS)
 
 
 def default_extra_verdict_path() -> Path:
@@ -154,6 +192,14 @@ def validate_verdict_extra(data: dict) -> list[str]:
         return ["корень должен быть объектом JSON"]
     for key, raw in data.items():
         if key.startswith("_"):
+            continue
+        if key == "suspicious_tlds":
+            if not isinstance(raw, list) or any(
+                not isinstance(item, str) or not item.strip() for item in raw
+            ):
+                warnings.append("suspicious_tlds: ожидался список непустых строк")
+            elif len(raw) > 64:
+                warnings.append("suspicious_tlds: не больше 64 зон")
             continue
         if key not in _CONFIG_KEYS:
             warnings.append(f"неизвестный ключ: {key}")
@@ -201,16 +247,52 @@ def load_verdict_overrides_report(
     return parse_verdict_overrides(raw), warnings
 
 
+def normalize_suspicious_tlds(raw: list) -> tuple[str, ...]:
+    """Normalize a JSON list of zones to a dotted lowercase tuple."""
+    out: list[str] = []
+    for item in raw:
+        text = str(item).strip().lower()
+        if not text:
+            continue
+        if not text.startswith("."):
+            text = "." + text
+        if text not in out:
+            out.append(text)
+        if len(out) >= 64:
+            break
+    return tuple(out)
+
+
+def _suspicious_tlds_from_file(path: Path | None) -> tuple[str, ...] | None:
+    """Return override tuple, or None when the file/key is absent."""
+    if path is None or not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeError):
+        return None
+    if not isinstance(raw, dict) or "suspicious_tlds" not in raw:
+        return None
+    listed = raw.get("suspicious_tlds")
+    if not isinstance(listed, list):
+        return None
+    return normalize_suspicious_tlds(listed)
+
+
 def load_verdict_config(path: str | Path | None = None) -> VerdictConfig:
     """Built-in weights merged with optional JSON override file."""
     cfg = VerdictConfig()
     resolved = resolve_verdict_path(path)
     overrides, _warnings = load_verdict_overrides_report(resolved)
+    tlds = _suspicious_tlds_from_file(resolved)
+    if not overrides and tlds is None:
+        return cfg
+    base = asdict(cfg)
     if overrides:
-        base = asdict(cfg)
         base.update(overrides)
-        return VerdictConfig(**base)
-    return cfg
+    if tlds is not None:
+        base["suspicious_tlds"] = tlds
+    return VerdictConfig(**base)
 
 
 def probe_verdict_extra_warnings(path: str | Path | None = None) -> list[str]:

@@ -17,6 +17,16 @@ def segment_for(result) -> str:
     ).lower()
     if "bec_payment" in signals:
         return "bec"
+    if "bec_callback" in signals:
+        return "bec_callback"
+    if "payment_tokens" in signals:
+        return "payment_tokens"
+    if "freemail_bec" in signals:
+        return "bec"
+    if "dangerous_scheme" in signals:
+        return "dangerous_scheme"
+    if "url_userinfo" in signals:
+        return "url_userinfo"
     if any("display" in (r or "").lower() and "spoof" in (r or "").lower() for r in (
         (result.verdict.reasons if result.verdict else []) or []
     )) or "display_spoof" in reasons_l or "имя «" in reasons_l:
@@ -82,6 +92,8 @@ def segment_for(result) -> str:
         return "tnef"
     if "rar_archive" in att_flags:
         return "rar"
+    if "iso_contains_script" in att_flags or "disk_contains_script" in att_flags:
+        return "iso_exe"
     if "iso_contains_lnk" in att_flags or (
         "iso_image" in att_flags and "archive_dangerous_member" in att_flags
         and "iso_contains_exe" not in att_flags
@@ -113,6 +125,18 @@ def segment_for(result) -> str:
         return "ole_package"
     if "pdf_openaction_uri" in att_flags:
         return "pdf_openaction"
+    if "pdf_launch" in att_flags or "pdf_submitform" in att_flags or "pdf_gotor" in att_flags:
+        return "pdf_launch"
+    if "lure_shortcut" in att_flags:
+        return "lure_shortcut"
+    if "rtf_exploit" in att_flags:
+        return "rtf"
+    if "office_encrypted" in att_flags:
+        return "office_encrypted"
+    if "office_external_data" in att_flags:
+        return "office_external"
+    if "password_lure_file" in signals:
+        return "archive_password"
     if any(h.name == "ARC result" or (h.name == "ARC" and "fail" in (h.value or "").lower()) for h in (result.headers or [])):
         if any(
             (h.name or "").lower() in ("arc result", "arc") and "fail" in (h.value or "").lower()
@@ -123,6 +147,12 @@ def segment_for(result) -> str:
         return "reply_chain"
     if any("return-path mismatch" in (h.name or "").lower() for h in (result.headers or [])):
         return "return_path"
+    if any((h.name or "") == "Sender mismatch" and str(getattr(h.severity, "value", h.severity)) == "high" for h in (result.headers or [])):
+        return "sender_mismatch"
+    if any((h.name or "") == "Orphan reply" for h in (result.headers or [])):
+        return "orphan_reply"
+    if any((h.name or "") == "Mailer brand mismatch" for h in (result.headers or [])):
+        return "mailer_brand"
     if "archive_nested_email" in att_flags or "nested_email" in att_flags:
         return "nested_mail"
     if any(u.changed for u in (result.url_rewrites or [])):

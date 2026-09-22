@@ -234,3 +234,38 @@ rule pdf_openaction
     condition:
         $a and $b
 }
+
+rule pdf_launch_action
+{
+    meta:
+        description = "PDF Launch / SubmitForm / GoToR"
+    strings:
+        $a = "/Launch" ascii
+        $b = "/SubmitForm" ascii
+        $c = "/GoToR" ascii
+    condition:
+        any of them
+}
+
+rule rtf_equation_objupdate
+{
+    meta:
+        description = "RTF Equation Editor or objupdate"
+    strings:
+        $a = "\\objupdate" ascii nocase
+        $b = "Equation.3" ascii nocase
+    condition:
+        any of them
+}
+
+rule dangerous_uri_scheme
+{
+    meta:
+        description = "Mail lure URI schemes"
+    strings:
+        $a = "search-ms:" ascii nocase
+        $b = "ms-msdt:" ascii nocase
+        $c = "ms-officecmd:" ascii nocase
+    condition:
+        any of them
+}

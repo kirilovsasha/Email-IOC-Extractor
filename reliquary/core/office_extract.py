@@ -387,6 +387,50 @@ def detect_office_dde(data: bytes) -> bool:
         zf.close()
 
 
+_FORMULA_EXTERNAL_RE = re.compile(
+    rb"(?i)(WEBSERVICE\s*\(|HYPERLINK\s*\(\s*[\"']https?://)"
+)
+
+
+def detect_office_external_data(data: bytes) -> bool:
+    """Workbook connections, externalLinks, or WEBSERVICE/HYPERLINK formulas.
+
+    Plain document hyperlinks stay on the office_hyperlink flag.
+    """
+    if not data or data[:2] != b"PK":
+        return False
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return False
+    try:
+        names = [n.replace("\\", "/") for n in zf.namelist()]
+        if any("xl/externallinks/" in n.lower() for n in names):
+            return True
+        checked = 0
+        for name in names:
+            low = name.lower()
+            interesting = low.endswith("connections.xml") or (
+                low.startswith("xl/") and low.endswith(".xml")
+            )
+            if not interesting:
+                continue
+            checked += 1
+            if checked > 40:
+                break
+            try:
+                chunk = zf.read(name)
+            except KeyError:
+                continue
+            if low.endswith("connections.xml") and re.search(rb"(?i)https?://|\\\\", chunk):
+                return True
+            if _FORMULA_EXTERNAL_RE.search(chunk):
+                return True
+        return False
+    finally:
+        zf.close()
+
+
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 

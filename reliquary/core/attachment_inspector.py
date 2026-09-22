@@ -61,6 +61,18 @@ WEB_PAYLOAD_EXT = {".html", ".htm", ".shtml", ".mht", ".mhtml", ".svg"}
 PDF_EXT = {".pdf"}
 SCRIPT_EXT = {".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".hta", ".ps1", ".bat", ".cmd"}
 DISK_IMAGE_EXT = {".vhd", ".vhdx", ".wim", ".esd"}
+LURE_SUFFIXES = (
+    ".settingcontent-ms",
+    ".searchconnector-ms",
+    ".library-ms",
+    ".appref-ms",
+    ".diagcab",
+    ".iqy",
+    ".slk",
+    ".url",
+    ".scf",
+    ".chm",
+)
 DOUBLE_EXT_RE = re.compile(
     r"\.(?:pdf|docx?|xlsx?|pptx?|txt|jpg|png|gif)\.(?:exe|scr|bat|cmd|js|vbs|ps1|jar)$",
     re.IGNORECASE,
@@ -72,9 +84,12 @@ SCRIPT_URL_RE = re.compile(
     r"ActiveXObject\s*\(|\beval\s*\(|\bFromBase64String\b)"
 )
 
-_PDF_JS_RE = re.compile(rb"/(?:JavaScript|JS|OpenAction|AA|Launch)\b")
+_PDF_JS_RE = re.compile(rb"/(?:JavaScript|JS|OpenAction|AA)\b")
 _PDF_OPENACTION_RE = re.compile(rb"/OpenAction\b")
 _PDF_URI_RE = re.compile(rb"/URI\s*\(")
+_PDF_LAUNCH_RE = re.compile(rb"/Launch\b")
+_PDF_SUBMIT_RE = re.compile(rb"/SubmitForm\b")
+_PDF_GOTOR_RE = re.compile(rb"/GoToR\b")
 _ONENOTE_EMBED_RE = re.compile(
     rb"(?i)(FileData|embeddedFile|EmbeddedFile|OneNote\.Package|ONEDOC|"
     rb"fileDataStore|Embedded File Object)"
@@ -409,7 +424,7 @@ def _inventory_iso(data: bytes) -> tuple[list[str], list[str], list[str]]:
     head = data[: min(len(data), 1024 * 1024)]
     found: list[str] = []
     for m in re.finditer(
-        rb"([A-Za-z0-9_\-\.]{3,80}\.(?:EXE|DLL|LNK|JS|VBS|BAT|CMD|PS1|HTA|SCR|HTML?|HTM|ZIP|RAR|ISO|IMG|PDF|DOC|DOCX)(?:;1)?)",
+        rb"([A-Za-z0-9_\-\.]{3,80}\.(?:EXE|DLL|LNK|JS|JSE|VBS|VBE|WSF|WSH|BAT|CMD|PS1|HTA|SCR|HTML?|HTM|ZIP|RAR|ISO|IMG|PDF|DOC|DOCX|URL|IQY|SLK)(?:;1)?)",
         head,
         flags=re.IGNORECASE,
     ):
@@ -422,7 +437,7 @@ def _inventory_iso(data: bytes) -> tuple[list[str], list[str], list[str]]:
     try:
         wide = head.decode("utf-16-le", errors="ignore")
         for wm in re.finditer(
-            r"([A-Za-z0-9_\-\.]{3,80}\.(?:exe|dll|lnk|js|vbs|bat|cmd|ps1|hta|scr|html?|htm|zip|rar|iso|img|pdf|doc|docx))",
+            r"([A-Za-z0-9_\-\.]{3,80}\.(?:exe|dll|lnk|js|jse|vbs|vbe|wsf|wsh|bat|cmd|ps1|hta|scr|html?|htm|zip|rar|iso|img|pdf|doc|docx|url|iqy|slk))",
             wide,
             flags=re.IGNORECASE,
         ):
@@ -446,6 +461,9 @@ def _inventory_iso(data: bytes) -> tuple[list[str], list[str], list[str]]:
     if any(Path(n.lower()).suffix in {".exe", ".dll", ".scr"} for n in entries):
         flags.append("iso_contains_exe")
         notes.append("ISO содержит .exe/.dll/.scr")
+    if any(Path(n.lower()).suffix in SCRIPT_EXT for n in entries):
+        flags.append("iso_contains_script")
+        notes.append("ISO содержит скрипт (.js/.vbs/.hta/…)")
     return entries, flags, notes
 
 
@@ -457,7 +475,7 @@ def _inventory_disk_image(data: bytes, *, ext: str) -> tuple[list[str], list[str
     head = data[: min(len(data), 2 * 1024 * 1024)]
     found: list[str] = []
     for m in re.finditer(
-        rb"([A-Za-z0-9_\-\.]{3,80}\.(?:EXE|DLL|LNK|JS|VBS|BAT|CMD|PS1|HTA|SCR|HTML?|HTM|ZIP|RAR|ISO|IMG|PDF)(?:;1)?)",
+        rb"([A-Za-z0-9_\-\.]{3,80}\.(?:EXE|DLL|LNK|JS|JSE|VBS|VBE|WSF|WSH|BAT|CMD|PS1|HTA|SCR|HTML?|HTM|ZIP|RAR|ISO|IMG|PDF|URL|IQY|SLK)(?:;1)?)",
         head,
         flags=re.IGNORECASE,
     ):
@@ -470,7 +488,7 @@ def _inventory_disk_image(data: bytes, *, ext: str) -> tuple[list[str], list[str
     try:
         wide = head.decode("utf-16-le", errors="ignore")
         for wm in re.finditer(
-            r"([A-Za-z0-9_\-\.]{3,80}\.(?:exe|dll|lnk|js|vbs|bat|cmd|ps1|hta|scr|html?|htm|zip|rar|iso|img|pdf))",
+            r"([A-Za-z0-9_\-\.]{3,80}\.(?:exe|dll|lnk|js|jse|vbs|vbe|wsf|wsh|bat|cmd|ps1|hta|scr|html?|htm|zip|rar|iso|img|pdf|url|iqy|slk))",
             wide,
             flags=re.IGNORECASE,
         ):
@@ -494,6 +512,9 @@ def _inventory_disk_image(data: bytes, *, ext: str) -> tuple[list[str], list[str
     if any(Path(n.lower()).suffix in {".exe", ".dll", ".scr"} for n in entries):
         flags.append("disk_contains_exe")
         notes.append(f"{label} содержит .exe/.dll/.scr")
+    if any(Path(n.lower()).suffix in SCRIPT_EXT for n in entries):
+        flags.append("disk_contains_script")
+        notes.append(f"{label} содержит скрипт (.js/.vbs/.hta/…)")
     return entries, flags, notes
 
 
@@ -639,7 +660,8 @@ def _parse_lnk_target(data: bytes) -> tuple[list[str], list[str]]:
             notes.append(f"LNK→ {t}")
         joined = "\n".join(targets)
         if re.search(
-            r"(?i)(cmd\.exe|powershell|pwsh(\.exe)?|wscript|cscript|mshta|rundll32)",
+            r"(?i)(cmd\.exe|powershell|pwsh(\.exe)?|wscript|cscript|mshta|rundll32|"
+            r"certutil|bitsadmin|msiexec|regsvr32|forfiles|conhost|finger(?:\.exe)?)",
             joined,
         ):
             flags.append("lnk_dangerous")
@@ -659,7 +681,16 @@ def _scan_pdf_payload(data: bytes) -> tuple[list[str], list[str]]:
     head = data[: min(len(data), 512 * 1024)]
     if _PDF_JS_RE.search(head):
         flags.append("pdf_javascript")
-        notes.append("PDF: найдены /JS · /JavaScript · /OpenAction · /Launch")
+        notes.append("PDF: найдены /JS · /JavaScript · /OpenAction")
+    if _PDF_LAUNCH_RE.search(head):
+        flags.append("pdf_launch")
+        notes.append("PDF: /Launch — запуск внешней программы")
+    if _PDF_SUBMIT_RE.search(head):
+        flags.append("pdf_submitform")
+        notes.append("PDF: /SubmitForm — отправка формы наружу")
+    if _PDF_GOTOR_RE.search(head):
+        flags.append("pdf_gotor")
+        notes.append("PDF: /GoToR — переход в удалённый PDF")
     if _PDF_URI_RE.search(head):
         flags.append("pdf_uri_action")
         notes.append("PDF: найдены /URI-действия (возможны внешние ссылки)")
@@ -798,6 +829,63 @@ def _qr_from_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
     return hits[:20], notes
 
 
+def _lure_suffix(filename: str) -> str:
+    lower = filename.lower()
+    for suffix in LURE_SUFFIXES:
+        if lower.endswith(suffix):
+            return suffix
+    return ""
+
+
+def _scan_lure_shortcut(filename: str, data: bytes) -> tuple[list[str], list[str], list[str]]:
+    """Internet Shortcut / IQY / SYLK / settings / SCF / CHM — pull URL or UNC target."""
+    flags = ["lure_shortcut"]
+    notes: list[str] = [f"Файл-ярлык «{Path(filename).name}»"]
+    entries: list[str] = []
+    text = ""
+    sample = data[: min(len(data), 512 * 1024)]
+    for enc in ("utf-8", "utf-16", "utf-16-le", "cp1251", "latin-1"):
+        try:
+            text = sample.decode(enc)
+            break
+        except UnicodeError:
+            continue
+    found: list[str] = []
+    ini = re.search(r"(?im)^(?:URL|IconFile|DeepLink)\s*=\s*(\S+)", text)
+    if ini:
+        found.append(ini.group(1).strip())
+    for match in re.finditer(r"(?i)(?:https?://|file://|search-ms:|ms-msdt:|\\\\)[^\s\"'<>]{3,200}", text):
+        value = match.group(0).rstrip(").,;]")
+        if value not in found:
+            found.append(value)
+    if found:
+        flags.append("lure_shortcut_target")
+        entries.extend(found[:8])
+        notes.append("Цель ярлыка: " + found[0][:120])
+    else:
+        notes.append("Цель ярлыка не извлечена")
+    return flags, notes, entries
+
+
+def _scan_rtf(data: bytes) -> tuple[list[str], list[str]]:
+    """RTF object update / Equation Editor / embedded OLE."""
+    head = data[: min(len(data), 1024 * 1024)].lower()
+    flags: list[str] = []
+    notes: list[str] = []
+    if b"\\objupdate" in head:
+        flags.append("rtf_objupdate")
+        notes.append("RTF: \\objupdate — объект обновляется при открытии")
+    if b"equation.3" in head or b"equation.2" in head:
+        flags.append("rtf_equation")
+        notes.append("RTF: Equation Editor OLE")
+    if b"\\objdata" in head and (b"\\objupdate" in head or b"equation" in head or b"package" in head):
+        flags.append("rtf_ole")
+        notes.append("RTF: встроенный OLE (\\objdata)")
+    if flags:
+        flags.append("rtf_exploit")
+    return flags, notes
+
+
 def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None) -> AttachmentInfo:
     md5, sha1, sha256 = _hashes(data)
     mime = _guess_mime(data, filename)
@@ -817,6 +905,22 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
     if ext in DANGEROUS_EXTENSIONS:
         flags.append("dangerous_extension")
         notes.append(f"Исполняемое/опасное расширение: {ext}")
+
+    lure = _lure_suffix(lower)
+    if lure:
+        lflags, lnotes, lentries = _scan_lure_shortcut(filename, data)
+        for flag in lflags:
+            if flag not in flags:
+                flags.append(flag)
+        notes.extend(lnotes)
+        archive_entries.extend(lentries)
+
+    if ext == ".rtf" or data[:6].lower().startswith(b"{\\rtf"):
+        rflags, rnotes = _scan_rtf(data)
+        for flag in rflags:
+            if flag not in flags:
+                flags.append(flag)
+        notes.extend(rnotes)
 
     if ext in {".iso", ".img"}:
         flags.append("iso_image")
@@ -981,6 +1085,7 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
             try:
                 from reliquary.core.office_extract import (
                     detect_office_dde,
+                    detect_office_external_data,
                     detect_office_remote_template,
                 )
 
@@ -990,8 +1095,14 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
                 if detect_office_dde(data):
                     flags.append("office_dde")
                     notes.append("OOXML: Excel DDE / formula injection markers")
+                if detect_office_external_data(data):
+                    flags.append("office_external_data")
+                    notes.append("OOXML: connections / externalLinks / WEBSERVICE|HYPERLINK")
             except (OSError, ValueError, TypeError, RuntimeError, ImportError):
                 pass
+        if b"EncryptionInfo" in data[:65536] or b"EncryptedPackage" in data[:65536]:
+            flags.append("office_encrypted")
+            notes.append("Зашифрованный Office (EncryptionInfo / EncryptedPackage)")
 
     # 7z magic: 37 7A BC AF 27 1C
     if data[:6] == b"\x37\x7a\xbc\xaf\x27\x1c" or ext == ".7z":

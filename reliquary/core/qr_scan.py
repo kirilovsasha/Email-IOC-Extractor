@@ -84,11 +84,11 @@ def qr_decoder_available() -> bool:
         from pyzbar.pyzbar import decode as _z  # noqa: F401
 
         return True
-    except ImportError:
+    except (ImportError, OSError):
         pass
     try:
         import zxingcpp  # noqa: F401
 
         return True
-    except ImportError:
+    except (ImportError, OSError):
         return False

@@ -115,6 +115,18 @@ _SEGMENT_WEIGHTS: dict[str, tuple[str, ...]] = {
     "pdf_openaction": ("weight_pdf_openaction_uri",),
     "phishing_content": ("weight_credential_harvest", "weight_href_mismatch"),
     "attachment": ("weight_attachment_flag",),
+    "sender_mismatch": ("weight_sender_mismatch",),
+    "orphan_reply": ("weight_orphan_reply",),
+    "mailer_brand": ("weight_mailer_brand",),
+    "dangerous_scheme": ("weight_dangerous_scheme",),
+    "url_userinfo": ("weight_url_userinfo",),
+    "pdf_launch": ("weight_pdf_launch",),
+    "lure_shortcut": ("weight_lure_shortcut",),
+    "rtf": ("weight_rtf_exploit",),
+    "office_encrypted": ("weight_office_encrypted",),
+    "office_external": ("weight_office_external_data",),
+    "bec_callback": ("weight_bec_callback",),
+    "payment_tokens": ("weight_payment_tokens",),
 }
 
 

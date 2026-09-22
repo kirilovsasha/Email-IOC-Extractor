@@ -6,7 +6,27 @@ import re
 from email.message import Message
 from email.utils import parseaddr
 
+from reliquary.core.lookalike import check_display_name_spoof
 from reliquary.core.models import HeaderFinding, MailIdentity, Severity
+
+_KIT_MAILER_RE = re.compile(
+    r"(?i)(phpmailer|swiftmailer|codeigniter|zend[_\s-]?mail|pear::mail|"
+    r"javax\.mail|roundcube|wordpress|joomla|wp-mail|sendgrid|mailgun)"
+)
+_ORPHAN_REPLY_RE = re.compile(r"(?i)^(re|отв|ответ)\s*:")
+
+
+def _addr_domain(addr: str) -> str:
+    text = (addr or "").strip().lower()
+    if "@" not in text:
+        return ""
+    return text.rsplit("@", 1)[-1].strip(">").strip()
+
+
+def _same_domain(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    return left == right or left.endswith("." + right) or right.endswith("." + left)
 
 
 def _get_all(msg: Message, name: str) -> list[str]:
@@ -102,6 +122,15 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
         elif re_subj and in_reply and from_addr:
             # Re: subject + In-Reply-To but no usable prior domain — still note lightly
             pass
+    elif _ORPHAN_REPLY_RE.match(subject_raw.strip()) and not in_reply and not references:
+        findings.append(
+            HeaderFinding(
+                "Orphan reply",
+                subject_raw.strip()[:120],
+                Severity.HIGH,
+                "Тема Re:/Отв: без In-Reply-To и References — возможный угон треда",
+            )
+        )
 
     if sender:
         findings.append(HeaderFinding("Sender", sender, Severity.INFO, "Заголовок Sender"))
@@ -232,6 +261,35 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             )
         )
 
+    # Sender ≠ From is common on lists (List-Id) and on DMARC-aligned mail.
+    # Score only the unauthenticated external on-behalf case.
+    if sender and from_addr:
+        _, sender_addr = parseaddr(sender)
+        sender_dom = _addr_domain(sender_addr)
+        from_dom_sender = _addr_domain(from_addr)
+        if sender_dom and from_dom_sender and not _same_domain(sender_dom, from_dom_sender):
+            precedence = (msg.get("Precedence") or "").strip().lower()
+            mailing = bool(msg.get("List-Id")) or precedence in {"bulk", "list", "junk"}
+            dmarc_pass = bool(re.search(r"dmarc\s*=\s*pass", auth_blob))
+            if mailing or dmarc_pass:
+                findings.append(
+                    HeaderFinding(
+                        "Sender mismatch",
+                        f"{from_dom_sender} ≠ {sender_dom}",
+                        Severity.INFO,
+                        "Sender отличается от From, но есть DMARC pass или признаки рассылки",
+                    )
+                )
+            else:
+                findings.append(
+                    HeaderFinding(
+                        "Sender mismatch",
+                        f"{from_dom_sender} ≠ {sender_dom}",
+                        Severity.HIGH,
+                        "Sender ≠ From без DMARC pass — типичный on-behalf BEC",
+                    )
+                )
+
     # Received chain — show first hop for mail path identity
     received = _get_all(msg, "Received")
     findings.append(
@@ -279,47 +337,31 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             )
         )
 
-    # X-Mailer / User-Agent anomalies
+    # X-Mailer / User-Agent: script kit next to a brand display name
     x_mailer = msg.get("X-Mailer") or msg.get("User-Agent") or ""
+    display_hits = check_display_name_spoof(from_hdr) if from_hdr else []
+    if display_hits:
+        findings.append(
+            HeaderFinding(
+                "Display-name spoof",
+                f"name={from_name!r} addr={from_addr}",
+                Severity.HIGH,
+                display_hits[0].detail,
+            )
+        )
     if x_mailer:
         findings.append(
             HeaderFinding("X-Mailer/User-Agent", x_mailer, Severity.INFO, "Клиент отправки")
         )
-
-    # Display-name spoofing: brand in name, different domain
-    if from_name and from_addr:
-        brand_hints = (
-            "microsoft",
-            "google",
-            "apple",
-            "amazon",
-            "paypal",
-            "sber",
-            "тинькофф",
-            "tinkoff",
-            "втб",
-            "газпром",
-            "support",
-            "security",
-            "admin",
-            "noreply",
-            "no-reply",
-        )
-        name_l = from_name.lower()
-        dom = from_addr.split("@")[-1].lower()
-        for brand in brand_hints:
-            if brand in name_l and brand not in dom:
-                findings.append(
-                    HeaderFinding(
-                        "Display-name spoof",
-                        f"name={from_name!r} addr={from_addr}",
-                        Severity.HIGH,
-                        f"Имя содержит «{brand}», но домен другой — возможный spoofing",
-                    )
+        if _KIT_MAILER_RE.search(x_mailer) and display_hits:
+            findings.append(
+                HeaderFinding(
+                    "Mailer brand mismatch",
+                    x_mailer[:160],
+                    Severity.HIGH,
+                    "Скриптовый почтовый клиент при display-name известного бренда",
                 )
-                break
-
-    # Message-ID domain vs From domain
+            )
     if mid and from_addr and "@" in mid:
         mid_dom = mid.rsplit("@", 1)[-1].strip("> ").lower()
         from_dom = from_addr.split("@")[-1].lower()
