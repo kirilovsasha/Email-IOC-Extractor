@@ -180,13 +180,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--enable-yara",
         action="store_true",
-        help="Офлайн YARA scan (нужен pip install .[yara] и rules рядом с EXE)",
+        help="Офлайн YARA (нужен pip install .[yara] и путь --yara-rules или правила рядом с программой)",
     )
     parser.add_argument(
         "--yara-rules",
         dest="yara_rules_path",
         default=None,
-        help="Путь к .yar или папке правил",
+        help="Путь к .yar или папке правил (включает скан)",
     )
     parser.add_argument(
         "path",
@@ -415,10 +415,11 @@ def main(argv: list[str] | None = None) -> int:
     opts.profile_dir = args.profile_dir or opts.profile_dir
     opts.max_workers = args.workers
     opts.skip_broken = not args.no_skip_broken
-    if getattr(args, "enable_yara", False):
-        opts.enable_yara = True
     if getattr(args, "yara_rules_path", None):
         opts.yara_rules_path = args.yara_rules_path
+        opts.enable_yara = True
+    if getattr(args, "enable_yara", False):
+        opts.enable_yara = True
 
     profile = load_org_profile(opts.profile_dir)
     try:

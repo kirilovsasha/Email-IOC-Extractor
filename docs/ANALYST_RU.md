@@ -14,7 +14,7 @@
 7. Ctrl+Shift+V — компактный режим (только вердикт, без панели исходника).
 8. Ctrl+R — копировать причины вердикта; вкладка «Ошибки» → [L] каталог журнала.
 9. ПКМ → Feedback FP / FN / подтвердить вердикт. Запароленный архив — сигнал, без распаковки.
-10. Настройки → импорт org_profile; YARA (extra) — правила `yara_rules/` рядом с EXE авто.
+10. Настройки → импорт org_profile. YARA выключена: галочка «Сканировать YARA» и путь к `.yar` или папке. Правила лежат вне EXE.
 11. Feedback FP/FN → `--feedback-weights` (±2 к весам) / `--feedback-tune` (веса + пороги/caps).
 12. `.pst` — MVP: нужен `pip install .[pst]` (libratom) или pypff; иначе RU-пропуск без краша.
 
@@ -77,7 +77,8 @@ UI только на русском. Вердикт: безопасный / не
 - пресеты: `m365` / `google` / `banking` / `ru_gov` / `by_gov` / `kz_gov` / `ua_gov` / …
 - `ui_prefs.json` — prefs (`verdict_compact`, `high_contrast`, hook…)
 - `update.json` — локальный манифест (без сети): `latest` / `sha256` / `notes`
-- «Настройки» в GUI — пути allowlist/verdict/profile, workers, post-export hook + JSON sidecar
+- «Настройки» в GUI — пути allowlist/verdict/profile, workers, post-export hook + JSON sidecar, YARA
+- YARA: путь и галочка «Сканировать YARA». Пустая строка пути при включённой галочке берёт рядом с EXE `yara_rules.yar`, `yara_rules.yara`, `rules.yar`, `default.yar` или папку `yara_rules/`. В сборке CI нет `yara-python`, пока его не поставили до PyInstaller
 - схема весов: `docs/verdict_extra.schema.json`
 - при старте: self-check (EXE + QR) + предупреждения `verdict_extra`
 

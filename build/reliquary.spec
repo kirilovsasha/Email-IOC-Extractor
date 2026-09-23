@@ -4,7 +4,9 @@ Build:
   pyinstaller build/reliquary.spec
 
 Single fleet build: core + QR (pyzbar). RAR inventory is not bundled.
-Optional yara-python is collected when present in the build env.
+YARA rules are not packed into the EXE (antivirus false positives).
+Optional yara-python is collected when present in the build env;
+rules are an external path from settings or --yara-rules.
 """
 
 # -*- mode: python ; coding: utf-8 -*-
@@ -54,14 +56,9 @@ def _try_collect(mod: str) -> bool:
 # QR decode is a required dependency — bundle when importable at build time.
 if _try_collect("pyzbar"):
     _extra_hidden.extend(["pyzbar", "pyzbar.pyzbar"])
-# Optional offline YARA
+# Optional offline YARA library only. Rule files stay outside the EXE.
 if _try_collect("yara"):
     _extra_hidden.append("yara")
-
-# Bundle default YARA rules beside the EXE
-_yara_rules = ROOT / "yara_rules"
-if _yara_rules.is_dir():
-    _extra_datas.append((str(_yara_rules), "yara_rules"))
 
 a = Analysis(
     [str(ROOT / "run_reliquary.py")],

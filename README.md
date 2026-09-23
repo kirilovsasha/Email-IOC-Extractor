@@ -49,7 +49,9 @@ pip install -e ".[pst]"    # разбор Outlook .pst (libratom)
 
 CI / `build_exe.bat` публикуют **`EmailIOCExtractor.exe`** (core + QR).
 Разделения Lite/Full нет. RAR-вложения детектятся без listing членов.
-Запароленный архив — сигнал, без расшифровки. Опциональный YARA остаётся.
+Запароленный архив — сигнал, без расшифровки.
+Правила YARA лежат вне EXE и в сборку не копируются.
+`yara-python` попадает в EXE, только если пакет уже установлен до PyInstaller; CI его не ставит.
 
 В Release notes публикуется **SHA256** одного EXE.
 
@@ -133,7 +135,8 @@ reliquary mail.eml --profile org_profile.example/m365
 reliquary mail.eml --profile org_profile.example/by_gov
 reliquary mail.eml --profile org_pack.zip
 
-# YARA (2.16+: bundled yara_rules/default.yar, auto if yara installed)
+# YARA: правила вне EXE. --yara-rules включает скан.
+# --enable-yara без пути ищет файл правил рядом с программой или папку yara_rules/.
 reliquary mail.eml --enable-yara --yara-rules rules.yar
 
 # самопроверка / feedback
@@ -186,7 +189,11 @@ remote template, опционально YARA\*\*\*.
 
 \* PST — MVP: `pip install -e ".[pst]"` (libratom; также подходит pypff); без lib — RU-пропуск, без краша.  
 \*\* RAR — `rar_archive` + эвристический scrape имён (без rarfile/UnRAR).  
-\*\*\* YARA — `pip install -e ".[yara]"`; `yara_rules/` рядом с EXE / `--yara-rules` (авто).
+\*\*\* YARA — правила вне EXE, скан выключен, пока его не включат.
+Исходники: `pip install -e ".[yara]"`.
+GUI: «Настройки» → путь к `.yar` или папке и галочка «Сканировать YARA».
+CLI: `--yara-rules` включает скан; `--enable-yara` без пути берёт рядом с программой `yara_rules.yar`, `yara_rules.yara`, `rules.yar`, `default.yar` или папку `yara_rules/`.
+EXE сканирует, только если `yara-python` стоял в окружении до PyInstaller (CI его не ставит).
 
 | | Сигнал | Примеры |
 |---|--------|---------|
@@ -234,7 +241,7 @@ Override: `verdict_extra.json`
 | 🏢 | `org_domains.txt` | свои домены: lookalike и display-spoof (`org_domains.example.txt`) |
 | 📦 | `org_profile/` или `.zip` | пакет всего выше |
 | 📝 | `analyst_feedback.ndjson` | FP/FN от аналитика (GUI ПКМ) |
-| 🔬 | `yara_rules.yar` / `yara_rules/` | optional YARA (extra) |
+| 🔬 | `yara_rules.yar`, `default.yar`, папка `yara_rules/` | запасной путь, если YARA включена, а путь в настройках пуст; в EXE не копируются |
 | 🎛️ | `ui_prefs.json` | тема, фильтры, пути, workers, hook |
 | 🔄 | `update.json` | локальный манифест версии (без сети; см. `update.json.example`) |
 

@@ -18,6 +18,7 @@ def yara_available() -> bool:
 
 
 def resolve_rules_path(explicit: str | Path | None = None) -> Path | None:
+    """Rules file or folder. Never reads a path packed inside a frozen EXE."""
     if explicit and str(explicit).strip():
         p = Path(str(explicit).strip())
         return p if p.is_file() or p.is_dir() else None
@@ -34,12 +35,6 @@ def resolve_rules_path(explicit: str | Path | None = None) -> Path | None:
                 if preferred.name == "default.yar":
                     return folder
             return folder
-    # Packaged / Meipass fallback
-    meipass = getattr(__import__("sys"), "_MEIPASS", None)
-    if meipass:
-        bundled = Path(meipass) / "yara_rules"
-        if bundled.is_dir() and list(bundled.glob("*.yar")):
-            return bundled
     return None
 
 
@@ -60,7 +55,10 @@ def scan_bytes(
         return [], notes
     path = resolve_rules_path(rules_path)
     if path is None:
-        notes.append("YARA: правила не найдены рядом с EXE")
+        if rules_path and str(rules_path).strip():
+            notes.append("YARA: правила по указанному пути не найдены")
+        else:
+            notes.append("YARA: укажите путь к правилам в настройках")
         return [], notes
     try:
         if path.is_dir():

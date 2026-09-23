@@ -103,6 +103,17 @@ def test_yara_resolve_and_scan_without_package(
     rules.unlink()
     assert resolve_rules_path(None) == folder
 
+    # Rules packed inside a frozen bundle must not be picked up.
+    import sys
+
+    meipass = tmp_path / "bundle"
+    packed = meipass / "yara_rules"
+    packed.mkdir(parents=True)
+    (packed / "default.yar").write_text("rule packed { condition: false }", encoding="utf-8")
+    monkeypatch.setattr(sys, "_MEIPASS", str(meipass), raising=False)
+    folder.rename(tmp_path / "yara_rules_off")
+    assert resolve_rules_path(None) is None
+
     hits, notes = scan_bytes(b"", rules_path=rules)
     assert hits == [] and notes == []
 

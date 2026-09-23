@@ -2,6 +2,9 @@
 
 ## 2.19.0
 
+### Сборка
+- YARA-правила остаются вне EXE (ложные срабатывания антивируса). Скан выключен, пока не включены галочка и путь в настройках. `--yara-rules` включает скан сам. `--enable-yara` без пути берёт рядом с программой `yara_rules.yar`, `yara_rules.yara`, `rules.yar`, `default.yar` или папку `yara_rules/`
+
 ### Детекция
 - Живой VBA: `office_vba_live` / `weight_office_vba_live` (22) по AutoOpen, Document_Open, Workbook_Open, Shell, URLDownloadToFile и опасным CreateObject. Сам `vbaProject.bin` без этих маркеров остаётся мягким флагом
 - Композиты: картинка без текста и http-ссылка (`weight_image_only_link` 16), макрос или XLM и пароль в теле (`weight_macro_password` 12), HTML-вложение и form action на IP/подозрительный TLD (`weight_html_form_lure` 16)

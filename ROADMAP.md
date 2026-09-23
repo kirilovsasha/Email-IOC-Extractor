@@ -8,6 +8,7 @@ Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 - Composites: image-only×link, macro/XLM×password, HTML attachment×suspicious form action
 - Calendar and thread mitigations skipped when Reply-To or thread domain is foreign
 - `org_domains.txt`: organisation domains as protected lookalike / display-spoof brands
+- YARA rules stay outside the EXE; scan stays off until settings (path + checkbox) or `--yara-rules`
 
 ## Done in 2.18
 

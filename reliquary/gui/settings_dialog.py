@@ -50,7 +50,14 @@ def show_settings_dialog(
         ).pack(anchor="w")
         return block
 
-    def _path_row(parent_f: ctk.CTkFrame, key: str, label: str, *, dir_mode: bool = False) -> None:
+    def _path_row(
+        parent_f: ctk.CTkFrame,
+        key: str,
+        label: str,
+        *,
+        dir_mode: bool = False,
+        file_or_dir: bool = False,
+    ) -> None:
         row = ctk.CTkFrame(parent_f, fg_color="transparent")
         row.pack(fill="x", pady=3)
         ctk.CTkLabel(row, text=label, width=160, anchor="w", font=ctk_font("caption")).pack(
@@ -61,17 +68,43 @@ def show_settings_dialog(
         ent.pack(side="left", fill="x", expand=True, padx=6)
         entries[key] = ent
 
-        def _browse() -> None:
-            if dir_mode:
-                chosen = filedialog.askdirectory(parent=win, initialdir=var.get() or str(Path.cwd()))
-            else:
-                chosen = filedialog.askopenfilename(
-                    parent=win, initialdir=str(Path(var.get() or Path.cwd()).parent)
-                )
+        def _initial() -> str:
+            raw = var.get().strip()
+            if not raw:
+                return str(Path.cwd())
+            path = Path(raw)
+            if path.is_dir():
+                return str(path)
+            return str(path.parent)
+
+        def _browse_file() -> None:
+            kwargs: dict[str, Any] = {"parent": win, "initialdir": _initial()}
+            if file_or_dir:
+                kwargs["filetypes"] = [("YARA", "*.yar *.yara"), ("Все", "*.*")]
+            chosen = filedialog.askopenfilename(**kwargs)
             if chosen:
                 var.set(chosen)
 
-        ctk.CTkButton(row, text="…", width=36, command=_browse, **BTN_SECONDARY).pack(side="left")
+        def _browse_dir() -> None:
+            chosen = filedialog.askdirectory(parent=win, initialdir=_initial())
+            if chosen:
+                var.set(chosen)
+
+        if file_or_dir:
+            ctk.CTkButton(row, text="файл", width=52, command=_browse_file, **BTN_SECONDARY).pack(
+                side="left", padx=(0, 4)
+            )
+            ctk.CTkButton(row, text="папка", width=58, command=_browse_dir, **BTN_SECONDARY).pack(
+                side="left"
+            )
+        else:
+            ctk.CTkButton(
+                row,
+                text="…",
+                width=36,
+                command=_browse_dir if dir_mode else _browse_file,
+                **BTN_SECONDARY,
+            ).pack(side="left")
 
     def _int_row(parent_f: ctk.CTkFrame, key: str, label: str) -> None:
         row = ctk.CTkFrame(parent_f, fg_color="transparent")
@@ -150,9 +183,18 @@ def show_settings_dialog(
     _check(noise, "hide_private", "Скрыть private/local")
     _check(noise, "full_ioc_types", "Все типы IOC (registry/mutex/…)")
 
-    yara = _section("YARA (optional extra)")
-    _path_row(yara, "yara_rules_path", "YARA rules (.yar / папка)")
-    _check(yara, "enable_yara", "Сканировать YARA (нужен extra)")
+    yara = _section("YARA (по необходимости)")
+    ctk.CTkLabel(
+        yara,
+        text="Правила не входят в EXE. Укажите файл .yar или папку и включите сканирование.",
+        font=ctk_font("caption"),
+        text_color=COLORS["muted"],
+        anchor="w",
+        wraplength=560,
+        justify="left",
+    ).pack(anchor="w", pady=(0, 2))
+    _path_row(yara, "yara_rules_path", "Путь к правилам", file_or_dir=True)
+    _check(yara, "enable_yara", "Сканировать YARA")
 
     profile_wiz = _section("Org profile — мастер")
     row_p = ctk.CTkFrame(profile_wiz, fg_color="transparent")

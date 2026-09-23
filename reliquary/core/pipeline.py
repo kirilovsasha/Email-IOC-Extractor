@@ -737,18 +737,8 @@ def _enrich_parsed_result(
     result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
     if tag_filename:
         result.iocs = [_tag_file(i, tag_filename) for i in result.iocs]
+    # Opt-in only: rules are not bundled in the EXE (AV false positives).
     if opts.enable_yara:
-        _run_yara = True
-    else:
-        # Auto-enable when yara package + rules resolve (unless nothing to scan with)
-        _run_yara = False
-        try:
-            from reliquary.core.yara_scan import resolve_rules_path, yara_available
-
-            _run_yara = bool(yara_available() and resolve_rules_path(opts.yara_rules_path))
-        except (ImportError, OSError, TypeError, ValueError):
-            _run_yara = False
-    if _run_yara:
         try:
             from reliquary.core.yara_scan import scan_result_attachments
 
