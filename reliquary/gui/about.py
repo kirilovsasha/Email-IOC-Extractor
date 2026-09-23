@@ -66,7 +66,7 @@ def compose_about_text(
         "Ctrl+N/P пакет · Ctrl+Shift+N следующее suspicious+ · Ctrl+L тема\n"
         f"Тема: {appearance_mode} · IOC: {ioc_density}"
         f"{overrides}{update_line}{runbook_line}\n\n"
-        f"Каталог:\n{root}",
+        f"Каталог:\n{root}"
     )
 
 

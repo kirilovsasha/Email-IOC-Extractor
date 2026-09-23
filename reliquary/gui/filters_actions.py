@@ -8,6 +8,7 @@ from typing import Any
 from reliquary.core.filter_state import FilterState
 from reliquary.core.models import AnalysisResult
 
+
 def _widget_inside(widget: object, ancestor: object) -> bool:
     while widget is not None:
         if widget is ancestor:
@@ -61,9 +62,13 @@ class FiltersActionsMixin:
     actionable_only: Any
     full_ioc_types: Any
     _filters_open: Any
+    _filt_bar: Any
     _filt_toggle: Any
     _filt_hint: Any
     _filters_panel: Any
+    winfo_rootx: Callable[[], int]
+    winfo_rooty: Callable[[], int]
+    winfo_width: Callable[[], int]
     _search_var: Any
     _focus_source_file: str
     _persist_prefs: Callable[[], None]
