@@ -67,6 +67,7 @@ def verify_org_profile(
             ("allowlist", profile.allowlist_path),
             ("verdict", profile.verdict_path),
             ("brands", profile.brands_path),
+            ("org_domains", profile.org_domains_path),
             ("handoff", profile.handoff_template_path),
         ):
             if path and path.is_file():

@@ -11,6 +11,7 @@
 | `handoff_extra.txt` | Шаблон ITSM handoff по умолчанию. |
 | `handoff_{level}.txt` | Handoff по уровню (`malicious` / `suspicious` / `unknown` / `benign`). |
 | `brands.txt` | Бренды для lookalike. |
+| `org_domains.txt` | Свои домены: lookalike и display-spoof против имени организации. Пример: [`org_domains.example.txt`](../org_domains.example.txt). |
 
 ## Готовые пресеты
 

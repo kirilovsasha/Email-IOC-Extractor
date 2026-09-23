@@ -1,6 +1,6 @@
 # Email IOC Extractor
 
-**Mail. Extract. Decide.** · v2.18.0
+**Mail. Extract. Decide.** · v2.19.0
 
 🔒 Офлайн-инструмент SOC для triage писем (`.eml` / `.msg` / `.mbox` / `.pst`): заголовки,
 вложения, URL rewrite, IOC как доказательства и **вердикт**
@@ -231,6 +231,7 @@ Override: `verdict_extra.json`
 | 🎫 | `handoff_extra.txt` | шаблон ITSM по умолчанию |
 | 🏷️ | `handoff_{level}.txt` | шаблон для `malicious` / `suspicious` / `unknown` / `benign` |
 | 🏛️ | `brands.txt` | бренды для lookalike |
+| 🏢 | `org_domains.txt` | свои домены: lookalike и display-spoof (`org_domains.example.txt`) |
 | 📦 | `org_profile/` или `.zip` | пакет всего выше |
 | 📝 | `analyst_feedback.ndjson` | FP/FN от аналитика (GUI ПКМ) |
 | 🔬 | `yara_rules.yar` / `yara_rules/` | optional YARA (extra) |

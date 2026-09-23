@@ -1,0 +1,4 @@
+# Домены организации для lookalike и display-spoof.
+# Скопируйте в org_profile/org_domains.txt. Строки с # игнорируются.
+# contoso.com
+# corp.contoso.ru

@@ -62,6 +62,7 @@ def render_verdict(
     cfg: VerdictConfig | None = None,
     *,
     brands_path: str | Path | None = None,
+    org_domains_path: str | Path | None = None,
     allowlist_domains: set[str] | None = None,
 ) -> Verdict | None:
     """Mail triage score — primary output for email artifacts."""
@@ -77,7 +78,9 @@ def render_verdict(
         lambda r, c: _score_attachments(r, c),
         lambda r, c: _score_urls(r, c),
         lambda r, c: _score_content(r, c),
-        lambda r, c: _score_lookalike(r, c, brands_path=brands_path),
+        lambda r, c: _score_lookalike(
+            r, c, brands_path=brands_path, org_domains_path=org_domains_path
+        ),
     ):
         part, parts = scorer(result, cfg)
         score += part

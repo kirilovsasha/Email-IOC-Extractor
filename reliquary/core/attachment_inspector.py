@@ -611,6 +611,9 @@ def _scan_web_payload(filename: str, data: bytes) -> tuple[list[str], list[str],
     if kind == "svg" and (b"<script" in sample.lower() or b"onload=" in sample.lower()):
         flags.append("svg_script")
         notes.append("SVG содержит script/onload")
+    if kind in {"html", "mht", "svg"} and _html_form_action_suspicious(sample):
+        flags.append("html_form_action")
+        notes.append("HTML: form action на IP или подозрительный TLD")
     # HTML polyglot: HTML magic near start + ZIP/PDF magic later in first 8KB
     head8 = data[: min(len(data), 8192)]
     htmlish = bool(
@@ -621,6 +624,28 @@ def _scan_web_payload(filename: str, data: bytes) -> tuple[list[str], list[str],
         flags.append("html_polyglot")
         notes.append("HTML-polyglot: HTML + ZIP/PDF magic в первых 8 КБ")
     return flags, notes, kind
+
+
+_HTML_FORM_ACTION_RE = re.compile(
+    rb"(?is)<form\b[^>]{0,500}?\baction\s*=\s*['\"]([^'\"]{1,240})"
+)
+
+
+def _html_form_action_suspicious(data: bytes) -> bool:
+    """Form in an HTML/MHT/SVG attachment posts to an IP or a suspicious TLD."""
+    from reliquary.core.verdict_config import DEFAULT_SUSPICIOUS_TLDS
+
+    for match in _HTML_FORM_ACTION_RE.finditer(data[: min(len(data), 256 * 1024)]):
+        action = match.group(1).decode("ascii", errors="ignore").strip().lower()
+        if not action or action.startswith(("#", "mailto:")):
+            continue
+        host = action.split("://", 1)[-1] if "://" in action else action
+        host = host.split("/", 1)[0].split("?", 1)[0].split("@")[-1].strip("[]")
+        if re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", host):
+            return True
+        if any(host.endswith(tld) for tld in DEFAULT_SUSPICIOUS_TLDS):
+            return True
+    return False
 
 
 def _detect_html_polyglot(data: bytes) -> bool:
@@ -1025,6 +1050,18 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
 
     if " " in filename or filename.startswith("."):
         notes.append("Необычное имя файла")
+
+    if "ooxml_vba" in flags or "ole_macros_suspected" in flags:
+        try:
+            from reliquary.core.office_extract import detect_office_vba_live
+
+            if detect_office_vba_live(data):
+                flags.append("office_vba_live")
+                notes.append(
+                    "VBA: автозапуск или загрузка (AutoOpen / Shell / URLDownloadToFile)"
+                )
+        except (OSError, ValueError, TypeError, RuntimeError, ImportError):
+            pass
 
     if ext in {".pdf", ".jpg", ".png", ".txt", ".docx"} and mime in {
         "application/x-msdownload",

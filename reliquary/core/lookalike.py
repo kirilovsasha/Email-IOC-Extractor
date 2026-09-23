@@ -230,6 +230,76 @@ class LookalikeHit:
     detail: str
 
 
+def load_org_domains(path: str | Path | None = None) -> tuple[str, ...]:
+    """Domains the organisation owns (``org_domains.txt``). Not the global brand list."""
+    if path is None:
+        return ()
+    file_path = Path(path)
+    if not file_path.is_file():
+        return ()
+    try:
+        lines = file_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ()
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        host = _normalize_org_domain(line)
+        if host and host not in seen:
+            seen.add(host)
+            out.append(host)
+    return tuple(out)
+
+
+def _normalize_org_domain(line: str) -> str:
+    host = (line or "").strip().lower().lstrip("@").lstrip(".")
+    if not host or host.startswith("#") or "@" in host or "/" in host or " " in host:
+        return ""
+    try:
+        ascii_host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return ""
+    if "." not in ascii_host or len(ascii_host) > 253:
+        return ""
+    labels = ascii_host.split(".")
+    if any(not part or len(part) > 63 for part in labels):
+        return ""
+    return ascii_host
+
+
+def org_display_pairs(
+    org_domains: tuple[str, ...],
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Display-name labels derived from owned domains (label length ≥ 4)."""
+    pairs: list[tuple[str, tuple[str, ...]]] = []
+    seen: set[str] = set()
+    for dom in org_domains:
+        reg = _registrable(dom)
+        label = reg.split(".")[0]
+        expected = (dom,)
+        if len(label) >= 4 and label not in seen:
+            seen.add(label)
+            pairs.append((label, expected))
+        if dom not in seen:
+            seen.add(dom)
+            pairs.append((dom, expected))
+    return tuple(pairs)
+
+
+def _org_registrables(org_domains: tuple[str, ...]) -> set[str]:
+    return {_registrable(dom) for dom in org_domains if dom}
+
+
+def retag_org_hit(hit: LookalikeHit, org_domains: tuple[str, ...]) -> LookalikeHit:
+    """Mark a brand hit as the organisation's own domain when the brand is owned."""
+    regs = _org_registrables(org_domains)
+    if not hit.brand or _registrable(hit.brand) not in regs:
+        return hit
+    kind = "org_display_spoof" if hit.kind == "display_spoof" else "org_lookalike"
+    detail = hit.detail if "свой домен" in hit.detail else f"Свой домен {hit.brand}: {hit.detail}"
+    return LookalikeHit(value=hit.value, brand=hit.brand, kind=kind, detail=detail)
+
+
 def load_brands(extra_path: str | Path | None = None) -> tuple[str, ...]:
     brands = list(DEFAULT_BRANDS)
     if extra_path is None:
@@ -422,14 +492,17 @@ def parse_from_display_and_addr(from_header: str) -> tuple[str, str]:
     return raw.lower(), ""
 
 
-def check_display_name_spoof(from_header: str) -> list[LookalikeHit]:
+def check_display_name_spoof(
+    from_header: str,
+    extra_names: tuple[tuple[str, tuple[str, ...]], ...] = (),
+) -> list[LookalikeHit]:
     """Brand display name with mismatched From domain (classic spoof)."""
     display, addr = parse_from_display_and_addr(from_header)
     if not display or not addr or "@" not in addr:
         return []
     host = addr.rsplit("@", 1)[-1].lower().strip(".")
     hits: list[LookalikeHit] = []
-    for label, brands in _BRAND_DISPLAY_NAMES:
+    for label, brands in _BRAND_DISPLAY_NAMES + extra_names:
         if label not in display:
             continue
         # Exact / subdomain match (works for portal.gov.by, nalog.gov.by, …)
@@ -457,12 +530,26 @@ def scan_lookalikes(
     text: str = "",
     domains: list[str] | None = None,
     brands: tuple[str, ...] | None = None,
+    org_domains: tuple[str, ...] | None = None,
 ) -> list[LookalikeHit]:
-    brands = brands or DEFAULT_BRANDS
+    org_domains = org_domains or ()
+    base = brands or DEFAULT_BRANDS
+    if org_domains:
+        seen_brands: set[str] = set()
+        merged: list[str] = []
+        for item in (*base, *org_domains):
+            if item not in seen_brands:
+                seen_brands.add(item)
+                merged.append(item)
+        brands = tuple(merged)
+    else:
+        brands = base
     candidates: list[str] = []
     out: list[LookalikeHit] = []
     if from_addr:
-        out.extend(check_display_name_spoof(from_addr))
+        out.extend(
+            check_display_name_spoof(from_addr, extra_names=org_display_pairs(org_domains))
+        )
         h = host_from_email_or_url(from_addr)
         if h:
             candidates.append(h)
@@ -481,4 +568,6 @@ def scan_lookalikes(
             sig = (hit.kind, hit.value, hit.brand)
             if sig not in {(h.kind, h.value, h.brand) for h in out}:
                 out.append(hit)
+    if org_domains:
+        out = [retag_org_hit(hit, org_domains) for hit in out]
     return out[:12]

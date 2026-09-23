@@ -15,6 +15,7 @@ _PROFILE_FILES = (
     "verdict_extra.json",
     "handoff_extra.txt",
     "brands.txt",
+    "org_domains.txt",
     # Per-verdict handoff templates (optional)
     "handoff_malicious.txt",
     "handoff_suspicious.txt",
@@ -34,6 +35,7 @@ class OrgProfile:
     verdict_path: Path | None = None
     handoff_template_path: Path | None = None
     brands_path: Path | None = None
+    org_domains_path: Path | None = None
     handoff_by_level: dict[str, Path] | None = None
     _tmpdir: Path | None = None
 
@@ -150,6 +152,7 @@ def load_org_profile(path: str | Path | None = None) -> OrgProfile | None:
         verdict_path=_pick(root, "verdict_extra.json"),
         handoff_template_path=_pick(root, "handoff_extra.txt"),
         brands_path=_pick(root, "brands.txt"),
+        org_domains_path=_pick(root, "org_domains.txt"),
         handoff_by_level=level_map or None,
         _tmpdir=tmpdir,
     )

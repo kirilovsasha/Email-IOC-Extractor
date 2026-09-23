@@ -69,6 +69,14 @@ Feedback → `python scripts/feedback_weights.py` или `--feedback-weights OUT
 Feedback также пишет threshold/cap suggestions (`suggest_threshold_overrides`,
 `--feedback-tune`). PST: optional `pip install .[pst]` (libratom; pypff тоже подходит).
 
+2.19: `weight_office_vba_live` (22) — автозапуск/загрузка в VBA, не сам факт макроса.
+`weight_image_only_link` (16) вместе с `weight_image_only_body` (14) доводит картинку с http-ссылкой до suspicious.
+`weight_macro_password` (12) — макрос/XLM и пароль в теле.
+`weight_html_form_lure` (16) — HTML-вложение и form action на IP или подозрительный TLD.
+Сегменты: `office_vba` / `macro_password` / `html_form_lure` / `org_domain`.
+Свои домены: `org_domains.txt` в org profile (пример `org_domains.example.txt`).
+Календарь и тред не смягчают score, если домен Reply-To или треда не совпадает с From.
+
 2.18: `weight_clickfix` (16), `weight_image_only_body` (14), `weight_fake_auth_results` (12),
 `weight_office_xlm` (22), `weight_resent_from_mismatch` (12).
 Календарная митигация не применяется, если в ICS есть `http` или `ATTACH`.

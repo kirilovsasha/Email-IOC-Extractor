@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from reliquary.core.content_signals import analyze_content_signals
-from reliquary.core.lookalike import load_brands, scan_lookalikes
+from reliquary.core.lookalike import load_brands, load_org_domains, scan_lookalikes
 from reliquary.core.models import (
     AnalysisResult,
     ScoreContribution,
@@ -183,6 +183,8 @@ def _score_attachments(
         "office_encrypted",
         "office_external_data",
         "office_xlm",
+        "office_vba_live",
+        "html_form_action",
         "iso_contains_script",
         "disk_contains_script",
     }
@@ -529,6 +531,28 @@ def _score_attachments(
                     )
                 )
                 rest.discard("office_xlm")
+            if "office_vba_live" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_office_vba_live,
+                        f"VBA автозапуск/загрузка «{att.filename}»",
+                    )
+                )
+                rest.discard("office_vba_live")
+                # Presence of vbaProject stays a soft flag only when live markers are absent.
+                rest.discard("ooxml_vba")
+                rest.discard("ole_macros_suspected")
+                rest.discard("macro_enabled_office")
+            if "html_form_action" in rest:
+                parts.append(
+                    ScoreContribution(
+                        "attachments",
+                        cfg.weight_form_action_suspicious,
+                        f"HTML «{att.filename}»: form action на IP или подозрительный TLD",
+                    )
+                )
+                rest.discard("html_form_action")
             if "office_external_data" in rest:
                 parts.append(
                     ScoreContribution(
@@ -834,9 +858,11 @@ def _score_lookalike(
     cfg: VerdictConfig,
     *,
     brands_path: str | Path | None = None,
+    org_domains_path: str | Path | None = None,
 ) -> tuple[int, list[ScoreContribution]]:
     parts: list[ScoreContribution] = []
     brands = load_brands(brands_path)
+    org_domains = load_org_domains(org_domains_path)
     from_addr = ""
     if result.mail_identity and result.mail_identity.from_header:
         from_addr = result.mail_identity.from_header
@@ -852,6 +878,7 @@ def _score_lookalike(
         text=result.raw_text_preview,
         domains=domains,
         brands=brands,
+        org_domains=org_domains,
     )
     seen_kinds: set[str] = set()
     display_pts = 0
@@ -861,13 +888,15 @@ def _score_lookalike(
         seen_kinds.add(hit.kind)
         if hit.kind == "idn":
             pts = cfg.weight_idn
-        elif hit.kind == "display_spoof":
+        elif hit.kind in ("display_spoof", "org_display_spoof"):
             # Cap display-spoof so spoof cases don't all pin at 100 with compounds
             room = max(0, cfg.cap_display_spoof - display_pts)
             pts = min(cfg.weight_display_spoof, room)
             display_pts += pts
         else:
             pts = cfg.weight_lookalike
+        if hit.kind in ("org_lookalike", "org_display_spoof"):
+            _remember_signal(result, "org_domain")
         if pts <= 0:
             continue
         parts.append(ScoreContribution("lookalike", pts, hit.detail))
@@ -880,6 +909,65 @@ def _score_lookalike(
         else cfg.cap_lookalike
     )
     return _apply_cap(parts, lookalike_cap, "lookalike")
+
+
+def _remember_signal(result: AnalysisResult, kind: str) -> None:
+    if kind not in (result.content_signals or []):
+        result.content_signals = list(result.content_signals or []) + [kind]
+
+
+def _append_lure_pair_compounds(
+    result: AnalysisResult,
+    parts: list[ScoreContribution],
+    cfg: VerdictConfig,
+) -> None:
+    """Pairs that should clear suspicious (30): image+link, macro+password, HTML form."""
+    sigs = set(result.content_signals or [])
+    flags = {f for att in result.attachments for f in (att.risk_flags or [])}
+    if "image_only_body" in sigs and "image_only_link" not in sigs:
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_image_only_link,
+                "Картинка без текста и внешняя http-ссылка",
+            )
+        )
+        _remember_signal(result, "image_only_link")
+    macroish = flags.intersection(
+        {
+            "office_xlm",
+            "office_vba_live",
+            "ooxml_vba",
+            "ole_macros_suspected",
+            "macro_enabled_office",
+        }
+    )
+    if (
+        macroish
+        and sigs.intersection({"archive_password", "archive_password_match"})
+        and "macro_password" not in sigs
+    ):
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_macro_password,
+                "Макрос или XLM и пароль в теле письма",
+            )
+        )
+        _remember_signal(result, "macro_password")
+    html_att = flags.intersection(
+        {"html_attachment", "mht_attachment", "svg_attachment", "html_form_action"}
+    )
+    formish = "form_action_suspicious" in sigs or "html_form_action" in flags
+    if html_att and formish and "html_form_lure" not in sigs:
+        parts.append(
+            ScoreContribution(
+                "compound",
+                cfg.weight_html_form_lure,
+                "HTML-вложение и подозрительный form action",
+            )
+        )
+        _remember_signal(result, "html_form_lure")
 
 
 def _score_compounds(
@@ -1078,6 +1166,8 @@ def _score_compounds(
             )
         )
 
+    _append_lure_pair_compounds(result, parts, cfg)
+
     total = sum(c.points for c in parts)
     return total, parts
 
@@ -1203,6 +1293,8 @@ def _score_mitigations(
         "office_encrypted",
         "office_external_data",
         "office_xlm",
+        "office_vba_live",
+        "html_form_action",
         "iso_contains_script",
         "disk_contains_script",
     }
@@ -1231,7 +1323,11 @@ def _score_mitigations(
         "freemail_bec",
         "clickfix",
         "image_only_body",
+        "image_only_link",
+        "macro_password",
+        "html_form_lure",
         "fake_auth_results",
+        "org_domain",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
     # Display-name spoof must block allowlist-From mitigation
@@ -1402,6 +1498,33 @@ _CORP_SIG_RE = re.compile(
 )
 
 
+def _header_domain(value: str) -> str:
+    raw = (value or "").strip()
+    if "<" in raw and ">" in raw:
+        raw = raw.split("<", 1)[1].split(">", 1)[0]
+    if "@" not in raw:
+        return ""
+    return raw.rsplit("@", 1)[-1].strip().lower().strip(">").strip(".")
+
+
+def _domains_related(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    return left == right or left.endswith("." + right) or right.endswith("." + left)
+
+
+def _foreign_reply_domain(result: AnalysisResult) -> bool:
+    """Reply-To or prior thread domain is not the From domain."""
+    mid = result.mail_identity
+    if mid is None:
+        return False
+    from_dom = _header_domain(mid.from_header)
+    reply_dom = _header_domain(mid.reply_to)
+    if from_dom and reply_dom and not _domains_related(from_dom, reply_dom):
+        return True
+    return any((h.name or "") == "Reply-chain anomaly" for h in result.headers)
+
+
 def _benign_marker_parts(
     result: AnalysisResult, cfg: VerdictConfig
 ) -> list[ScoreContribution]:
@@ -1409,6 +1532,9 @@ def _benign_marker_parts(
     mid = result.mail_identity
     subj = (result.subject or (mid.subject if mid else "") or "").strip()
     blob = f"{subj}\n{result.raw_text_preview or ''}\n{result.html_preview or ''}"
+    # Dangerous attachments and payment-change content skip this whole function.
+    # A foreign reply domain skips only calendar and thread credit.
+    foreign_reply = _foreign_reply_domain(result)
 
     auto = ((mid.auto_submitted if mid else "") or "").lower()
     if (auto and auto not in ("no", "")) or _AUTO_REPLY_SUBJ.search(subj):
@@ -1419,8 +1545,10 @@ def _benign_marker_parts(
                 "Автоответ / Out-of-Office — смягчение score",
             )
         )
-    if _calendar_surface(result, blob) and not (
-        _ics_contains_url(result, blob) or _ics_has_attach(result, blob)
+    if (
+        not foreign_reply
+        and _calendar_surface(result, blob)
+        and not (_ics_contains_url(result, blob) or _ics_has_attach(result, blob))
     ):
         parts.append(
             ScoreContribution(
@@ -1440,7 +1568,7 @@ def _benign_marker_parts(
                 "Похоже на корпоративную подпись / дисклеймер",
             )
         )
-    if mid and (mid.in_reply_to or mid.references):
+    if mid and (mid.in_reply_to or mid.references) and not foreign_reply:
         if re.match(r"(?i)^(re|fw|fwd|отв|пересл)\s*:", subj):
             parts.append(
                 ScoreContribution(

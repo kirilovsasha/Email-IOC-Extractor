@@ -2,6 +2,13 @@
 
 Offline SOC triage. No telemetry, no DB. Ship as one EXE + configs beside it.
 
+## Done in 2.19
+
+- Live VBA (autostart / download) separate from bare `vbaProject.bin`
+- Composites: image-only×link, macro/XLM×password, HTML attachment×suspicious form action
+- Calendar and thread mitigations skipped when Reply-To or thread domain is foreign
+- `org_domains.txt`: organisation domains as protected lookalike / display-spoof brands
+
 ## Done in 2.18
 
 - ClickFix, image-only HTML, fake auth in body, Excel 4.0/XLM

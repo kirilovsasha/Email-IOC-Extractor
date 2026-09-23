@@ -106,6 +106,10 @@
     "weight_fake_auth_results": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_office_xlm": { "type": "integer", "minimum": -50, "maximum": 100 },
     "weight_resent_from_mismatch": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_office_vba_live": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_image_only_link": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_macro_password": { "type": "integer", "minimum": -50, "maximum": 100 },
+    "weight_html_form_lure": { "type": "integer", "minimum": -50, "maximum": 100 },
     "suspicious_tlds": {
       "type": "array",
       "maxItems": 64,

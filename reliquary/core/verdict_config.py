@@ -135,6 +135,11 @@ class VerdictConfig:
     weight_fake_auth_results: int = 12
     weight_office_xlm: int = 22
     weight_resent_from_mismatch: int = 12
+    # 2.19 — live VBA, lure composites (pairs that should clear suspicious=30)
+    weight_office_vba_live: int = 22
+    weight_image_only_link: int = 16
+    weight_macro_password: int = 12
+    weight_html_form_lure: int = 16
     # Mitigating (negative) signals — reduce score when auth/path looks trusted
     weight_dmarc_pass_aligned: int = -12
     weight_auth_full_pass: int = -6

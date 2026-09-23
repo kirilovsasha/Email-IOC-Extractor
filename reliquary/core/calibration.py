@@ -27,6 +27,8 @@ def segment_for(result) -> str:
         return "dangerous_scheme"
     if "url_userinfo" in signals:
         return "url_userinfo"
+    if "org_domain" in signals or "свой домен" in reasons_l:
+        return "org_domain"
     if any("display" in (r or "").lower() and "spoof" in (r or "").lower() for r in (
         (result.verdict.reasons if result.verdict else []) or []
     )) or "display_spoof" in reasons_l or "имя «" in reasons_l:
@@ -101,6 +103,8 @@ def segment_for(result) -> str:
         return "iso"
     if "iso_contains_exe" in att_flags or "disk_contains_exe" in att_flags:
         return "iso_exe"
+    if "macro_password" in signals:
+        return "macro_password"
     if "archive_password_match" in signals or "archive_password" in signals:
         return "archive_password"
     if "oob_delivery" in signals:
@@ -115,16 +119,22 @@ def segment_for(result) -> str:
         return "wrap_lure"
     if "cid_phishing" in signals:
         return "cid_phishing"
+    if "html_form_lure" in signals:
+        return "html_form_lure"
     if "form_action_suspicious" in signals:
         return "form_action"
     if "campaign_divergence" in signals:
         return "campaign"
     if "clickfix" in signals:
         return "clickfix"
-    if "image_only_body" in signals:
+    if "image_only_link" in signals or "image_only_body" in signals:
         return "image_only"
     if "fake_auth_results" in signals:
         return "fake_auth"
+    if "office_vba_live" in att_flags:
+        return "office_vba"
+    if "html_form_action" in att_flags:
+        return "html_form_lure"
     if "office_xlm" in att_flags:
         return "office_xlm"
     if "office_dde" in att_flags:

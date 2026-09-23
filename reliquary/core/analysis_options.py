@@ -15,6 +15,7 @@ class AnalysisOptions:
     verdict_path: str | Path | None = None
     handoff_template_path: str | Path | None = None
     brands_path: str | Path | None = None
+    org_domains_path: str | Path | None = None
     profile_dir: str | Path | None = None
     max_workers: int = 0  # 0 = auto
     skip_broken: bool = True
@@ -43,6 +44,7 @@ class AnalysisOptions:
             handoff_template_path=self.handoff_template_path
             or getattr(profile, "handoff_template_path", None),
             brands_path=self.brands_path or getattr(profile, "brands_path", None),
+            org_domains_path=self.org_domains_path or getattr(profile, "org_domains_path", None),
             profile_dir=self.profile_dir or getattr(profile, "root", None),
         )
 
@@ -68,6 +70,7 @@ class AnalysisOptions:
             ("verdict", self.verdict_path),
             ("handoff", self.handoff_template_path),
             ("brands", self.brands_path),
+            ("org_domains", self.org_domains_path),
             ("profile", self.profile_dir),
         ):
             if path and str(path).strip():

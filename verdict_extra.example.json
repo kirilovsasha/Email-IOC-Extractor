@@ -103,6 +103,10 @@
   "weight_fake_auth_results": 12,
   "weight_office_xlm": 22,
   "weight_resent_from_mismatch": 12,
+  "weight_office_vba_live": 22,
+  "weight_image_only_link": 16,
+  "weight_macro_password": 12,
+  "weight_html_form_lure": 16,
   "suspicious_tlds": [".xyz", ".top", ".club", ".gq", ".tk", ".ml", ".cf", ".ga", ".zip", ".mov", ".cfd", ".sbs", ".click", ".bond", ".ru.com"],
   "cap_display_spoof": 28
 }

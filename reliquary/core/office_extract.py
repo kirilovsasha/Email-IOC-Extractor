@@ -431,6 +431,111 @@ def detect_office_external_data(data: bytes) -> bool:
         zf.close()
 
 
+# Autostart or download/exec inside VBA. Bare CreateObject is too common in
+# legitimate templates, so only dangerous progids count.
+_VBA_LIVE_MARKERS: tuple[str, ...] = (
+    "AutoOpen",
+    "Auto_Open",
+    "AutoExec",
+    "Auto_Exec",
+    "Document_Open",
+    "Workbook_Open",
+    "Workbook_Activate",
+    "URLDownloadToFile",
+    "WScript.Shell",
+    "Shell.Application",
+    "MSXML2.XMLHTTP",
+    "WinHttp.WinHttpRequest",
+    "ADODB.Stream",
+)
+_VBA_LIVE_SHELL_RE = re.compile(rb"(?i)\bShell\s*\(")
+_VBA_LIVE_CREATE_RE = re.compile(
+    rb"(?i)CreateObject\s*\(\s*[\"'](?:"
+    rb"WScript\.Shell|Shell\.Application|MSXML2\.XMLHTTP|"
+    rb"WinHttp\.WinHttpRequest|ADODB\.Stream)"
+)
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+
+def _marker_in_blob(blob: bytes, text: str) -> bool:
+    raw = text.encode("ascii")
+    if raw.lower() in blob.lower():
+        return True
+    wide = text.encode("utf-16le")
+    wide_lower = text.lower().encode("utf-16le")
+    return wide in blob or wide_lower in blob
+
+
+def _blob_has_vba_live(blob: bytes) -> bool:
+    if not blob:
+        return False
+    if any(_marker_in_blob(blob, marker) for marker in _VBA_LIVE_MARKERS):
+        return True
+    if _VBA_LIVE_SHELL_RE.search(blob) or _VBA_LIVE_CREATE_RE.search(blob):
+        return True
+    return False
+
+
+def _ole_stream_blobs(data: bytes) -> list[bytes]:
+    try:
+        import olefile
+    except ImportError:
+        return []
+    try:
+        if not olefile.isOleFile(data):
+            return []
+        ole = olefile.OleFileIO(io.BytesIO(data))
+    except (OSError, RuntimeError, ValueError, TypeError):
+        return []
+    blobs: list[bytes] = []
+    try:
+        for stream in ole.listdir():
+            joined = "/".join(stream).lower()
+            if "vba" not in joined and "macro" not in joined:
+                continue
+            try:
+                blobs.append(ole.openstream(stream).read())
+            except (OSError, RuntimeError, ValueError, TypeError):
+                continue
+    finally:
+        ole.close()
+    return blobs
+
+
+def detect_office_vba_live(data: bytes) -> bool:
+    """True when vbaProject / VBA streams contain autostart or a download/exec API.
+
+    Presence of ``vbaProject.bin`` alone is not enough. Strings are matched in
+    the raw project (VBA literals stay readable) and in OLE VBA streams.
+    """
+    if not data:
+        return False
+    blobs: list[bytes] = []
+    if data[:2] == b"PK":
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(data))
+        except zipfile.BadZipFile:
+            return False
+        try:
+            for name in zf.namelist():
+                if name.replace("\\", "/").lower().endswith("vbaproject.bin"):
+                    try:
+                        blobs.append(zf.read(name))
+                    except KeyError:
+                        continue
+        finally:
+            zf.close()
+    elif data[:8] == _OLE_MAGIC:
+        blobs.append(data)
+    for blob in blobs:
+        if _blob_has_vba_live(blob):
+            return True
+        for stream in _ole_stream_blobs(blob):
+            if _blob_has_vba_live(stream):
+                return True
+    return False
+
+
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 

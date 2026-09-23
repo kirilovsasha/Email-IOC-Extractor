@@ -779,6 +779,7 @@ def _enrich_parsed_result(
             result,
             cfg,
             brands_path=opts.brands_path,
+            org_domains_path=opts.org_domains_path,
             allowlist_domains=allow_domains or None,
         )
     result.file_rows = [file_triage_row(result)]
@@ -1032,5 +1033,10 @@ def merge_results(
         file_rows=rows,
     )
     cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
-    merged.verdict = render_verdict(email_only, cfg, brands_path=opts.brands_path)
+    merged.verdict = render_verdict(
+        email_only,
+        cfg,
+        brands_path=opts.brands_path,
+        org_domains_path=opts.org_domains_path,
+    )
     return merged

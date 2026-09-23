@@ -258,6 +258,56 @@ rule rtf_equation_objupdate
         any of them
 }
 
+rule vba_live_macro
+{
+    meta:
+        description = "VBA autostart or download/exec"
+    strings:
+        $a = "AutoOpen" ascii nocase
+        $b = "Document_Open" ascii nocase
+        $c = "Workbook_Open" ascii nocase
+        $d = "URLDownloadToFile" ascii nocase
+        $e = "WScript.Shell" ascii nocase
+    condition:
+        any of them
+}
+
+rule clickfix_lure
+{
+    meta:
+        description = "ClickFix: encoded powershell, mshta, or Win+R"
+    strings:
+        $ps = "powershell" ascii nocase
+        $enc = "-enc" ascii nocase
+        $mshta = "mshta" ascii nocase
+        $win = "Win+R" ascii nocase
+        $win2 = "Windows+R" ascii nocase
+    condition:
+        ($ps and $enc) or $mshta or $win or $win2
+}
+
+rule excel_xlm_macrosheet
+{
+    meta:
+        description = "Excel 4.0 / XLM macrosheet"
+    strings:
+        $a = "xl/macrosheets" ascii nocase
+        $b = "Excel 4.0" ascii
+    condition:
+        any of them
+}
+
+rule fake_auth_results_body
+{
+    meta:
+        description = "Authentication-Results pasted into a body or attachment"
+    strings:
+        $a = "Authentication-Results:" ascii nocase
+        $b = "spf=pass" ascii nocase
+    condition:
+        $a and $b
+}
+
 rule dangerous_uri_scheme
 {
     meta:

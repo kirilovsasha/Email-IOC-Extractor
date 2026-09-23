@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.19.0
+
+### Детекция
+- Живой VBA: `office_vba_live` / `weight_office_vba_live` (22) по AutoOpen, Document_Open, Workbook_Open, Shell, URLDownloadToFile и опасным CreateObject. Сам `vbaProject.bin` без этих маркеров остаётся мягким флагом
+- Композиты: картинка без текста и http-ссылка (`weight_image_only_link` 16), макрос или XLM и пароль в теле (`weight_macro_password` 12), HTML-вложение и form action на IP/подозрительный TLD (`weight_html_form_lure` 16)
+- Календарная и тред-митигация не применяются, если Reply-To или домен треда чужой. Опасное вложение и смена реквизитов по-прежнему отключают все смягчения
+- `org_domains.txt` в org profile: свои домены как защищаемые бренды (lookalike и display-spoof), сегмент калибровки `org_domain`
+- YARA: `vba_live_macro`, `clickfix_lure`, `excel_xlm_macrosheet`, `fake_auth_results_body`
+
 ## 2.18.0
 
 ### Детекция
