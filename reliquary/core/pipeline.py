@@ -203,9 +203,9 @@ def annotate_campaigns(rows: list[FileTriageRow]) -> None:
     for key, group in by_key.items():
         if len(group) < 2:
             continue
-        names = [Path(r.path).name for r in group]
+        paths = [r.path for r in group]
         for row in group:
-            row.campaign_peers = [n for n in names if n != Path(row.path).name]
+            row.campaign_peers = [p for p in paths if p != row.path]
 
 
 def _from_domain(sender: str) -> str:
@@ -312,11 +312,100 @@ def is_parser_failure(line: str) -> bool:
         return False
     if ": OLE " in text and "разбор" in text:
         return False
+    low = text.lower()
+    if "tnef:" in low and "извлечено вложений" in low:
+        return False
+    if "текст обрезан до" in low:
+        return False
+    if "защищён паролем" in low or "защищен паролем" in low:
+        return False
+    if "transport-заголовки частично синтезированы" in low:
+        return False
     return True
 
 
 def parser_failures(errors: list[str] | None) -> list[str]:
     return [line for line in (errors or []) if is_parser_failure(line)]
+
+
+def _nonfailure_kind(line: str) -> str:
+    low = (line or "").lower()
+    if "tnef:" in low and "извлечено вложений" in low:
+        return "tnef"
+    if "текст обрезан до" in low:
+        return "clip"
+    if "защищён паролем" in low or "защищен паролем" in low:
+        return "password"
+    if "transport-заголовки частично синтезированы" in low:
+        return "msg"
+    return ""
+
+
+def _note_already(att: AttachmentInfo, line: str, kind: str) -> bool:
+    for note in att.notes or []:
+        low = note.lower()
+        if kind == "tnef" and "извлечено" in low and "вложен" in low:
+            return True
+        if kind == "password" and "парол" in low:
+            return True
+        if note == line:
+            return True
+    return False
+
+
+def park_nonfailure_lines(result: AnalysisResult) -> None:
+    """Move the four non-failures off the error list onto a note or status line."""
+    kept: list[str] = []
+    status = list(result.status_notes)
+    for line in result.errors:
+        kind = _nonfailure_kind(line)
+        if not kind:
+            kept.append(line)
+            continue
+        if kind in {"tnef", "password"}:
+            placed = False
+            for att in result.attachments:
+                if _note_already(att, line, kind):
+                    placed = True
+                    break
+            if placed:
+                continue
+            target = None
+            for att in result.attachments:
+                flags = att.risk_flags or []
+                if kind == "tnef" and "tnef_attachment" in flags:
+                    target = att
+                    break
+                if kind == "password" and "encrypted_archive" in flags:
+                    target = att
+                    break
+            if target is not None:
+                target.notes.append(line)
+                continue
+        if line not in status:
+            status.append(line)
+    result.errors = kept
+    result.status_notes = status
+
+
+def sort_batch_rows(
+    rows: list[FileTriageRow],
+    *,
+    column: str = "score",
+    reverse: bool = True,
+) -> list[FileTriageRow]:
+    """Same order the batch table uses. Score descending is the default."""
+
+    def _key(row: FileTriageRow):
+        if column == "file":
+            return Path(row.path).name.lower()
+        if column == "verdict":
+            return (row.verdict_level or "").lower()
+        if column == "score":
+            return row.verdict_score if row.verdict_score is not None else -1
+        return Path(row.path).name.lower()
+
+    return sorted(rows, key=_key, reverse=reverse)
 
 
 def file_triage_row(result: AnalysisResult) -> FileTriageRow:
@@ -659,16 +748,20 @@ def _parse_nested_email_attachment(
                         raw = part.get_payload(decode=True)
                         if not isinstance(raw, (bytes, bytearray)):
                             continue
-                        charset = part.get_content_charset() or "utf-8"
-                        parts.append(bytes(raw).decode(charset, errors="replace"))
+                        from reliquary.core.attachment_inspector import decode_payload_text
+
+                        parts.append(
+                            decode_payload_text(bytes(raw), part.get_content_charset())
+                        )
                     except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
                         continue
         else:
             try:
                 raw = msg.get_payload(decode=True)
                 if isinstance(raw, (bytes, bytearray)):
-                    charset = msg.get_content_charset() or "utf-8"
-                    parts.append(bytes(raw).decode(charset, errors="replace"))
+                    from reliquary.core.attachment_inspector import decode_payload_text
+
+                    parts.append(decode_payload_text(bytes(raw), msg.get_content_charset()))
                 else:
                     parts.append(str(msg.get_payload()))
             except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
@@ -768,6 +861,20 @@ def _enrich_parsed_result(
     if expanded:
         result.attachments.extend(expanded)
 
+    yara_rules = None
+    yara_hits: list[str] = []
+    if opts.enable_yara:
+        try:
+            from reliquary.core.yara_scan import compiled_rules
+
+            yara_rules, ynotes = compiled_rules(opts.yara_rules_path)
+            for note in ynotes:
+                if note not in result.errors:
+                    result.errors.append(note)
+        except (OSError, TypeError, ValueError, ImportError) as exc:
+            result.errors.append(f"YARA: {exc}")
+            yara_rules = None
+
     # data:image QR in HTML body
     if parsed.html and "data:image" in parsed.html.lower():
         blob += _decode_data_image_qr(parsed.html, result)
@@ -793,6 +900,28 @@ def _enrich_parsed_result(
         for note in att.notes:
             if note.startswith("LNK→ "):
                 blob += "\n" + note[5:]
+        if yara_rules is not None and att.data:
+            try:
+                from reliquary.core.yara_scan import scan_bytes
+
+                hits, ynotes = scan_bytes(att.data, compiled=yara_rules)
+            except (OSError, TypeError, ValueError) as exc:
+                hits, ynotes = [], [f"YARA: {exc}"]
+            for rule in hits:
+                if rule not in yara_hits:
+                    yara_hits.append(rule)
+                if "yara_match" not in att.risk_flags:
+                    att.risk_flags.append("yara_match")
+                att.notes.append(f"YARA: {rule}")
+            for note in ynotes:
+                if note not in result.errors:
+                    result.errors.append(note)
+        elif yara_rules is not None and not att.data and any(
+            "не сохранено в памяти" in (note or "") for note in (att.notes or [])
+        ):
+            missed = f"YARA не видела этот файл ({att.filename})"
+            if missed not in att.notes:
+                att.notes.append(missed)
         if (
             att.data is not None
             and (
@@ -858,24 +987,32 @@ def _enrich_parsed_result(
     result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
     if tag_filename:
         result.iocs = [_tag_file(i, tag_filename) for i in result.iocs]
-    # Opt-in only: rules are not bundled in the EXE (AV false positives).
-    if opts.enable_yara:
+    result.score_text = enriched
+    result.score_html = getattr(parsed, "html", "") or ""
+    result.body_chars = len(getattr(parsed, "text", "") or "")
+    if yara_rules is not None:
         try:
-            from reliquary.core.yara_scan import scan_result_attachments
+            from reliquary.core.yara_scan import scan_bytes
 
-            body_blob = f"{getattr(parsed, 'text', '')}\n{getattr(parsed, 'html', '')}"
-            hits, ynotes = scan_result_attachments(
-                result.attachments,
-                body=body_blob,
-                rules_path=opts.yara_rules_path,
-            )
-            result.errors.extend(ynotes)
-            for rule in hits:
-                sig = f"yara:{rule}"
-                if sig not in result.content_signals:
-                    result.content_signals.append(sig)
-        except (OSError, TypeError, ValueError, ImportError) as exc:
+            body_blob = f"{getattr(parsed, 'text', '')}\n{getattr(parsed, 'html', '')}".strip()
+            if body_blob:
+                hits, ynotes = scan_bytes(
+                    body_blob.encode("utf-8", errors="replace"),
+                    compiled=yara_rules,
+                )
+                for rule in hits:
+                    if rule not in yara_hits:
+                        yara_hits.append(rule)
+                for note in ynotes:
+                    if note not in result.errors:
+                        result.errors.append(note)
+        except (OSError, TypeError, ValueError) as exc:
             result.errors.append(f"YARA: {exc}")
+        for rule in yara_hits:
+            sig = f"yara:{rule}"
+            if sig not in result.content_signals:
+                result.content_signals.append(sig)
+    park_nonfailure_lines(result)
     if result.source_kind == "email":
         cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
         allow_domains: set[str] = set()

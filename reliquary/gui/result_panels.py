@@ -30,7 +30,9 @@ def campaign_banner_text(result: AnalysisResult) -> str:
     mine = next((row for row in rows if row.path == current_path), None)
     if mine is None:
         current = Path(current_path).name
-        mine = next((row for row in rows if Path(row.path).name == current), None)
+        named = [row for row in rows if Path(row.path).name == current]
+        if len(named) == 1:
+            mine = named[0]
     if mine is None or not mine.campaign_peers:
         return ""
     group = [row for row in rows if row.campaign_key and row.campaign_key == mine.campaign_key]
@@ -139,6 +141,29 @@ class ResultPanelsMixin:
                 continue
             iid = tree.insert("", "end", values=(name, level, score, reason, peers))
             self._batch_row_map[iid] = row
+        self._highlight_open_batch_row(tree)
+
+    def _highlight_open_batch_row(self, tree) -> None:
+        """Mark the message already open on the verdict, without re-opening it."""
+        current = getattr(getattr(self, "result", None), "source_path", "") or ""
+        if not current:
+            return
+        selected = ""
+        for iid, row in getattr(self, "_batch_row_map", {}).items():
+            if row.path == current:
+                selected = iid
+                break
+        if not selected:
+            return
+        self._batch_select_silent = True
+        try:
+            tree.selection_set(selected)
+            tree.focus(selected)
+            tree.see(selected)
+        except tk.TclError:
+            pass
+        finally:
+            self._batch_select_silent = False
 
     def _set_batch_verdict_chip(self, value: str) -> None:
         if hasattr(self, "_batch_verdict_chip"):
@@ -306,7 +331,7 @@ class ResultPanelsMixin:
                 )
                 peer0 = row.campaign_peers[0]
                 dtag = f"batchdiff_{idx}"
-                self._batch_diff_tags[dtag] = (name, peer0)
+                self._batch_diff_tags[dtag] = (row.path, peer0)
                 self._put(self.batch_box, "      ", "muted")
                 self._put(
                     self.batch_box,
@@ -330,6 +355,8 @@ class ResultPanelsMixin:
 
 
     def _on_batch_tree_select(self, _event: object = None) -> None:
+        if getattr(self, "_batch_select_silent", False):
+            return
         tree = getattr(self, "batch_tree", None)
         if tree is None:
             return
@@ -372,7 +399,7 @@ class ResultPanelsMixin:
         if row is None or not row.campaign_peers:
             self._set_status("Нет peer кампании для сравнения")
             return
-        self._show_campaign_diff(Path(row.path).name, row.campaign_peers[0])
+        self._show_campaign_diff(row.path, row.campaign_peers[0])
 
     def _on_batch_diff_click(self, event: tk.Event) -> None:  # type: ignore[type-arg]
         widget = self._tk(self.batch_box)
@@ -658,7 +685,7 @@ class ResultPanelsMixin:
                 self._put(self.mail_box, "\n")
             self._put(
                 self.mail_box,
-                "  Полный разбор заголовков — у первого письма; детали по файлам во вкладке «Пакет».\n\n",
+                "  Открыто письмо с верхней строки таблицы; детали по файлам — здесь же.\n\n",
                 "muted",
             )
 

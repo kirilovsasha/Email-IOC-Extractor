@@ -23,6 +23,31 @@ from reliquary.core.models import AnalysisResult
 from reliquary.core.org_profile import load_org_profile
 from reliquary.core.pipeline import analyze_text
 
+_PREVIEW_CAP = 4000
+
+
+def source_panel_text(result: AnalysisResult) -> str:
+    """Left-hand source text. Says when only the first N characters are shown."""
+    preview = result.raw_text_preview or ""
+    lines = [
+        f"Файл: {result.source_path}",
+        f"Тип: {result.source_kind}",
+    ]
+    if result.sender:
+        lines.append(f"From: {result.sender}")
+    if result.subject:
+        lines.append(f"Subject: {result.subject}")
+    if result.verdict:
+        lines.append(f"Вердикт: {result.verdict.level.value} · {result.verdict.score}")
+    for note in result.status_notes:
+        if note and note not in lines:
+            lines.append(note)
+    total = int(result.body_chars or 0)
+    if preview and (len(preview) >= _PREVIEW_CAP or total > len(preview)):
+        lines.append(f"Показаны первые {len(preview)} символов")
+    lines.extend(["=" * 40, "", preview])
+    return "\n".join(lines)
+
 
 def _source_meta_line(kind: str, name: str, subject: str) -> str:
     """File name and subject on two lines. The subject is not cut."""
@@ -342,6 +367,15 @@ class AnalysisActionsMixin:
         except (AttributeError, tk.TclError):
             pass
 
+    def _open_batch_path(self, rows: list) -> str:
+        """Path of the row the batch table already puts first."""
+        from reliquary.core.pipeline import sort_batch_rows
+
+        col = str(getattr(self, "_batch_sort_col", "score") or "score")
+        reverse = bool(getattr(self, "_batch_sort_reverse", True))
+        ordered = sort_batch_rows(rows, column=col, reverse=reverse)
+        return ordered[0].path if ordered else ""
+
     def _present_batch_message(self, path: str, *, preload_text: bool = True) -> None:
         """Open one already-scored message and keep the batch table and peers."""
         from copy import copy
@@ -366,23 +400,9 @@ class AnalysisActionsMixin:
         name = Path(shown.source_path).name if shown.source_path else ""
         self.source_meta.configure(text=_source_meta_line(kind, name, shown.subject or ""))
         if preload_text:
-            preview = shown.raw_text_preview or ""
-            meta_lines = [
-                f"Файл: {shown.source_path}",
-                f"Тип: {shown.source_kind}",
-            ]
-            if shown.sender:
-                meta_lines.append(f"From: {shown.sender}")
-            if shown.subject:
-                meta_lines.append(f"Subject: {shown.subject}")
-            if shown.verdict:
-                meta_lines.append(
-                    f"Вердикт: {shown.verdict.level.value} · {shown.verdict.score}"
-                )
-            meta_lines.extend(["=" * 40, "", preview])
             self._placeholder_active = False
             self.input_box.delete("1.0", "end")
-            self.input_box.insert("1.0", "\n".join(meta_lines))
+            self.input_box.insert("1.0", source_panel_text(shown))
             from reliquary.gui.theme import COLORS
 
             self.input_box.configure(text_color=COLORS["text"])
@@ -410,8 +430,10 @@ class AnalysisActionsMixin:
             self._extra_remarks = list(getattr(self, "_extra_remarks", []) or []) + notices
             self._remarks_dismissed = False
         if len(self._batch_results) >= 2 and result.file_rows:
+            opened = self._open_batch_path(result.file_rows)
             self._present_batch_message(
-                self._batch_results[0].source_path, preload_text=preload_text
+                opened or self._batch_results[0].source_path,
+                preload_text=preload_text,
             )
             return
         self.result = result
@@ -420,23 +442,9 @@ class AnalysisActionsMixin:
         self.source_meta.configure(text=_source_meta_line(kind, name, result.subject or ""))
 
         if preload_text:
-            preview = result.raw_text_preview or ""
-            meta_lines = [
-                f"Файл: {result.source_path}",
-                f"Тип: {result.source_kind}",
-            ]
-            if result.sender:
-                meta_lines.append(f"From: {result.sender}")
-            if result.subject:
-                meta_lines.append(f"Subject: {result.subject}")
-            if result.verdict:
-                meta_lines.append(
-                    f"Вердикт: {result.verdict.level.value} · {result.verdict.score}"
-                )
-            meta_lines.extend(["=" * 40, "", preview])
             self._placeholder_active = False
             self.input_box.delete("1.0", "end")
-            self.input_box.insert("1.0", "\n".join(meta_lines))
+            self.input_box.insert("1.0", source_panel_text(result))
             from reliquary.gui.theme import COLORS
 
             self.input_box.configure(text_color=COLORS["text"])

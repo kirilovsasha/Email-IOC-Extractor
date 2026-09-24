@@ -731,11 +731,22 @@ def _append_lure_compounds(result: AnalysisResult, signals: list) -> None:
             )
 
 
+def _text_for_score(result: AnalysisResult) -> str:
+    """Same corpus IOC extraction already built, else the source preview."""
+    return result.score_text or result.raw_text_preview or ""
+
+
+def _html_for_score(result: AnalysisResult) -> str:
+    if result.score_html:
+        return result.score_html
+    return result.html_preview or ""
+
+
 def _score_content(
     result: AnalysisResult, cfg: VerdictConfig
 ) -> tuple[int, list[ScoreContribution]]:
     parts: list[ScoreContribution] = []
-    blob = f"{result.subject}\n{result.raw_text_preview}"
+    blob = f"{result.subject}\n{_text_for_score(result)}"
     if URGENCY_RE.search(blob):
         parts.append(
             ScoreContribution(
@@ -763,8 +774,8 @@ def _score_content(
     has_enc = any("encrypted_archive" in (a.risk_flags or []) for a in result.attachments)
     has_office_enc = any("office_encrypted" in (a.risk_flags or []) for a in result.attachments)
     signals = analyze_content_signals(
-        result.raw_text_preview,
-        result.html_preview,
+        _text_for_score(result),
+        _html_for_score(result),
         has_qr=has_qr,
         has_urls=has_urls,
         has_attachments=has_att,
@@ -875,7 +886,7 @@ def _score_lookalike(
     ]
     hits = scan_lookalikes(
         from_addr=from_addr,
-        text=result.raw_text_preview,
+        text=_text_for_score(result),
         domains=domains,
         brands=brands,
         org_domains=org_domains,
@@ -1531,7 +1542,7 @@ def _benign_marker_parts(
     parts: list[ScoreContribution] = []
     mid = result.mail_identity
     subj = (result.subject or (mid.subject if mid else "") or "").strip()
-    blob = f"{subj}\n{result.raw_text_preview or ''}\n{result.html_preview or ''}"
+    blob = f"{subj}\n{_text_for_score(result)}\n{_html_for_score(result)}"
     # Dangerous attachments and payment-change content skip this whole function.
     # A foreign reply domain skips only calendar and thread credit.
     foreign_reply = _foreign_reply_domain(result)

@@ -149,14 +149,53 @@ def _wildcard_match(value: str, pattern: str) -> bool:
     return re.match(regex, value, re.IGNORECASE) is not None
 
 
+# Suffix match stays for mail and CDN hosts. These roots also cover user buckets.
+_CLOUD_STORAGE_ROOTS = frozenset(
+    {
+        "amazonaws.com",
+        "windows.net",
+        "azure.com",
+        "googleapis.com",
+        "githubusercontent.com",
+    }
+)
+
+
+def is_user_cloud_storage_host(host: str) -> bool:
+    """User bucket / blob / storage host, not the provider's own mail or CDN name."""
+    h = (host or "").lower().rstrip(".")
+    if not h:
+        return False
+    if h.endswith(".amazonaws.com") and (".s3." in h or ".s3-" in h):
+        if not (h.startswith("s3.") or h.startswith("s3-")):
+            return True
+    if re.search(
+        r"^[a-z0-9][a-z0-9-]{1,62}\.(?:blob|file|dfs|web)\.core\.windows\.net$",
+        h,
+    ):
+        return True
+    if h == "storage.googleapis.com" or h.endswith(".storage.googleapis.com"):
+        return True
+    if h.endswith(".githubusercontent.com"):
+        return True
+    if h.endswith(".azure.com") and (".blob." in h or ".storage." in h or ".file." in h):
+        return True
+    return False
+
+
 def domain_matches(host: str, domains: set[str]) -> bool:
     h = host.lower().rstrip(".")
+    user_cloud = is_user_cloud_storage_host(h)
     for d in domains:
         if "*" in d:
             if _wildcard_match(h, d):
                 return True
             continue
-        if h == d or h.endswith("." + d):
+        if h == d:
+            return True
+        if h.endswith("." + d):
+            if user_cloud and d in _CLOUD_STORAGE_ROOTS:
+                continue
             return True
     return False
 

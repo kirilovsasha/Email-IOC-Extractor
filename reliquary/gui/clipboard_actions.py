@@ -139,13 +139,26 @@ class ClipboardActionsMixin:
         if not path:
             return
         try:
+            filters = self._filter_kwargs_serializable()
+            summary = ""
+            if self.result is not None:
+                from reliquary.core.exporters import export_ioc_summary
+
+                hidden = ""
+                try:
+                    hidden = self._current_filter_state().hidden_summary(self.result)
+                except (AttributeError, TypeError, ValueError):
+                    hidden = ""
+                summary = export_ioc_summary(len(filtered.iocs), len(self.result.iocs), hidden)
+                filters["ioc_summary"] = summary
             out = run_export(
                 kind_n,
                 filtered,
                 path,
-                filters_applied=self._filter_kwargs_serializable(),
+                filters_applied=filters,
                 batch_results=self._batch_results,
                 filtered_iocs=list(filtered.iocs),
+                ioc_summary=summary,
                 handoff_template_path=self._handoff_template_path,
                 handoff_by_level=getattr(self, "_handoff_by_level", None),
             )

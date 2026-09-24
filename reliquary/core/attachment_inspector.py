@@ -97,6 +97,58 @@ _DATA_URI_BIG_RE = re.compile(rb"(?i)data:(?:application|text)[^,]{0,80},[A-Za-z
 
 
 
+# Same order as script / lure shortcut decoders.
+PAYLOAD_TEXT_ENCODINGS = ("utf-8", "utf-16", "utf-16-le", "cp1251", "latin-1")
+
+
+def _cyrillic_count(text: str) -> int:
+    return sum(1 for ch in text if "\u0400" <= ch <= "\u04FF")
+
+
+def decode_payload_text(data: bytes, charset: str | None = None) -> str:
+    """Decode a mail part. Empty or broken charset uses the attachment encodings.
+
+    A declared charset that decodes cleanly is kept. Otherwise UTF-8 wins when
+    it is valid, and cp1251 wins when the bytes are clearly Cyrillic.
+    """
+    if not data:
+        return ""
+    name = (charset or "").strip().strip('"').strip("'")
+    if name:
+        try:
+            return data.decode(name)
+        except (LookupError, UnicodeError):
+            pass
+    try:
+        return data.decode("utf-8")
+    except UnicodeError:
+        pass
+    decoded: dict[str, str] = {}
+    for enc in PAYLOAD_TEXT_ENCODINGS:
+        if enc == "utf-8":
+            continue
+        try:
+            decoded[enc] = data.decode(enc)
+        except (LookupError, UnicodeError):
+            continue
+    cp = decoded.get("cp1251", "")
+    cyr = _cyrillic_count(cp)
+    wide = max(
+        (_cyrillic_count(decoded.get("utf-16", "")), _cyrillic_count(decoded.get("utf-16-le", "")))
+    )
+    if cyr >= 4 and cyr > wide:
+        return cp
+    for enc in ("utf-16", "utf-16-le", "latin-1"):
+        text = decoded.get(enc)
+        if text is None:
+            continue
+        if text.count("\x00") / max(len(text), 1) < 0.05:
+            return text
+    if decoded:
+        return next(iter(decoded.values()))
+    return data.decode("utf-8", errors="replace")
+
+
 def _hashes(data: bytes) -> tuple[str, str, str]:
     return (
         hashlib.md5(data).hexdigest(),
@@ -112,6 +164,8 @@ def _guess_mime(data: bytes, filename: str) -> str:
     ext = Path(filename).suffix.lower()
     fallback = {
         ".eml": "message/rfc822",
+        ".ics": "text/calendar",
+        ".ical": "text/calendar",
         ".msg": "application/vnd.ms-outlook",
         ".pdf": "application/pdf",
         ".html": "text/html",
@@ -1093,6 +1147,8 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
                 "tnef_attachment",
             }.intersection(flags)
             or ext in {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm"}
+            or ext in {".ics", ".ical"}
+            or (mime or "").lower() == "text/calendar"
             or lower in {"winmail.dat", "win.dat"}
         )
     else:
