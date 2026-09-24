@@ -204,7 +204,7 @@ class ResultPanelsMixin:
         out = []
         for r in batch:
             src = str(Path(getattr(r, "source_path", None) or getattr(r, "path", "") or ""))
-            if src in wanted_paths or Path(src).name in {Path(p).name for p in wanted_paths}:
+            if src in wanted_paths:
                 out.append(r)
         return out
 

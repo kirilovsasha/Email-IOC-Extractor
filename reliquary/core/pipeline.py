@@ -20,7 +20,7 @@ from reliquary.core.header_analyzer import (
     build_mail_identity,
     extract_raw_headers,
 )
-from reliquary.core.ioc_extractor import extract_iocs
+from reliquary.core.ioc_extractor import extract_iocs, normalize_url_key
 from reliquary.core.models import (
     AnalysisMeta,
     AnalysisResult,
@@ -76,7 +76,10 @@ def _merge_ioc_pair(stronger: Ioc, weaker: Ioc) -> Ioc:
 def _dedup_iocs(iocs: list[Ioc]) -> list[Ioc]:
     dedup: dict[tuple[str, str], Ioc] = {}
     for ioc in iocs:
-        key = (ioc.ioc_type.value, ioc.value.lower())
+        if ioc.ioc_type == IocType.URL:
+            key = (ioc.ioc_type.value, normalize_url_key(ioc.value))
+        else:
+            key = (ioc.ioc_type.value, ioc.value.lower())
         prev = dedup.get(key)
         if prev is None:
             dedup[key] = ioc
@@ -173,7 +176,8 @@ def campaign_key_for(result: AnalysisResult) -> str:
     """Campaign fingerprint: thread root → attachment hash → subject.
 
     The message's own Message-ID is not a thread root and does not occupy
-    the key. The subject fallback is the subject alone.
+    the key. One attachment hash may. Several hashes must not: the minimum
+    hash is arbitrary, so the subject fallback is used instead.
     """
     mid = result.mail_identity
     if mid is not None:
@@ -181,7 +185,7 @@ def campaign_key_for(result: AnalysisResult) -> str:
         if thread:
             return f"thread:{thread}"
     att_hashes = sorted({a.sha256 for a in result.attachments if a.sha256})
-    if att_hashes:
+    if len(att_hashes) == 1:
         return f"att:{att_hashes[0][:16]}"
     subject = (result.subject or (mid.subject if mid else "") or "").strip().lower()
     subject = re.sub(r"\s+", " ", subject)[:80]
@@ -581,6 +585,7 @@ def _append_body_qr_note(result: AnalysisResult, notes: list[str], payloads: lis
         md5="",
         sha1="",
         sha256="",
+        risk_flags=["qr_url"] if payloads else [],
         notes=list(notes),
         archive_entries=[f"QR:{p}" for p in payloads],
     )

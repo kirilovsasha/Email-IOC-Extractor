@@ -242,7 +242,12 @@ def export_batch_csv(
         "errors",
     ]
     rows = list(result.file_rows or [])
-    if not rows and batch_results:
+    # A filtered slice is longer than one mail's own file_rows; write the slice.
+    if batch_results and len(batch_results) > len(rows):
+        from reliquary.core.pipeline import file_triage_row
+
+        rows = [file_triage_row(r) for r in batch_results]
+    elif not rows and batch_results:
         from reliquary.core.pipeline import file_triage_row
 
         rows = [file_triage_row(r) for r in batch_results]

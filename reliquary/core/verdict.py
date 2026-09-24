@@ -90,7 +90,12 @@ def render_verdict(
     score += part
     breakdown.extend(parts)
 
-    part, parts = _score_mitigations(result, cfg, allowlist_domains=allowlist_domains)
+    part, parts = _score_mitigations(
+        result,
+        cfg,
+        allowlist_domains=allowlist_domains,
+        prior_breakdown=breakdown,
+    )
     score += part
     breakdown.extend(parts)
 

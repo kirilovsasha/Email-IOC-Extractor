@@ -125,6 +125,20 @@ def _collect_recipients(msg: Message) -> list[str]:
     return out
 
 
+def _delivery_status_text(part: Message) -> str:
+    """DSN body. ``decode=True`` is empty: the fields live in the part content."""
+    try:
+        content = part.get_content()
+    except (AttributeError, TypeError, ValueError, LookupError, KeyError):
+        content = None
+    if isinstance(content, bytes):
+        return content.decode("utf-8", errors="replace")
+    if isinstance(content, str) and content.strip():
+        return content
+    raw = part.as_string()
+    return raw.split("\n\n", 1)[-1]
+
+
 def _part_payload(part: Message) -> bytes:
     """Bytes of a MIME part, including a nameless message/rfc822 sub-message."""
     try:
@@ -242,6 +256,11 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 if payload:
                     attachments.append(inspect_bytes(_nameless_attachment_name(ctype), payload))
                 continue
+            if ctype == "message/delivery-status":
+                text = _delivery_status_text(part)
+                if text.strip():
+                    text_parts.append(text)
+                continue
             try:
                 payload = part.get_payload(decode=True) or b""
                 decoded = _decode_part_text(payload, part.get_content_charset())
@@ -265,27 +284,42 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 html_parts.append(decoded)
     else:
         ctype = msg.get_content_type()
-        try:
-            payload = msg.get_payload(decode=True) or b""
-            decoded = _decode_part_text(payload, msg.get_content_charset())
-        except Exception as exc:  # noqa: BLE001
-            decoded = str(msg.get_payload())
-            attachments.append(
-                AttachmentInfo(
-                    filename="(body)",
-                    size=0,
-                    mime_guess=ctype,
-                    md5="",
-                    sha1="",
-                    sha256="",
-                    risk_flags=["decode_error"],
-                    notes=[f"Декод тела письма с ошибкой: {exc}"],
-                )
-            )
-        if ctype == "text/html":
-            html_parts.append(decoded)
+        # A lone PDF / pkcs7 / other non-text root is an attachment, not the body.
+        if ctype == "message/delivery-status":
+            text = _delivery_status_text(msg)
+            if text.strip():
+                text_parts.append(text)
+        elif not ctype.startswith("text/"):
+            filename = msg.get_filename() or _nameless_attachment_name(ctype)
+            try:
+                payload = msg.get_payload(decode=True) or b""
+            except (TypeError, ValueError, AttributeError, OSError):
+                payload = b""
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8", errors="replace")
+            attachments.append(inspect_bytes(filename, bytes(payload)))
         else:
-            text_parts.append(decoded)
+            try:
+                payload = msg.get_payload(decode=True) or b""
+                decoded = _decode_part_text(payload, msg.get_content_charset())
+            except Exception as exc:  # noqa: BLE001
+                decoded = str(msg.get_payload())
+                attachments.append(
+                    AttachmentInfo(
+                        filename="(body)",
+                        size=0,
+                        mime_guess=ctype,
+                        md5="",
+                        sha1="",
+                        sha256="",
+                        risk_flags=["decode_error"],
+                        notes=[f"Декод тела письма с ошибкой: {exc}"],
+                    )
+                )
+            if ctype == "text/html":
+                html_parts.append(decoded)
+            else:
+                text_parts.append(decoded)
 
     return "\n".join(text_parts), "\n".join(html_parts), attachments
 
