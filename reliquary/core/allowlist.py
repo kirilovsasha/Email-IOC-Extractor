@@ -158,6 +158,8 @@ _CLOUD_STORAGE_ROOTS = frozenset(
         "googleapis.com",
         "githubusercontent.com",
         "google.com",
+        "live.com",
+        "office.com",
     }
 )
 
@@ -168,6 +170,13 @@ _GOOGLE_USER_HOSTS = (
     "sites.google.com",
     "script.google.com",
     "storage.cloud.google.com",
+)
+
+# User content on Microsoft consumer hosts. Mail names stay allowlisted.
+_MS_USER_HOSTS = (
+    "onedrive.live.com",
+    "storage.live.com",
+    "sway.office.com",
 )
 
 
@@ -182,6 +191,10 @@ def _is_google_user_host(host: str) -> bool:
     return any(host == name or host.endswith("." + name) for name in _GOOGLE_USER_HOSTS)
 
 
+def _is_ms_user_host(host: str) -> bool:
+    return any(host == name or host.endswith("." + name) for name in _MS_USER_HOSTS)
+
+
 def is_user_cloud_storage_host(host: str) -> bool:
     """User bucket / Drive host, not the provider's own mail or CDN name."""
     h = (host or "").lower().rstrip(".")
@@ -190,7 +203,7 @@ def is_user_cloud_storage_host(host: str) -> bool:
     if h.endswith(".amazonaws.com") and (".s3." in h or ".s3-" in h):
         if not (h.startswith("s3.") or h.startswith("s3-")):
             return True
-    if _is_path_style_s3(h) or _is_google_user_host(h):
+    if _is_path_style_s3(h) or _is_google_user_host(h) or _is_ms_user_host(h):
         return True
     if re.search(
         r"^[a-z0-9][a-z0-9-]{1,62}\.(?:blob|file|dfs|web)\.core\.windows\.net$",
@@ -246,6 +259,10 @@ def tag_allowlist(iocs, allow_domains: set[str], allow_ips: set[str]) -> None:
             elif itype in ("url", "messenger"):
                 host = urlparse(val if "://" in val else f"https://{val}").hostname or ""
             if host and domain_matches(host, allow_domains):
+                if "allowlisted" not in ioc.tags:
+                    ioc.tags.append("allowlisted")
+        elif itype == "ipv6":
+            if value_matches(val, allow_ips) or val in allow_ips:
                 if "allowlisted" not in ioc.tags:
                     ioc.tags.append("allowlisted")
         elif itype in ("ipv4", "ip_port"):

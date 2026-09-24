@@ -180,6 +180,20 @@ def _counts_as_campaign_file(att) -> bool:
     return not name.startswith("cid-")
 
 
+# Same reply prefix the thread mitigation already strips.
+_CAMPAIGN_SUBJECT_PREFIX_RE = re.compile(r"(?i)^(re|fw|fwd|отв|пересл)\s*:\s*")
+
+
+def _campaign_subject(subject: str) -> str:
+    text = (subject or "").strip()
+    for _ in range(4):
+        stripped = _CAMPAIGN_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
+        if stripped == text:
+            break
+        text = stripped
+    return re.sub(r"\s+", " ", text.lower())[:80]
+
+
 def campaign_key_for(result: AnalysisResult) -> str:
     """Campaign fingerprint: thread root → one file hash → subject.
 
@@ -202,8 +216,7 @@ def campaign_key_for(result: AnalysisResult) -> str:
     )
     if len(att_hashes) == 1:
         return f"att:{att_hashes[0][:16]}"
-    subject = (result.subject or (mid.subject if mid else "") or "").strip().lower()
-    subject = re.sub(r"\s+", " ", subject)[:80]
+    subject = _campaign_subject(result.subject or (mid.subject if mid else "") or "")
     if subject:
         return f"subj:{subject}"
     return ""

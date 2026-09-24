@@ -6,7 +6,7 @@ import re
 from email.message import Message
 from email.utils import parseaddr
 
-from reliquary.core.lookalike import check_display_name_spoof
+from reliquary.core.lookalike import check_display_name_spoof, to_ascii_domain
 from reliquary.core.models import HeaderFinding, MailIdentity, Severity
 
 _KIT_MAILER_RE = re.compile(
@@ -27,6 +27,15 @@ def _same_domain(left: str, right: str) -> bool:
     if not left or not right:
         return False
     return left == right or left.endswith("." + right) or right.endswith("." + left)
+
+
+def _domain_key(domain: str) -> str:
+    """ASCII key. Lookalike already maps почта.рф and its punycode to one host."""
+    raw = (domain or "").strip().lower().strip(".")
+    if not raw:
+        return ""
+    ascii_dom, _is_idn = to_ascii_domain(raw)
+    return (ascii_dom or raw).strip(".")
 
 
 def _get_all(msg: Message, name: str) -> list[str]:
@@ -91,9 +100,9 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             )
 
     if return_addr and from_addr:
-        from_dom = from_addr.split("@")[-1].lower()
-        ret_dom = return_addr.split("@")[-1].lower()
-        if from_dom and ret_dom and from_dom != ret_dom:
+        from_dom = _addr_domain(from_addr)
+        ret_dom = _addr_domain(return_addr)
+        if from_dom and ret_dom and not _same_domain(from_dom, ret_dom):
             findings.append(
                 HeaderFinding(
                     "Return-Path mismatch",
@@ -385,9 +394,9 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                 )
             )
     if mid and from_addr and "@" in mid:
-        mid_dom = mid.rsplit("@", 1)[-1].strip("> ").lower()
-        from_dom = from_addr.split("@")[-1].lower()
-        if mid_dom and from_dom and mid_dom != from_dom:
+        mid_dom = _domain_key(mid.rsplit("@", 1)[-1].strip("> "))
+        from_dom = _domain_key(_addr_domain(from_addr))
+        if mid_dom and from_dom and not _same_domain(mid_dom, from_dom):
             findings.append(
                 HeaderFinding(
                     "Message-ID domain",
@@ -467,7 +476,8 @@ _AUTH_PRIORITY = ("fail", "softfail", "permerror", "temperror")
 
 
 def _domains_aligned(d_dom: str, f_dom: str) -> bool:
-    return bool(d_dom and f_dom) and (d_dom == f_dom or f_dom.endswith("." + d_dom))
+    """Same kinship as Reply-To: either side may be a subdomain of the other."""
+    return _same_domain(d_dom, f_dom)
 
 
 def _auth_identity_domain(token: str) -> str:
