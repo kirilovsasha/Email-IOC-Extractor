@@ -261,6 +261,12 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 if text.strip():
                     text_parts.append(text)
                 continue
+            # Nameless PDF, including Content-Disposition: inline. Same path as a named PDF.
+            if ctype == "application/pdf":
+                payload = _part_payload(part)
+                if payload:
+                    attachments.append(inspect_bytes(_nameless_attachment_name(ctype), payload))
+                continue
             try:
                 payload = part.get_payload(decode=True) or b""
                 decoded = _decode_part_text(payload, part.get_content_charset())
@@ -278,7 +284,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                     )
                 )
                 continue
-            if ctype == "text/plain":
+            if ctype in {"text/plain", "text/rfc822-headers"}:
                 text_parts.append(decoded)
             elif ctype == "text/html":
                 html_parts.append(decoded)

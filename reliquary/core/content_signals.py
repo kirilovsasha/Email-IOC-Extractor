@@ -13,10 +13,13 @@ from reliquary.core.verdict_config import DEFAULT_SUSPICIOUS_TLDS
 
 CREDENTIAL_RE = re.compile(
     r"(?i)\b("
-    r"login|sign[\s-]?in|log[\s-]?in|password|passwd|passcode|"
+    r"login|sign[\s-]?in|log[\s-]?in|"
+    r"(?:enter|type|input|provide|reset|change|submit)\s+(?:your\s+|the\s+|a\s+)?passwords?|"
+    r"your\s+passwords?|"
+    r"password(?!\s+polic(?:y|ies))|passwd|passcode|"
     r"webmail|owa|outlook\s*web|account\s*verify|verify\s*account|"
     r"update\s*your\s*(?:password|account)|"
-    r"войти|вход|пароль|учетн\w*\s*запис|подтвердите\s*аккаунт|"
+    r"войти|пароль|учетн\w*\s*запис|подтвердите\s*аккаунт|"
     r"веб[- ]?почт"
     r")\b"
 )
@@ -25,8 +28,10 @@ BEC_RE = re.compile(
     r"(?i)\b("
     r"wire\s*transfer|bank\s*transfer|change\s*(?:of\s*)?banking|"
     r"new\s*(?:bank\s*)?details|payment\s*instructions|"
-    r"реквизит\w*|перевод\w*\s*(?:на\s*)?(?:сч[её]т|карт)|"
-    r"смен\w*\s*реквизит|оплат\w*\s*сегодня|срочн\w*\s*оплат|"
+    # A bare «реквизиты» is ordinary finance mail. Payment-change phrases stay.
+    r"перевод\w*\s*(?:на\s*)?(?:сч[её]т|карт)|"
+    r"смен\w*\s*реквизит\w*|нов\w{2,8}\s+реквизит\w*|"
+    r"оплат\w*\s*сегодня|срочн\w*\s*оплат|"
     r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
     r"пишите\s*только\s*сюда|не\s*звоните|CEO\s*urgent|"
     r"генеральн\w*\s*директор|финансов\w*\s*директор|"
@@ -47,7 +52,6 @@ BEC_RE = re.compile(
 
 MESSENGER_LURE_RE = re.compile(
     r"(?i)("
-    r"\btelegram\b|\bтелеграм\w*|\bwhatsapp\b|\bватсап\w*|"
     r"(?:telegram|телеграм|whatsapp|ватсап|t\.me)[^\n]{0,48}@[a-zA-Z][\w.]{2,31}|"
     r"@[a-zA-Z][\w.]{2,31}[^\n]{0,48}(?:telegram|телеграм|whatsapp|ватсап|t\.me)|"
     r"пишите\s+(?:в|мне\s+в)\s+(?:telegram|телеграм|whatsapp|ватсап)|"
@@ -63,21 +67,23 @@ QR_LURE_RE = re.compile(
     r"scan\s+the\s+qr|"
     r"scan\s+(?:this\s+)?qr|"
     r"сканируй(?:те)?\s+(?:qr|код)|"
-    r"отсканируй(?:те)?|"
+    r"отсканируй(?:те)?\s+(?:qr|код)|"
     r"QR[\s\-]*код|"
     r"qr[\s\-]*code"
     r")"
 )
 
+# Full values only. opacity:0.85 and font-size:0.9em are visible text.
+# White is a color, not a hide, so color:#fff / #ffffff is not in this list.
 HIDDEN_STYLE_RE = re.compile(
-    r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?:px|pt|em)?|"
-    r"opacity\s*:\s*0|color\s*:\s*#?fff(?:fff)?|"
+    r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|"
+    r"font-size\s*:\s*0(?:px|pt|em)?(?![.\w])|"
+    r"opacity\s*:\s*0(?![.\d])|"
     r"mso-hide\s*:\s*all|"
     r"position\s*:\s*absolute\s*;\s*left\s*:\s*-|"
     r"left\s*:\s*-\d{3,}|"
-    r"font-size\s*:\s*0\s*;|"
-    r"max-height\s*:\s*0|max-width\s*:\s*0|"
-    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0)"
+    r"max-height\s*:\s*0(?![.\d])|max-width\s*:\s*0(?![.\d])|"
+    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0(?![.\d]))"
 )
 
 DANGEROUS_SCHEME_RE = re.compile(
@@ -339,10 +345,8 @@ def _html_forms(
         except (ValueError, TypeError, AttributeError):
             host = ""
         raw_ip = bool(re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", host or ""))
-        bad_tld = any(
-            (host or "").endswith(tld) or f"{tld}/" in action.lower()
-            for tld in tlds
-        )
+        # Zone is the host, same as a URL. A path segment q3.zip is not .zip.
+        bad_tld = bool(host) and any(host.endswith(tld) for tld in tlds)
         if raw_ip or bad_tld:
             out.append(
                 ContentSignal(

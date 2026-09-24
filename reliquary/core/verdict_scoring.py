@@ -1423,9 +1423,13 @@ def _score_mitigations(
         "org_domain",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
-    # A positive lookalike in this pass blocks the same relief as display-name spoof.
+    # Brand lookalike blocks the same relief as display-name spoof.
+    # A bare IDN (почта.рф) is not that lookalike; a homoglyph still is.
     has_positive_lookalike = any(
-        c.category == "lookalike" and c.points > 0 for c in (prior_breakdown or [])
+        c.category == "lookalike"
+        and c.points > 0
+        and not (c.reason or "").startswith("IDN/punycode")
+        for c in (prior_breakdown or [])
     )
     # Display-name spoof must block allowlist-From mitigation
     has_display_spoof = any(

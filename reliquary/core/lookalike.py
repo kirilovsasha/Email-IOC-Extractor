@@ -334,6 +334,22 @@ def _registrable(host: str) -> str:
     return host
 
 
+def _idna_unicode(host: str) -> str:
+    """Unicode host. Punycode labels are decoded so a homoglyph is visible."""
+    labels: list[str] = []
+    for label in (host or "").lower().strip(".").split("."):
+        if not label:
+            continue
+        if label.startswith("xn--"):
+            try:
+                labels.append(label.encode("ascii").decode("idna"))
+                continue
+            except (UnicodeError, UnicodeDecodeError):
+                pass
+        labels.append(label)
+    return ".".join(labels)
+
+
 def to_ascii_domain(host: str) -> tuple[str, bool]:
     """Return (ascii_or_best_effort, is_idn)."""
     host = host.lower().strip(".")
@@ -408,7 +424,9 @@ def check_domain(
         return []
     ascii_dom, is_idn = to_ascii_domain(domain)
     reg = _registrable(ascii_dom or domain)
-    norm = normalize_homoglyph(reg)
+    # Compare letters, not the xn-- spelling. xn--pple-43d.com is аpple.com.
+    visual_reg = _registrable(_idna_unicode(domain))
+    norm = normalize_homoglyph(visual_reg)
     hits: list[LookalikeHit] = []
 
     if is_idn:
@@ -423,11 +441,11 @@ def check_domain(
 
     for brand in brands:
         brand_reg = _registrable(brand)
-        if reg == brand_reg or norm == brand_reg:
+        if reg == brand_reg or visual_reg == brand_reg:
             continue
         brand_norm = normalize_homoglyph(brand_reg)
-        # Homoglyph: normalized form matches brand but original differs
-        if norm == brand_norm and reg != brand_reg:
+        # Homoglyph: normalized letters match the brand, the host itself does not.
+        if norm == brand_norm:
             hits.append(
                 LookalikeHit(
                     value=domain,

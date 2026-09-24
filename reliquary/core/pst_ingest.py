@@ -118,6 +118,27 @@ def expand_pst_to_emls(
     return out, dest, notes
 
 
+# Folded lines belong to the header above them. These names repeat on real mail.
+_REPEAT_PST_HEADERS = frozenset({"received", "authentication-results", "dkim-signature"})
+
+
+def _unfold_header_fields(hdr: str) -> list[tuple[str, str]]:
+    fields: list[tuple[str, str]] = []
+    for line in (hdr or "").splitlines():
+        if line[:1] in " \t":
+            if fields:
+                name, value = fields[-1]
+                fields[-1] = (name, f"{value} {line.strip()}".strip())
+            continue
+        if ":" not in line:
+            continue
+        name, value = line.split(":", 1)
+        key = name.strip()
+        if key:
+            fields.append((key, value.strip()))
+    return fields
+
+
 def compose_eml(
     headers: str,
     body: bytes,
@@ -139,16 +160,14 @@ def compose_eml(
         return (hdr + "\n").encode("utf-8", errors="replace") + raw_body
     msg = EmailMessage()
     seen: set[str] = set()
-    for line in hdr.splitlines():
-        if ":" not in line or line[:1].isspace():
-            continue
-        name, val = line.split(":", 1)
-        key = name.strip()
+    for key, val in _unfold_header_fields(hdr):
         low = key.lower()
-        if not key or low.startswith("content-") or low == "mime-version" or low in seen:
+        if low.startswith("content-") or low == "mime-version":
+            continue
+        if low not in _REPEAT_PST_HEADERS and low in seen:
             continue
         try:
-            msg[key] = val.strip()
+            msg[key] = val
         except (ValueError, IndexError, KeyError):
             continue
         seen.add(low)

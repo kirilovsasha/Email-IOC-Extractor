@@ -100,6 +100,19 @@ _DATA_URI_BIG_RE = re.compile(rb"(?i)data:(?:application|text)[^,]{0,80},[A-Za-z
 # Same order as script / lure shortcut decoders.
 PAYLOAD_TEXT_ENCODINGS = ("utf-8", "utf-16", "utf-16-le", "cp1251", "latin-1")
 
+# These codecs accept every byte, so a declared latin-1/cp1252 body can hide cp1251.
+_PERMISSIVE_CHARSETS = frozenset(
+    {
+        "iso-8859-1",
+        "iso8859-1",
+        "latin-1",
+        "latin1",
+        "windows-1252",
+        "cp1252",
+        "windows1252",
+    }
+)
+
 
 def _cyrillic_count(text: str) -> int:
     return sum(1 for ch in text if "\u0400" <= ch <= "\u04FF")
@@ -108,13 +121,16 @@ def _cyrillic_count(text: str) -> int:
 def decode_payload_text(data: bytes, charset: str | None = None) -> str:
     """Decode a mail part. Empty or broken charset uses the attachment encodings.
 
-    A declared charset that decodes cleanly is kept. Otherwise UTF-8 wins when
-    it is valid, and cp1251 wins when the bytes are clearly Cyrillic.
+    A declared charset that decodes cleanly is kept. Encodings that accept every
+    byte (latin-1, iso-8859-1, windows-1252) use the same Cyrillic comparison as
+    an empty charset. Otherwise UTF-8 wins when it is valid, and cp1251 wins
+    when the bytes are clearly Cyrillic.
     """
     if not data:
         return ""
     name = (charset or "").strip().strip('"').strip("'")
-    if name:
+    key = name.lower().replace("_", "-")
+    if name and key not in _PERMISSIVE_CHARSETS:
         try:
             return data.decode(name)
         except (LookupError, UnicodeError):

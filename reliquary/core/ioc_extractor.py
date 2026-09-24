@@ -10,6 +10,7 @@ from html import unescape
 from urllib.parse import unquote, urlparse
 
 from reliquary.core.defang import refang as defang
+from reliquary.core.lookalike import to_ascii_domain
 from reliquary.core.models import Ioc, IocType
 
 # Conservative patterns — prioritize precision for SOC triage.
@@ -51,6 +52,14 @@ EMAIL_RE = re.compile(
 DOMAIN_RE = re.compile(
     r"(?i)(?<!@)(?<![A-Za-z0-9_-])(?:xn--[a-z0-9\-]+|[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+"
     r"(?:xn--[a-z0-9\-]{1,59}|[a-z]{2,24})(?![A-Za-z0-9_@-])"
+)
+# Unicode host the ASCII patterns miss. TLD is a known IDN ccTLD or an ASCII label.
+_IDN_CCTLD = "рф|укр|срб|бел|қаз|мон|мкд"
+_UNICODE_HOST_RE = re.compile(
+    rf"(?iu)(?<![\w@.-])((?:[\w-]{{1,63}}\.)+(?:{_IDN_CCTLD}|[a-z]{{2,24}}))(?![\w@-])"
+)
+_UNICODE_EMAIL_RE = re.compile(
+    rf"(?iu)(?<![\w.])([a-z0-9._%+\-]+@(?:[\w-]{{1,63}}\.)+(?:{_IDN_CCTLD}|[a-z]{{2,24}}))(?![\w-])"
 )
 
 # Auth-results / DKIM attribute names that look like domains (header.from, smtp.mailfrom).
@@ -515,12 +524,17 @@ def _mask_msgid_headers(text: str) -> str:
 
 # Mailbox headers whose <addr> is a real address, not a Message-ID.
 # DSN recipient lines may put "rfc822;" between the colon and the bracket.
+# A display name may sit there too: From: Boss <boss@evil.example>.
 _ANGLE_MAILBOX_OK_RE = re.compile(
     r"(?i)(?:^|[\s;])(?:"
     r"from|to|cc|bcc|sender|reply-to|mail\s*from|rcpt\s*to|"
     r"return-path|delivered-to|envelope-to|"
     r"final-recipient|original-recipient"
-    r")\s*:?(?:\s*[a-z0-9-]+\s*;)?\s*$"
+    r")(?:"
+    r"\s*:?(?:\s*[a-z0-9-]+\s*;)?\s*"
+    r"|"
+    r"\s*:(?:\s*[a-z0-9-]+\s*;)?\s+\S[^<>\n]{0,80}"
+    r")$"
 )
 
 
@@ -601,6 +615,18 @@ def _expand_domain_left(text: str, start: int, domain: str) -> str | None:
     if s > 0 and text[s - 1] == "@":
         return None
     return d
+
+
+def _unicode_host_ascii(host: str) -> str | None:
+    """IDNA form of a Unicode host, or None when it is not a domain."""
+    raw = (host or "").lower().rstrip(".")
+    if not raw or not any(ord(ch) > 127 for ch in raw):
+        return None
+    ascii_dom, _is_idn = to_ascii_domain(raw)
+    ascii_dom = (ascii_dom or "").lower().rstrip(".")
+    if not ascii_dom or not _valid_domain(ascii_dom, free_text=True):
+        return None
+    return ascii_dom
 
 
 def _valid_domain(domain: str, *, free_text: bool = False) -> bool:
@@ -974,5 +1000,26 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         if domain.startswith("xn--") or ".xn--" in domain:
             tags.append("punycode")
         add(domain, IocType.DOMAIN, m, tags)
+
+    for m in _UNICODE_EMAIL_RE.finditer(cleaned):
+        if _email_is_message_id_context(cleaned, m):
+            continue
+        email = m.group(1).lower()
+        host = email.split("@", 1)[1]
+        if _unicode_host_ascii(host) is None:
+            continue
+        add(email, IocType.EMAIL, m)
+        add(host, IocType.DOMAIN, m, ["from_email"])
+
+    for m in _UNICODE_HOST_RE.finditer(cleaned):
+        if _domain_in_angle_msgid(cleaned, m.start(), m.end()):
+            continue
+        host = m.group(1).lower().rstrip(".")
+        if _unicode_host_ascii(host) is None:
+            continue
+        at = m.start()
+        if at > 0 and cleaned[at - 1] == "@":
+            continue
+        add(host, IocType.DOMAIN, m)
 
     return list(found.values())
