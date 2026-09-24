@@ -1280,6 +1280,7 @@ def _score_mitigations(
     cfg: VerdictConfig,
     *,
     allowlist_domains: set[str] | None = None,
+    prior_breakdown: list[ScoreContribution] | None = None,
 ) -> tuple[int, list[ScoreContribution]]:
     """Negative contributions when auth/path looks trusted (DMARC pass, internal MX).
 
@@ -1377,6 +1378,10 @@ def _score_mitigations(
         "org_domain",
     }
     has_bad_content = bool(bad_content.intersection(result.content_signals or []))
+    # A positive lookalike in this pass blocks the same relief as display-name spoof.
+    has_positive_lookalike = any(
+        c.category == "lookalike" and c.points > 0 for c in (prior_breakdown or [])
+    )
     # Display-name spoof must block allowlist-From mitigation
     has_display_spoof = any(
         c.category == "lookalike"
@@ -1394,14 +1399,15 @@ def _score_mitigations(
 
     parts: list[ScoreContribution] = []
 
+    blocks_relief = has_display_spoof or has_positive_lookalike
     # Benign operational markers — apply unless clear attack surface
-    if not has_high_att and not has_bad_content and not has_display_spoof:
+    if not has_high_att and not has_bad_content and not blocks_relief:
         parts.extend(_benign_marker_parts(result, cfg))
 
     if mid is None:
         return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
 
-    if has_high_att or has_bad_content or has_display_spoof:
+    if has_high_att or has_bad_content or blocks_relief:
         return _apply_mitigation_floor(parts, cfg.cap_mitigation) if parts else (0, [])
 
     attack_headers = any(

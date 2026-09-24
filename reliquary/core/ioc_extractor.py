@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import re
 import unicodedata
+from html import unescape
 from urllib.parse import unquote, urlparse
 
 from reliquary.core.defang import refang as defang
@@ -20,15 +21,27 @@ IP_PORT_RE = re.compile(
     r"(?<![\w.])((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}"
     r"(?:25[0-5]|2[0-4]\d|1?\d?\d)):(\d{2,5})\b"
 )
+# IPv4-mapped tail (::ffff:192.0.2.1) is tried before a shorter hex prefix.
+_IPV4_OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+_IPV4_TAIL = rf"(?:{_IPV4_OCTET}\.){{3}}{_IPV4_OCTET}"
 IPV6_RE = re.compile(
-    r"(?<![\w:])(?:(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|"
+    r"(?<![\w:])(?:"
+    rf"(?:[A-Fa-f0-9]{{1,4}}:){{6}}{_IPV4_TAIL}|"
+    rf"::(?:[A-Fa-f0-9]{{1,4}}:){{0,5}}{_IPV4_TAIL}|"
+    rf"(?:[A-Fa-f0-9]{{1,4}}:){{1,4}}:(?:[A-Fa-f0-9]{{1,4}}:){{1,4}}{_IPV4_TAIL}|"
+    rf"(?:[A-Fa-f0-9]{{1,4}}:){{1,5}}:{_IPV4_TAIL}|"
+    r"(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|"
     r"(?:[A-Fa-f0-9]{1,4}:){1,7}:|"
     r"(?:[A-Fa-f0-9]{1,4}:){1,6}:[A-Fa-f0-9]{1,4}|"
     r"::(?:[A-Fa-f0-9]{1,4}:){0,6}[A-Fa-f0-9]{1,4}|"
     r"::)(?![\w:])"
 )
+# Bracketed IPv6 is a host, not the end of the URL (']' still ends a normal URL).
 URL_RE = re.compile(
-    r"(?i)\b(?:https?|hxxps?|ftp)://[^\s<>\"')\]]+",
+    r"(?i)\b(?:https?|hxxps?|ftp)://(?:"
+    r"\[[A-Fa-f0-9:.]+\][^\s<>\"')\]]*"
+    r"|[^\s<>\"')\]]+"
+    r")"
 )
 EMAIL_RE = re.compile(
     r"(?i)\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b"
@@ -500,35 +513,37 @@ def _mask_msgid_headers(text: str) -> str:
     return _MSGID_HEADER_RE.sub(_blank, text)
 
 
-def _email_is_message_id_context(text: str, match: re.Match[str]) -> bool:
-    """True when the address sits in <…> and is not a From/To/Cc mailbox."""
-    start, end = match.start(), match.end()
+# Mailbox headers whose <addr> is a real address, not a Message-ID.
+# DSN recipient lines may put "rfc822;" between the colon and the bracket.
+_ANGLE_MAILBOX_OK_RE = re.compile(
+    r"(?i)(?:^|[\s;])(?:"
+    r"from|to|cc|bcc|sender|reply-to|mail\s*from|rcpt\s*to|"
+    r"return-path|delivered-to|envelope-to|"
+    r"final-recipient|original-recipient"
+    r")\s*:?(?:\s*[a-z0-9-]+\s*;)?\s*$"
+)
+
+
+def _span_in_angle_msgid(text: str, start: int, end: int) -> bool:
+    """True when the span sits in <…> and is not a mailbox header value."""
     left = text.rfind("<", 0, start)
     right = text.find(">", end)
     if left == -1 or right == -1 or not (left < start < end <= right):
         return False
-    window = text[max(0, left - 48) : left].lower()
-    if re.search(
-        r"(?:^|[\s;])(?:from|to|cc|bcc|sender|reply-to|mail\s*from|rcpt\s*to)\s*:?\s*$",
-        window,
-    ):
+    window = text[max(0, left - 64) : left]
+    if _ANGLE_MAILBOX_OK_RE.search(window):
         return False
     return True
+
+
+def _email_is_message_id_context(text: str, match: re.Match[str]) -> bool:
+    """True when the address sits in <…> and is not a mailbox header."""
+    return _span_in_angle_msgid(text, match.start(), match.end())
 
 
 def _domain_in_angle_msgid(text: str, start: int, end: int) -> bool:
     """Skip hostnames that only appear inside Message-ID-like <…> tokens."""
-    left = text.rfind("<", 0, start)
-    right = text.find(">", end)
-    if left == -1 or right == -1 or not (left < start < end <= right):
-        return False
-    window = text[max(0, left - 48) : left].lower()
-    if re.search(
-        r"(?:^|[\s;])(?:from|to|cc|bcc|sender|reply-to|mail\s*from|rcpt\s*to)\s*:?\s*$",
-        window,
-    ):
-        return False
-    return True
+    return _span_in_angle_msgid(text, start, end)
 
 
 def _is_ignorable_host_char(ch: str) -> bool:
@@ -591,7 +606,7 @@ def _expand_domain_left(text: str, start: int, domain: str) -> str | None:
 def _valid_domain(domain: str, *, free_text: bool = False) -> bool:
     """Drop garbage domains produced by percent-encoding leftovers / filenames."""
     d = domain.lower().rstrip(".")
-    if not d or d.startswith("-") or ".." in d:
+    if not d or d.startswith("-") or ".." in d or "\\" in d:
         return False
     if d in _AUTH_ATTR_DOMAINS or d.startswith("header.") or d.startswith("smtp."):
         return False
@@ -702,6 +717,35 @@ def _trim_cmdline(cmd: str) -> str:
     return cmd
 
 
+def _url_userinfo_ats(text: str) -> set[int]:
+    """Absolute indexes of '@' that separate URL userinfo from the host."""
+    ats: set[int] = set()
+    for match in URL_RE.finditer(text):
+        url = match.group(0)
+        scheme_idx = url.find("://")
+        if scheme_idx < 0:
+            continue
+        rest_start = scheme_idx + 3
+        rest = url[rest_start:]
+        cut = len(rest)
+        for sep in "/?#":
+            pos = rest.find(sep)
+            if 0 <= pos < cut:
+                cut = pos
+        rel = rest[:cut].rfind("@")
+        if rel >= 0:
+            ats.add(match.start() + rest_start + rel)
+    return ats
+
+
+def _url_hostname(url: str) -> str | None:
+    """Host of an already found URL. Percent-decoding stays on this copy."""
+    try:
+        return urlparse(unquote(url)).hostname
+    except ValueError:
+        return None
+
+
 def _mask_url_tails(text: str) -> str:
     """Blank URL path, query and fragment so a file segment is not a domain."""
 
@@ -729,7 +773,10 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
     if not text:
         return []
 
-    cleaned = _mask_msgid_headers(unquote(defang(text)))
+    # Percent-decoding the whole blob turns %40 into a foreign mailbox and
+    # splits a URL on %20. Decode only the host of a URL that was already found.
+    cleaned = _mask_msgid_headers(defang(text))
+    userinfo_ats = _url_userinfo_ats(cleaned)
     found: dict[tuple[str, str], Ioc] = {}
 
     def add(
@@ -774,13 +821,15 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
 
     for m in URL_RE.finditer(cleaned):
         url = m.group(0).rstrip(".,;:!?")
+        if "&#" in url:
+            url = unescape(url)
         if normalize_url_key(url) in messenger_urls:
             continue
         tags = []
         if "hxxp" in m.group(0).lower():
             tags.append("was_defanged")
         add(url, IocType.URL, m, tags)
-        host = urlparse(url).hostname
+        host = _url_hostname(url)
         if host and not _is_private_ipv4(host):
             if re.fullmatch(IPV4_RE, host):
                 add(host, IocType.IPV4, m, ["from_url"])
@@ -792,6 +841,9 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
 
     for m in EMAIL_RE.finditer(cleaned):
         if _email_is_message_id_context(cleaned, m):
+            continue
+        at_pos = m.start() + m.group(0).rfind("@")
+        if at_pos in userinfo_ats:
             continue
         email = m.group(0).lower()
         add(email, IocType.EMAIL, m)
@@ -895,6 +947,8 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         while at > 0 and _is_ignorable_host_char(cleaned[at - 1]):
             at -= 1
         if at > 0 and cleaned[at - 1] == "@":
+            if (at - 1) in userinfo_ats:
+                continue
             local_end = at - 1
             local_start = local_end
             while local_start > 0 and (

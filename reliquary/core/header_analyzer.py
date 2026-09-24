@@ -73,7 +73,14 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             HeaderFinding("Reply-To", reply_to, Severity.INFO, "Адрес для ответа")
         )
         _, reply_addr = parseaddr(reply_to)
-        if from_addr and reply_addr and from_addr.lower() != reply_addr.lower():
+        from_dom = _addr_domain(from_addr)
+        reply_dom = _addr_domain(reply_addr)
+        if (
+            from_addr
+            and reply_addr
+            and from_addr.lower() != reply_addr.lower()
+            and not (from_dom and reply_dom and from_dom == reply_dom)
+        ):
             findings.append(
                 HeaderFinding(
                     "Reply-To mismatch",
@@ -464,12 +471,24 @@ def _domains_aligned(d_dom: str, f_dom: str) -> bool:
     return bool(d_dom and f_dom) and (d_dom == f_dom or f_dom.endswith("." + d_dom))
 
 
+def _auth_identity_domain(token: str) -> str:
+    """Domain of header.i (@evil.test or user@evil.test)."""
+    raw = token.strip().strip("\"'").lower()
+    if "@" in raw:
+        raw = raw.rsplit("@", 1)[-1]
+    return raw.strip(".")
+
+
 def _dkim_alignment_mismatch(auth_results: list[str]) -> tuple[str, str] | None:
-    """d= vs header.from when any Authentication-Results pair disagrees."""
+    """d= or header.i vs header.from when any Authentication-Results pair disagrees."""
     pairs: list[tuple[list[str], list[str]]] = []
     for header in auth_results:
         low = header.lower()
         ds = re.findall(r"header\.d\s*=\s*([a-z0-9.-]+)", low)
+        for token in re.findall(r"header\.i\s*=\s*([^\s;]+)", low):
+            ident = _auth_identity_domain(token)
+            if ident and ident not in ds:
+                ds.append(ident)
         fs = re.findall(r"header\.from\s*=\s*([a-z0-9.-]+)", low)
         pairs.append((ds, fs))
         if not ds or not fs:
@@ -509,7 +528,8 @@ def resolve_auth_results(msg: Message) -> dict[str, str]:
                 chosen[proto] = status
                 break
         else:
-            chosen[proto] = values[0]
+            # No hard failure: a later pass beats an earlier neutral or bestguesspass.
+            chosen[proto] = "pass" if "pass" in values else values[0]
     return chosen
 
 
