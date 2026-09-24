@@ -157,18 +157,41 @@ _CLOUD_STORAGE_ROOTS = frozenset(
         "azure.com",
         "googleapis.com",
         "githubusercontent.com",
+        "google.com",
     }
 )
 
+# Product hosts where the user owns the content. Mail and CDN names stay listed.
+_GOOGLE_USER_HOSTS = (
+    "drive.google.com",
+    "docs.google.com",
+    "sites.google.com",
+    "script.google.com",
+    "storage.cloud.google.com",
+)
+
+
+def _is_path_style_s3(host: str) -> bool:
+    """S3 endpoint: the bucket is in the path, not in the hostname."""
+    if not host.endswith(".amazonaws.com"):
+        return False
+    return host == "s3.amazonaws.com" or host.startswith(("s3.", "s3-"))
+
+
+def _is_google_user_host(host: str) -> bool:
+    return any(host == name or host.endswith("." + name) for name in _GOOGLE_USER_HOSTS)
+
 
 def is_user_cloud_storage_host(host: str) -> bool:
-    """User bucket / blob / storage host, not the provider's own mail or CDN name."""
+    """User bucket / Drive host, not the provider's own mail or CDN name."""
     h = (host or "").lower().rstrip(".")
     if not h:
         return False
     if h.endswith(".amazonaws.com") and (".s3." in h or ".s3-" in h):
         if not (h.startswith("s3.") or h.startswith("s3-")):
             return True
+    if _is_path_style_s3(h) or _is_google_user_host(h):
+        return True
     if re.search(
         r"^[a-z0-9][a-z0-9-]{1,62}\.(?:blob|file|dfs|web)\.core\.windows\.net$",
         h,

@@ -14,7 +14,7 @@ URGENCY_RE = re.compile(
     r"urgent|immediately|verify your account|password.{0,10}expir|"
     r"confirm your identity|suspend|locked|invoice attached|"
     r"срочно|немедленно|подтвердите|пароль.{0,15}истек|"
-    r"заблокир|счёт|счет|оплатите|выписка|безопасность аккаунта"
+    r"заблокир|оплатите|выписка|безопасность аккаунта"
     r")\b"
 )
 

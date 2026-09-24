@@ -290,8 +290,6 @@ def test_received_spf_fail_without_authentication_results() -> None:
 
 def test_user_cloud_buckets_are_not_suffix_allowlisted() -> None:
     domains, ips = build_allowlist()
-    assert domain_matches("s3.amazonaws.com", domains)
-    assert domain_matches("s3-eu-west-1.amazonaws.com", domains)
     assert domain_matches("fonts.googleapis.com", domains)
     assert domain_matches("ajax.googleapis.com", domains)
     assert domain_matches("login.microsoftonline.com", domains)
@@ -304,6 +302,8 @@ def test_user_cloud_buckets_are_not_suffix_allowlisted() -> None:
         "team.storage.googleapis.com",
         "user.githubusercontent.com",
         "acct.blob.core.azure.com",
+        "s3.amazonaws.com",
+        "s3-eu-west-1.amazonaws.com",
     ]
     for host in blocked:
         assert not domain_matches(host, domains), host

@@ -30,17 +30,15 @@ BEC_RE = re.compile(
     r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
     r"пишите\s*только\s*сюда|не\s*звоните|CEO\s*urgent|"
     r"генеральн\w*\s*директор|финансов\w*\s*директор|"
-    # RU BEC / finance surface
-    r"сч[её]т[\s\-]*фактур\w*|"
-    r"акт\s+сверк\w*|"
+    # Payment change and out-of-band payment. An invoice, a reconciliation
+    # act, a bare account number or the letters CFO are ordinary finance mail.
     r"срочн\w*\s*перев(?:од|ед|ест)\w*|"
     r"реквизит\w*\s+на\s+карт\w*|"
     r"изменит\w*\s+плат[её]жн\w*|"
-    r"\bCFO\b|главбух\w*|казнач[её]й\w*|"
-    # Беларусь: ЕРИП / УНП / р/с / IBAN BY
+    r"главбух\w*|казнач[её]й\w*|"
+    # Беларусь: ЕРИП / УНП / IBAN BY
     r"ерип|еріp|erip|"
     r"унп\b|"
-    r"р/\s*с|р/?\s*сч[её]т|расч[её]тн\w*\s*сч[её]т|"
     r"iban\s*by\d{2}|by\d{2}\s*[a-z0-9]{4}|"
     r"оплат\w*\s*(?:через\s*)?(?:ерип|еріp|oplati|оплати)|"
     r"новые\s+реквизиты\s+(?:рб|беларус)"
@@ -190,6 +188,39 @@ def _visible_text(soup: BeautifulSoup) -> str:
     return soup.get_text("\n", strip=True)
 
 
+def _strip_www_prefix(host: str) -> str:
+    """Drop a leading www. label. Not lstrip: that also eats w and dots."""
+    host = (host or "").lower()
+    if host.startswith("www."):
+        return host[4:]
+    return host
+
+
+def _reader_text(blob: str) -> str:
+    """Text a reader sees. Markup attributes are not phrases."""
+    if not blob or "<" not in blob or ">" not in blob:
+        return blob or ""
+    try:
+        soup = BeautifulSoup(blob, "lxml")
+    except (ValueError, TypeError, OSError):
+        return blob
+    return _visible_text(soup)
+
+
+def _credential_surface(text: str, html: str) -> str:
+    """Credential phrases from visible text.
+
+    The pipeline stores raw HTML beside the text. ``type="password"`` is
+    already the form signal and must not also match this regex.
+    """
+    raw = text or ""
+    visible = _reader_text(raw)
+    extra = html or ""
+    if extra and extra not in raw:
+        visible = f"{visible}\n{_reader_text(extra)}"
+    return visible
+
+
 def _href_mismatch(soup: BeautifulSoup) -> list[ContentSignal]:
     from reliquary.core.url_rewrite import unwrap_url
 
@@ -214,8 +245,8 @@ def _href_mismatch(soup: BeautifulSoup) -> list[ContentSignal]:
                 label_host = (urlparse(label_host).hostname or label_host).lower()
             except (ValueError, TypeError, AttributeError):
                 pass
-        label_host = label_host.split("/")[0].split("?")[0].lstrip("www.")
-        href_host = href_host.lstrip("www.")
+        label_host = _strip_www_prefix(label_host.split("/")[0].split("?")[0])
+        href_host = _strip_www_prefix(href_host)
         if href_host and label_host and href_host != label_host and label_host in label_l:
             if len(label_host) >= 4 and "." in label_host:
                 detail = f"Ссылка «{label[:60]}» ведёт на {href_host}"
@@ -481,8 +512,9 @@ def analyze_content_signals(
     """Return unique content signals from plain text and optional HTML body."""
     signals: list[ContentSignal] = []
     blob = f"{text or ''}\n{html or ''}"
+    credential_text = _credential_surface(text or "", html or "")
 
-    if CREDENTIAL_RE.search(blob):
+    if CREDENTIAL_RE.search(credential_text):
         signals.append(
             ContentSignal(
                 "credential_harvest",
@@ -629,7 +661,7 @@ def analyze_content_signals(
     signals.extend(_dangerous_schemes(blob, soup))
 
     has_credential = any(s.kind == "credential_harvest" for s in signals) or bool(
-        CREDENTIAL_RE.search(blob)
+        CREDENTIAL_RE.search(credential_text)
     )
     if has_qr and has_credential:
         signals.append(

@@ -264,7 +264,7 @@ def test_internal_mx_uses_origin_hop() -> None:
         },
         "текст",
     )
-    assert "доверенный MX" in _reasons(analyze_text(single, label="one-hop.eml"))
+    assert "доверенный MX" not in _reasons(analyze_text(single, label="one-hop.eml"))
 
 
 def test_permerror_temperror_and_any_dkim_mismatch() -> None:

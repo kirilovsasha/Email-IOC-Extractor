@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -619,7 +620,12 @@ def _is_file_attachment(att) -> bool:
 
 
 def _originating_received(result: AnalysisResult) -> str:
-    """Received hop closest to the sender, not the recipient gateway."""
+    """Received hop closest to the sender, not the recipient gateway.
+
+    Several hops: the last one is the origin. One hop has no separate origin.
+    If that only line is the recipient gateway, it does not earn this relief.
+    An internal hostname on that same single line still does.
+    """
     origin = (result.raw_headers or {}).get("Received-Origin", "") or ""
     if origin.strip():
         return origin
@@ -628,8 +634,32 @@ def _originating_received(result: AnalysisResult) -> str:
             return finding.value
     mid = result.mail_identity
     if mid is not None and mid.received_hops <= 1:
-        return mid.first_received or ""
+        hop = mid.first_received or ""
+        if hop and _RECIPIENT_GATEWAY_RE.search(hop):
+            return ""
+        return hop
     return ""
+
+
+def _url_host(value: str) -> str:
+    try:
+        return (urlparse(value).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _host_is_raw_ip(host: str) -> bool:
+    """Hostname of an already found URL is a raw IPv4 or IPv6 address."""
+    host = (host or "").strip().lower()
+    if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host):
+        return True
+    if ":" not in host:
+        return False
+    try:
+        ipaddress.IPv6Address(host.split("%", 1)[0])
+    except ValueError:
+        return False
+    return True
 
 
 def _score_urls(
@@ -655,7 +685,7 @@ def _score_urls(
     ip_urls = [
         i
         for i in result.iocs
-        if i.ioc_type.value == "url" and re.search(r"https?://\d+\.\d+\.\d+\.\d+", i.value)
+        if i.ioc_type.value == "url" and _host_is_raw_ip(_url_host(i.value))
     ]
     if ip_urls:
         parts.append(
@@ -820,9 +850,16 @@ def _score_content(
         suspicious_tlds=cfg.suspicious_tlds,
     )
     _append_lure_compounds(result, signals)
-    # Persist kinds on result for export / corpus
-    if signals and not result.content_signals:
-        result.content_signals = [s.kind for s in signals]
+    # Persist kinds on result for export / corpus. A YARA hit may already
+    # occupy the list; this pass still has to be visible to mitigation.
+    if signals:
+        have = list(result.content_signals or [])
+        seen = set(have)
+        for sig in signals:
+            if sig.kind not in seen:
+                have.append(sig.kind)
+                seen.add(sig.kind)
+        result.content_signals = have
 
     weight_map = {
         "weight_credential_harvest": cfg.weight_credential_harvest,
@@ -1219,6 +1256,14 @@ def _score_compounds(
     return total, parts
 
 
+# Inbound cloud gateways. They are not an originating hop when they are the only Received.
+_RECIPIENT_GATEWAY_RE = re.compile(
+    r"(?i)\b("
+    r"outlook\.office365\.com|mail\.protection\.outlook\.com|"
+    r"protection\.outlook\.com|mail\.google\.com|googlemail\.com"
+    r")"
+)
+
 _INTERNAL_RELAY_RE = re.compile(
     r"(?i)\b("
     r"mail\.internal|intranet|corp\.local|ad\.local|"
@@ -1563,6 +1608,43 @@ def _domains_related(left: str, right: str) -> bool:
     return left == right or left.endswith("." + right) or right.endswith("." + left)
 
 
+_LIST_UNSUB_URL_RE = re.compile(r"(?i)https?://[^\s<>\"']+")
+_LIST_UNSUB_MAIL_RE = re.compile(r"(?i)mailto:([^>\s,]+)")
+
+
+def _list_unsubscribe_hosts(value: str) -> list[str]:
+    hosts: list[str] = []
+    for match in _LIST_UNSUB_URL_RE.finditer(value or ""):
+        try:
+            host = (urlparse(match.group(0)).hostname or "").lower().rstrip(".")
+        except ValueError:
+            host = ""
+        if host:
+            hosts.append(host)
+    for match in _LIST_UNSUB_MAIL_RE.finditer(value or ""):
+        dom = _header_domain(match.group(1))
+        if dom:
+            hosts.append(dom)
+    return hosts
+
+
+def _list_unsubscribe_foreign(result: AnalysisResult) -> bool:
+    """A List-Unsubscribe host that is not the From domain."""
+    mid = result.mail_identity
+    if mid is None:
+        return False
+    raw = (mid.list_unsubscribe or "").strip()
+    if not raw:
+        return False
+    from_dom = _header_domain(mid.from_header)
+    if not from_dom:
+        return False
+    hosts = _list_unsubscribe_hosts(raw)
+    if not hosts:
+        return False
+    return any(not _domains_related(from_dom, host) for host in hosts)
+
+
 def _foreign_reply_domain(result: AnalysisResult) -> bool:
     """Reply-To or prior thread domain is not the From domain."""
     mid = result.mail_identity
@@ -1634,7 +1716,9 @@ def _benign_marker_parts(
         + " "
         + ((mid.list_id if mid else "") or "")
     ).strip()
-    if list_hdr or prec in ("bulk", "list", "junk"):
+    if (list_hdr or prec in ("bulk", "list", "junk")) and not _list_unsubscribe_foreign(
+        result
+    ):
         parts.append(
             ScoreContribution(
                 "mitigation",
