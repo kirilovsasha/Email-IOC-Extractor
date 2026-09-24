@@ -79,7 +79,7 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
             from_addr
             and reply_addr
             and from_addr.lower() != reply_addr.lower()
-            and not (from_dom and reply_dom and from_dom == reply_dom)
+            and not _same_domain(from_dom, reply_dom)
         ):
             findings.append(
                 HeaderFinding(
@@ -201,17 +201,13 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                 )
 
         # Alignment: a d=/from mismatch in any Authentication-Results.
-        mismatch = _dkim_alignment_mismatch(auth_results)
-        if mismatch:
-            d_dom, f_dom = mismatch
-            findings.append(
-                HeaderFinding(
-                    "DKIM alignment",
-                    f"d={d_dom} vs from={f_dom}",
-                    Severity.HIGH,
-                    "DKIM d= не совпадает с From — возможный spoof / forward",
-                )
-            )
+        # If that pair is absent, d= from DKIM-Signature is compared the same way.
+        mismatch = _dkim_alignment_mismatch(auth_results) or _dkim_signature_mismatch(
+            msg, from_addr, auth_results
+        )
+        finding = _alignment_finding(mismatch)
+        if finding:
+            findings.append(finding)
 
         # ARC present when forwarded; absence with broken auth is noted lightly
         arc_results = _get_all(msg, "ARC-Authentication-Results")
@@ -283,6 +279,9 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                     "SPF softfail — домен не подтверждён жёстко (часто фишинг)",
                 )
             )
+        finding = _alignment_finding(_dkim_signature_mismatch(msg, from_addr, []))
+        if finding:
+            findings.append(finding)
 
     # Sender ≠ From is common on lists (List-Id) and on DMARC-aligned mail.
     # Score only the unauthenticated external on-behalf case.
@@ -477,6 +476,81 @@ def _auth_identity_domain(token: str) -> str:
     if "@" in raw:
         raw = raw.rsplit("@", 1)[-1]
     return raw.strip(".")
+
+
+def _alignment_finding(mismatch: tuple[str, str] | None) -> HeaderFinding | None:
+    if not mismatch:
+        return None
+    d_dom, f_dom = mismatch
+    return HeaderFinding(
+        "DKIM alignment",
+        f"d={d_dom} vs from={f_dom}",
+        Severity.HIGH,
+        "DKIM d= не совпадает с From — возможный spoof / forward",
+    )
+
+
+def _auth_has_dkim_from_pair(auth_results: list[str]) -> bool:
+    """True when some Authentication-Results already has d= or header.i plus from."""
+    for header in auth_results:
+        low = header.lower()
+        has_sign = bool(re.search(r"header\.d\s*=\s*[a-z0-9.-]+", low)) or bool(
+            re.search(r"header\.i\s*=\s*\S", low)
+        )
+        has_from = bool(re.search(r"header\.from\s*=\s*[a-z0-9.-]+", low))
+        if has_sign and has_from:
+            return True
+    return False
+
+
+def _single_auth_from(auth_results: list[str]) -> str:
+    froms: list[str] = []
+    for header in auth_results:
+        low = header.lower()
+        for f_dom in re.findall(r"header\.from\s*=\s*([a-z0-9.-]+)", low):
+            if f_dom not in froms:
+                froms.append(f_dom)
+    if len(froms) == 1:
+        return froms[0]
+    return ""
+
+
+def _dkim_signature_domains(msg: Message) -> list[str]:
+    """d= tags from DKIM-Signature headers already on the message."""
+    found: list[str] = []
+    for header in _get_all(msg, "DKIM-Signature"):
+        for part in header.split(";"):
+            token = part.strip()
+            if "=" not in token:
+                continue
+            name, value = token.split("=", 1)
+            if name.strip().lower() != "d":
+                continue
+            match = re.match(r"(?i)\s*([a-z0-9.-]+)", value)
+            if not match:
+                continue
+            dom = match.group(1).strip(".").lower()
+            if dom and dom not in found:
+                found.append(dom)
+    return found
+
+
+def _dkim_signature_mismatch(
+    msg: Message, from_addr: str, auth_results: list[str]
+) -> tuple[str, str] | None:
+    """Signature d= vs From when Authentication-Results has no d=/from pair."""
+    if _auth_has_dkim_from_pair(auth_results):
+        return None
+    domains = _dkim_signature_domains(msg)
+    if not domains:
+        return None
+    f_dom = _single_auth_from(auth_results) or _addr_domain(from_addr)
+    if not f_dom:
+        return None
+    for d_dom in domains:
+        if d_dom and not _domains_aligned(d_dom, f_dom):
+            return d_dom, f_dom
+    return None
 
 
 def _dkim_alignment_mismatch(auth_results: list[str]) -> tuple[str, str] | None:

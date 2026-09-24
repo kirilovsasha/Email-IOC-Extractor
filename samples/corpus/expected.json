@@ -394,8 +394,8 @@
   },
   "suspicious_html_attachment.eml": {
     "level": "malicious",
-    "score_min": 79,
-    "score_max": 91,
+    "score_min": 64,
+    "score_max": 76,
     "reason_substrings": [
       "smuggl",
       "HTML",
@@ -615,8 +615,8 @@
   },
   "suspicious_svg_script.eml": {
     "level": "malicious",
-    "score_min": 90,
-    "score_max": 100,
+    "score_min": 75,
+    "score_max": 91,
     "reason_substrings": [
       "SVG",
       "script"

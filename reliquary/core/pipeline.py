@@ -172,19 +172,34 @@ def _build_meta(
     )
 
 
+def _counts_as_campaign_file(att) -> bool:
+    """File attachment. Inline / CID images do not occupy the campaign key."""
+    if "inline_image" in (getattr(att, "risk_flags", None) or []):
+        return False
+    name = (getattr(att, "filename", "") or "").lower()
+    return not name.startswith("cid-")
+
+
 def campaign_key_for(result: AnalysisResult) -> str:
-    """Campaign fingerprint: thread root → attachment hash → subject.
+    """Campaign fingerprint: thread root → one file hash → subject.
 
     The message's own Message-ID is not a thread root and does not occupy
-    the key. One attachment hash may. Several hashes must not: the minimum
-    hash is arbitrary, so the subject fallback is used instead.
+    the key. One file-attachment hash may. Inline and CID images do not:
+    the subject branch runs instead. Several file hashes must not: the
+    minimum hash is arbitrary, so the subject fallback is used instead.
     """
     mid = result.mail_identity
     if mid is not None:
         thread = mid.thread_root_id()
         if thread:
             return f"thread:{thread}"
-    att_hashes = sorted({a.sha256 for a in result.attachments if a.sha256})
+    att_hashes = sorted(
+        {
+            a.sha256
+            for a in result.attachments
+            if a.sha256 and _counts_as_campaign_file(a)
+        }
+    )
     if len(att_hashes) == 1:
         return f"att:{att_hashes[0][:16]}"
     subject = (result.subject or (mid.subject if mid else "") or "").strip().lower()
@@ -849,16 +864,30 @@ def _mailbox_ioc_lines(value: str) -> list[str]:
 
 
 def _header_ioc_text(result: AnalysisResult, parsed) -> str:
-    """Already-parsed Subject, From and Reply-To for the same IOC extractor."""
+    """Already-parsed identity headers for the same IOC extractor."""
     mid = result.mail_identity
+    msg = getattr(parsed, "message", None)
     subject = (mid.subject if mid else "") or getattr(parsed, "subject", "") or ""
     sender = (mid.from_header if mid else "") or getattr(parsed, "sender", "") or ""
     reply = (mid.reply_to if mid else "") or ""
-    if not reply and getattr(parsed, "message", None) is not None:
-        reply = str(parsed.message.get("Reply-To", "") or "")
+    return_path = (mid.return_path if mid else "") or ""
+    list_unsub = (mid.list_unsubscribe if mid else "") or ""
+    sender_hdr = ""
+    if msg is not None:
+        if not reply:
+            reply = str(msg.get("Reply-To", "") or "")
+        if not return_path:
+            return_path = str(msg.get("Return-Path", "") or "")
+        if not list_unsub:
+            list_unsub = str(msg.get("List-Unsubscribe", "") or "")
+        sender_hdr = str(msg.get("Sender", "") or "")
     chunks = [subject.strip()] if subject and subject.strip() else []
     chunks.extend(_mailbox_ioc_lines(sender))
     chunks.extend(_mailbox_ioc_lines(reply))
+    chunks.extend(_mailbox_ioc_lines(return_path))
+    chunks.extend(_mailbox_ioc_lines(sender_hdr))
+    if list_unsub.strip():
+        chunks.append(list_unsub.strip())
     return "\n".join(chunks)
 
 

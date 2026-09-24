@@ -768,6 +768,10 @@ def _mask_url_tails(text: str) -> str:
     return URL_RE.sub(repl, text)
 
 
+# Numeric (&#46;) and named (&amp;) entities on a URL that was already found.
+_URL_ENTITY_RE = re.compile(r"&(?:#\d+|#x[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);")
+
+
 def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
     """Extract and deduplicate IOCs from arbitrary text."""
     if not text:
@@ -821,7 +825,7 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
 
     for m in URL_RE.finditer(cleaned):
         url = m.group(0).rstrip(".,;:!?")
-        if "&#" in url:
+        if _URL_ENTITY_RE.search(url):
             url = unescape(url)
         if normalize_url_key(url) in messenger_urls:
             continue

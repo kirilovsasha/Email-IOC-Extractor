@@ -62,16 +62,22 @@ def test_qr_lure_and_qr_credential() -> None:
 
 def test_bec_ru_markers() -> None:
     for phrase in (
-        "счёт фактура во вложении",
-        "акт сверки за квартал",
         "срочно переведите на карту",
         "реквизиты на карту",
         "изменить платёжные реквизиты",
-        "CFO urgent wire",
+        "CEO urgent wire transfer",
         "главбух просит оплатить",
         "казначей согласовал",
     ):
         assert BEC_RE.search(phrase), phrase
+    for phrase in (
+        "счёт фактура во вложении",
+        "акт сверки за квартал",
+        "р/с 40702810900000001234",
+        "письмо от CFO",
+        "расчётный счёт открыт",
+    ):
+        assert BEC_RE.search(phrase) is None, phrase
 
 
 def test_new_weights_defaults() -> None:
