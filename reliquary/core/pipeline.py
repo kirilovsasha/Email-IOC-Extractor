@@ -180,8 +180,10 @@ def _counts_as_campaign_file(att) -> bool:
     return not name.startswith("cid-")
 
 
-# Same reply prefix the thread mitigation already strips.
-_CAMPAIGN_SUBJECT_PREFIX_RE = re.compile(r"(?i)^(re|fw|fwd|отв|пересл)\s*:\s*")
+# Same reply prefix the thread mitigation strips, plus Ответ / Переслано / На / Re[n].
+_CAMPAIGN_SUBJECT_PREFIX_RE = re.compile(
+    r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересл|на)\s*:\s*"
+)
 
 
 def _campaign_subject(subject: str) -> str:
@@ -886,6 +888,7 @@ def _header_ioc_text(result: AnalysisResult, parsed) -> str:
     return_path = (mid.return_path if mid else "") or ""
     list_unsub = (mid.list_unsubscribe if mid else "") or ""
     sender_hdr = ""
+    resent_from = ""
     if msg is not None:
         if not reply:
             reply = str(msg.get("Reply-To", "") or "")
@@ -894,11 +897,13 @@ def _header_ioc_text(result: AnalysisResult, parsed) -> str:
         if not list_unsub:
             list_unsub = str(msg.get("List-Unsubscribe", "") or "")
         sender_hdr = str(msg.get("Sender", "") or "")
+        resent_from = str(msg.get("Resent-From", "") or "")
     chunks = [subject.strip()] if subject and subject.strip() else []
     chunks.extend(_mailbox_ioc_lines(sender))
     chunks.extend(_mailbox_ioc_lines(reply))
     chunks.extend(_mailbox_ioc_lines(return_path))
     chunks.extend(_mailbox_ioc_lines(sender_hdr))
+    chunks.extend(_mailbox_ioc_lines(resent_from))
     if list_unsub.strip():
         chunks.append(list_unsub.strip())
     return "\n".join(chunks)

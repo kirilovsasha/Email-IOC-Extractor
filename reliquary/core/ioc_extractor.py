@@ -59,7 +59,7 @@ _UNICODE_HOST_RE = re.compile(
     rf"(?iu)(?<![\w@.-])((?:[\w-]{{1,63}}\.)+(?:{_IDN_CCTLD}|[a-z]{{2,24}}))(?![\w@-])"
 )
 _UNICODE_EMAIL_RE = re.compile(
-    rf"(?iu)(?<![\w.])([a-z0-9._%+\-]+@(?:[\w-]{{1,63}}\.)+(?:{_IDN_CCTLD}|[a-z]{{2,24}}))(?![\w-])"
+    rf"(?iu)(?<![\w.])([\w.%+\-]+@(?:[\w-]{{1,63}}\.)+(?:{_IDN_CCTLD}|[a-z]{{2,24}}))(?![\w-])"
 )
 
 # Auth-results / DKIM attribute names that look like domains (header.from, smtp.mailfrom).
@@ -1002,9 +1002,11 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
         add(domain, IocType.DOMAIN, m, tags)
 
     for m in _UNICODE_EMAIL_RE.finditer(cleaned):
-        if _email_is_message_id_context(cleaned, m):
-            continue
         email = m.group(1).lower()
+        local = email.split("@", 1)[0]
+        # A Cyrillic local-part in <name> is a mailbox. ASCII <id@host> stays a Message-ID.
+        if local.isascii() and _email_is_message_id_context(cleaned, m):
+            continue
         host = email.split("@", 1)[1]
         if _unicode_host_ascii(host) is None:
             continue

@@ -39,7 +39,15 @@ def test_clickfix_and_fake_auth_and_image_only() -> None:
             "<p>Проверка: spf=pass dkim=pass</p><a href='https://evil.example'>войти</a>",
         )
     }
-    assert "fake_auth_results" in fake
+    assert "fake_auth_results" not in fake
+    drawn = {
+        s.kind
+        for s in analyze_content_signals(
+            "Authentication-Results: mx; spf=pass\n",
+            "",
+        )
+    }
+    assert "fake_auth_results" in drawn
 
     html = (
         "<html><body><img src='https://cdn.example/inv.png'/>"
@@ -48,11 +56,11 @@ def test_clickfix_and_fake_auth_and_image_only() -> None:
     image = {s.kind for s in analyze_content_signals("", html)}
     assert "image_only_body" in image
 
-    header_only = analyze_content_signals(
-        "Authentication-Results: mx; spf=pass\n\nОбычный текст письма без фишинга.",
+    sentence = analyze_content_signals(
+        "Отчёт готов. Для справки spf=pass на шлюзе.",
         "",
     )
-    assert "fake_auth_results" not in {s.kind for s in header_only}
+    assert "fake_auth_results" not in {s.kind for s in sentence}
 
 
 def test_password_plus_office_encrypted() -> None:

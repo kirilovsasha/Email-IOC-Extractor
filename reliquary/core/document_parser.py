@@ -177,11 +177,29 @@ def _mark_inline_image(info: AttachmentInfo) -> AttachmentInfo:
     return info
 
 
+# Nameless Office should reach the same inspect_bytes path as a named .docx/.xlsx.
+_NAMELESS_EXT = {
+    "application/msword": "doc",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.ms-powerpoint": "ppt",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/rtf": "rtf",
+    "text/rtf": "rtf",
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+}
+
+
 def _nameless_attachment_name(ctype: str) -> str:
     if ctype == "message/rfc822":
         return "nested.eml"
     if ctype == "text/calendar":
         return "invite.ics"
+    mapped = _NAMELESS_EXT.get(ctype)
+    if mapped:
+        return f"attachment.{mapped}"
     subtype = ctype.split("/")[-1].split("+")[0]
     safe = re.sub(r"[^A-Za-z0-9]+", "", subtype) or "bin"
     return f"attachment.{safe[:20]}"
@@ -189,6 +207,19 @@ def _nameless_attachment_name(ctype: str) -> str:
 
 def _decode_part_text(payload: bytes, charset: str | None) -> str:
     return decode_payload_text(payload, charset)
+
+
+def _append_enriched_or_rtf(part: Message, ctype: str, text_parts: list[str]) -> None:
+    """text/enriched, text/rtf and application/rtf text go to the body extractor."""
+    if ctype not in {"text/enriched", "text/rtf", "application/rtf"}:
+        return
+    try:
+        payload = part.get_payload(decode=True) or b""
+        decoded = _decode_part_text(payload, part.get_content_charset())
+    except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
+        return
+    if decoded.strip():
+        text_parts.append(decoded)
 
 
 def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
@@ -255,6 +286,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 payload = _part_payload(part)
                 if payload:
                     attachments.append(inspect_bytes(_nameless_attachment_name(ctype), payload))
+                _append_enriched_or_rtf(part, ctype, text_parts)
                 continue
             if ctype == "message/delivery-status":
                 text = _delivery_status_text(part)
@@ -266,6 +298,17 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 payload = _part_payload(part)
                 if payload:
                     attachments.append(inspect_bytes(_nameless_attachment_name(ctype), payload))
+                continue
+            # text/enriched and text/rtf are body text for the extractor.
+            if ctype in {"text/enriched", "text/rtf"}:
+                _append_enriched_or_rtf(part, ctype, text_parts)
+                continue
+            # Nameless ZIP / Office / application/rtf, including Content-Disposition: inline.
+            if not ctype.startswith("text/") and not ctype.startswith("multipart/"):
+                payload = _part_payload(part)
+                if payload:
+                    attachments.append(inspect_bytes(_nameless_attachment_name(ctype), payload))
+                _append_enriched_or_rtf(part, ctype, text_parts)
                 continue
             try:
                 payload = part.get_payload(decode=True) or b""

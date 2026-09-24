@@ -966,12 +966,14 @@ def _score_lookalike(
     )
     seen_kinds: set[str] = set()
     display_pts = 0
+    # A bare IDN adds nothing unless this pass also has a brand homoglyph.
+    idn_weight = cfg.weight_idn if any(hit.kind == "homoglyph" for hit in hits) else 0
     for hit in hits:
         if hit.kind in seen_kinds and hit.kind != "levenshtein":
             continue
         seen_kinds.add(hit.kind)
         if hit.kind == "idn":
-            pts = cfg.weight_idn
+            pts = idn_weight
         elif hit.kind in ("display_spoof", "org_display_spoof"):
             # Cap display-spoof so spoof cases don't all pin at 100 with compounds
             room = max(0, cfg.cap_display_spoof - display_pts)
@@ -1705,7 +1707,10 @@ def _benign_marker_parts(
             )
         )
     if mid and (mid.in_reply_to or mid.references) and not foreign_reply:
-        if re.match(r"(?i)^(re|fw|fwd|отв|пересл)\s*:", subj):
+        if re.match(
+            r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересл|на)\s*:",
+            subj,
+        ):
             parts.append(
                 ScoreContribution(
                     "mitigation",

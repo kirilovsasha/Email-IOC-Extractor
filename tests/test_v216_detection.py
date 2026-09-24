@@ -66,8 +66,6 @@ def test_bec_ru_markers() -> None:
         "реквизиты на карту",
         "изменить платёжные реквизиты",
         "CEO urgent wire transfer",
-        "главбух просит оплатить",
-        "казначей согласовал",
     ):
         assert BEC_RE.search(phrase), phrase
     for phrase in (
@@ -76,6 +74,8 @@ def test_bec_ru_markers() -> None:
         "р/с 40702810900000001234",
         "письмо от CFO",
         "расчётный счёт открыт",
+        "главбух просит оплатить",
+        "казначей согласовал",
     ):
         assert BEC_RE.search(phrase) is None, phrase
 
