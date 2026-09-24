@@ -247,4 +247,5 @@ def test_calendar_ics_link_skips_mitigation() -> None:
     )
     result2 = analyze_text(plain, label="cal-plain.eml")
     assert result2.verdict is not None
-    assert any("Календарное приглашение" in (c.reason or "") for c in result2.verdict.breakdown)
+    # The words alone are not a calendar part.
+    assert not any("Календарное приглашение" in (c.reason or "") for c in result2.verdict.breakdown)

@@ -193,21 +193,18 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                     )
                 )
 
-        # Alignment hints from Authentication-Results (header.d / header.from)
-        dkim_d = re.search(r"header\.d\s*=\s*([a-z0-9.-]+)", auth_blob)
-        header_from = re.search(r"header\.from\s*=\s*([a-z0-9.-]+)", auth_blob)
-        if dkim_d and header_from:
-            d_dom = dkim_d.group(1).lower()
-            f_dom = header_from.group(1).lower()
-            if d_dom and f_dom and d_dom != f_dom and not f_dom.endswith("." + d_dom):
-                findings.append(
-                    HeaderFinding(
-                        "DKIM alignment",
-                        f"d={d_dom} vs from={f_dom}",
-                        Severity.HIGH,
-                        "DKIM d= не совпадает с From — возможный spoof / forward",
-                    )
+        # Alignment: a d=/from mismatch in any Authentication-Results.
+        mismatch = _dkim_alignment_mismatch(auth_results)
+        if mismatch:
+            d_dom, f_dom = mismatch
+            findings.append(
+                HeaderFinding(
+                    "DKIM alignment",
+                    f"d={d_dom} vs from={f_dom}",
+                    Severity.HIGH,
+                    "DKIM d= не совпадает с From — возможный spoof / forward",
                 )
+            )
 
         # ARC present when forwarded; absence with broken auth is noted lightly
         arc_results = _get_all(msg, "ARC-Authentication-Results")
@@ -459,8 +456,41 @@ def extract_raw_headers(msg: Message) -> dict[str, str]:
 _AUTH_PROTOS = ("spf", "dkim", "dmarc")
 
 
+# fail/softfail already beat pass. permerror/temperror must too.
+_AUTH_PRIORITY = ("fail", "softfail", "permerror", "temperror")
+
+
+def _domains_aligned(d_dom: str, f_dom: str) -> bool:
+    return bool(d_dom and f_dom) and (d_dom == f_dom or f_dom.endswith("." + d_dom))
+
+
+def _dkim_alignment_mismatch(auth_results: list[str]) -> tuple[str, str] | None:
+    """d= vs header.from when any Authentication-Results pair disagrees."""
+    pairs: list[tuple[list[str], list[str]]] = []
+    for header in auth_results:
+        low = header.lower()
+        ds = re.findall(r"header\.d\s*=\s*([a-z0-9.-]+)", low)
+        fs = re.findall(r"header\.from\s*=\s*([a-z0-9.-]+)", low)
+        pairs.append((ds, fs))
+        if not ds or not fs:
+            continue
+        for d_dom in ds:
+            if any(_domains_aligned(d_dom, f_dom) for f_dom in fs):
+                continue
+            return d_dom, fs[0]
+    froms = list(dict.fromkeys(f_dom for _, fs in pairs for f_dom in fs))
+    if len(froms) != 1:
+        return None
+    f_dom = froms[0]
+    for ds, _fs in pairs:
+        for d_dom in ds:
+            if d_dom and not _domains_aligned(d_dom, f_dom):
+                return d_dom, f_dom
+    return None
+
+
 def resolve_auth_results(msg: Message) -> dict[str, str]:
-    """SPF/DKIM/DMARC for the card. A later fail/softfail is not hidden by pass."""
+    """SPF/DKIM/DMARC for the card. Later fail/softfail/permerror/temperror beat pass."""
     found: dict[str, list[str]] = {proto: [] for proto in _AUTH_PROTOS}
     for header in _get_all(msg, "Authentication-Results"):
         low = header.lower()
@@ -474,10 +504,10 @@ def resolve_auth_results(msg: Message) -> dict[str, str]:
     for proto, values in found.items():
         if not values:
             continue
-        if "fail" in values:
-            chosen[proto] = "fail"
-        elif "softfail" in values:
-            chosen[proto] = "softfail"
+        for status in _AUTH_PRIORITY:
+            if status in values:
+                chosen[proto] = status
+                break
         else:
             chosen[proto] = values[0]
     return chosen

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from reliquary.core.content_signals import analyze_content_signals
 from reliquary.core.lookalike import load_brands, load_org_domains, scan_lookalikes
@@ -596,6 +597,41 @@ def _score_attachments(
     return _apply_cap(parts, cfg.cap_attachments, "attachments")
 
 
+def _suspicious_tld_host(value: str, kind: str) -> str:
+    """Host of a domain or URL. A path segment such as q3.zip is not a zone."""
+    if kind == "domain":
+        return (value or "").lower().strip().rstrip(".")
+    if kind != "url":
+        return ""
+    try:
+        host = urlparse(value).hostname or ""
+    except ValueError:
+        return ""
+    return host.lower().rstrip(".")
+
+
+def _is_file_attachment(att) -> bool:
+    """File attachment. Inline / CID images stay in the list for QR only."""
+    if "inline_image" in (getattr(att, "risk_flags", None) or []):
+        return False
+    name = (getattr(att, "filename", "") or "").lower()
+    return not name.startswith("cid-")
+
+
+def _originating_received(result: AnalysisResult) -> str:
+    """Received hop closest to the sender, not the recipient gateway."""
+    origin = (result.raw_headers or {}).get("Received-Origin", "") or ""
+    if origin.strip():
+        return origin
+    for finding in result.headers:
+        if finding.name == "Received (origin)" and (finding.value or "").strip():
+            return finding.value
+    mid = result.mail_identity
+    if mid is not None and mid.received_hops <= 1:
+        return mid.first_received or ""
+    return ""
+
+
 def _score_urls(
     result: AnalysisResult, cfg: VerdictConfig
 ) -> tuple[int, list[ScoreContribution]]:
@@ -632,17 +668,16 @@ def _score_urls(
 
     suspicious_tlds = cfg.suspicious_tlds or ()
     for ioc in result.iocs:
-        if ioc.ioc_type.value in ("domain", "url"):
-            val = ioc.value.lower()
-            if any(val.endswith(tld) or f"{tld}/" in val for tld in suspicious_tlds):
-                parts.append(
-                    ScoreContribution(
-                        "urls",
-                        cfg.weight_suspicious_tld,
-                        f"Подозрительная зона в индикаторе: {ioc.value}",
-                    )
+        host = _suspicious_tld_host(ioc.value, ioc.ioc_type.value)
+        if host and any(host.endswith(tld) for tld in suspicious_tlds):
+            parts.append(
+                ScoreContribution(
+                    "urls",
+                    cfg.weight_suspicious_tld,
+                    f"Подозрительная зона в индикаторе: {ioc.value}",
                 )
-                break
+            )
+            break
     return _apply_cap(parts, cfg.cap_urls, "urls")
 
 
@@ -758,7 +793,8 @@ def _score_content(
 
     has_urls = any(i.ioc_type.value == "url" for i in result.iocs)
     has_att = bool(result.attachments)
-    if has_urls and has_att and result.source_kind == "email":
+    has_file = any(_is_file_attachment(a) for a in result.attachments)
+    if has_urls and has_file and result.source_kind == "email":
         parts.append(
             ScoreContribution(
                 "content",
@@ -1405,7 +1441,7 @@ def _score_mitigations(
             )
         )
 
-    hop = mid.first_received or ""
+    hop = _originating_received(result)
     from_m = re.search(r"(?i)\bfrom\s+([^\s\(;]+)", hop)
     hop_from = from_m.group(1) if from_m else hop
     if hop_from and _INTERNAL_RELAY_RE.search(hop_from):
@@ -1448,18 +1484,15 @@ _AUTO_REPLY_SUBJ = re.compile(
     r"(?i)^(auto[-\s]?reply|automatic reply|out of office|ооо|автоответ|"
     r"не\s*у\s*компьютера|away from (?:the )?office)\b"
 )
-_CALENDAR_RE = re.compile(
-    r"(?i)(BEGIN:VCALENDAR|text/calendar|meeting request|meeting:|"
-    r"you are invited|calendar invite|приглашение|запрос на собрание|"
-    r"план[её]рк)"
-)
+_CALENDAR_RE = re.compile(r"(?i)BEGIN:VCALENDAR")
 _VCAL_BLOCK_RE = re.compile(
     r"(?is)BEGIN:VCALENDAR.{0,8000}?END:VCALENDAR"
 )
 
 
 def _calendar_surface(result: AnalysisResult, blob: str) -> bool:
-    if _CALENDAR_RE.search(blob):
+    """Calendar relief only when a calendar part is already present."""
+    if _CALENDAR_RE.search(blob or ""):
         return True
     return any(
         (a.mime_guess or "").lower() == "text/calendar"

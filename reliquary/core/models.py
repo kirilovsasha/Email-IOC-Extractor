@@ -132,7 +132,11 @@ class MailIdentity:
         return asdict(self)
 
     def thread_root_id(self) -> str:
-        """Корневой Msg-ID треда: References → In-Reply-To → свой Message-ID."""
+        """Корневой Msg-ID треда: References → In-Reply-To.
+
+        Свой Message-ID корнем не считается: иначе ключ кампании
+        заканчивается на ``thread:`` и не доходит до вложения и темы.
+        """
         refs = (self.references or "").strip()
         if refs:
             # First token is usually the root of the thread
@@ -142,7 +146,7 @@ class MailIdentity:
         irt = (self.in_reply_to or "").strip()
         if irt:
             return irt.split()[0].strip().lower()
-        return (self.message_id or "").strip().lower()
+        return ""
 
 
 @dataclass

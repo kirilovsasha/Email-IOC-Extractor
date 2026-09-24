@@ -201,9 +201,9 @@
     ]
   },
   "suspicious_7z_archive.eml": {
-    "level": "suspicious",
-    "score_min": 43,
-    "score_max": 59,
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 75,
     "reason_substrings": [
       "7z"
     ]
@@ -264,9 +264,9 @@
     ]
   },
   "suspicious_cab_attachment.eml": {
-    "level": "suspicious",
-    "score_min": 40,
-    "score_max": 59,
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 72,
     "reason_substrings": [
       "CAB",
       "cab"
@@ -373,9 +373,9 @@
     ]
   },
   "suspicious_form_action_ip.eml": {
-    "level": "suspicious",
-    "score_min": 46,
-    "score_max": 59
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 78
   },
   "suspicious_hidden_html.eml": {
     "level": "suspicious",
@@ -460,9 +460,9 @@
     "score_max": 44
   },
   "suspicious_messenger_only.eml": {
-    "level": "suspicious",
-    "score_min": 46,
-    "score_max": 59,
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 78,
     "reason_substrings": [
       "Telegram",
       "messenger",
@@ -470,9 +470,9 @@
     ]
   },
   "suspicious_nested_archive.eml": {
-    "level": "suspicious",
-    "score_min": 49,
-    "score_max": 59
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 80
   },
   "suspicious_nested_depth2.eml": {
     "level": "malicious",
@@ -551,9 +551,9 @@
     ]
   },
   "suspicious_pdf_openaction_uri.eml": {
-    "level": "suspicious",
-    "score_min": 46,
-    "score_max": 59
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 78
   },
   "suspicious_pdf_uri_only.eml": {
     "level": "malicious",
@@ -651,9 +651,9 @@
     ]
   },
   "unknown_bec_wire.eml": {
-    "level": "suspicious",
-    "score_min": 37,
-    "score_max": 57
+    "level": "malicious",
+    "score_min": 60,
+    "score_max": 80
   },
   "unknown_empty_body.eml": {
     "level": "unknown",
