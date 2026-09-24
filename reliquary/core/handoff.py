@@ -6,6 +6,7 @@ from pathlib import Path
 
 from reliquary import __app_name__, __version__
 from reliquary.core.defang import defang_value
+from reliquary.core.labels import confidence_label_ru, verdict_card_label
 from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.paths import app_dir
 
@@ -31,7 +32,14 @@ _PLACEHOLDER_KEYS = (
     "att_flags",
     "campaign",
     "spoof",
+    "confidence",
 )
+
+
+def _clip_lines(lines: list[str], limit: int) -> list[str]:
+    if len(lines) <= limit:
+        return lines
+    return lines[:limit] + [f"  … ещё {len(lines) - limit}"]
 
 
 def default_extra_handoff_path() -> Path:
@@ -85,8 +93,10 @@ def _handoff_values(
 
     reasons = ""
     breakdown = ""
+    reason_items: list[str] = []
     if v:
-        reasons = "\n".join(f"  - {r}" for r in v.reasons[:8]) or "  - —"
+        reason_items = [f"  - {r}" for r in v.reasons]
+        reasons = "\n".join(_clip_lines(reason_items, 8)) or "  - —"
         if v.breakdown:
             breakdown = "\n".join(
                 f"  +{b.points} {b.category}: {b.reason}" for b in v.breakdown
@@ -97,30 +107,37 @@ def _handoff_values(
         val = defang_value(ioc.value) if defang else ioc.value
         ioc_lines.append(f"  {ioc.ioc_type.value}|{val}")
     if len(evidence) > max_iocs:
-        ioc_lines.append(f"  … +{len(evidence) - max_iocs} more")
+        ioc_lines.append(f"  … ещё {len(evidence) - max_iocs}")
 
     batch_lines: list[str] = []
     rows = result.file_rows or []
+    shown_rows = 0
     if len(rows) >= 2:
-        for row in rows[:30]:
+        shown_rows = min(len(rows), 30)
+        for row in rows[:shown_rows]:
             name = Path(row.path).name
-            level = (row.verdict_level or "—").upper()
+            level = verdict_card_label(row.verdict_level) if row.verdict_level else "—"
             score = f" {row.verdict_score}" if row.verdict_score is not None else ""
             top = f" · {row.top_reason}" if getattr(row, "top_reason", "") else ""
             batch_lines.append(f"  {name}: {level}{score}, IOC {row.ioc_count}{top}")
+        if len(rows) > shown_rows:
+            batch_lines.append(f"  … ещё {len(rows) - shown_rows}")
 
-    chain_lines: list[str] = []
-    for rw in (result.url_rewrites or [])[:8]:
+    chain_items: list[str] = []
+    for rw in result.url_rewrites or []:
         if not rw.changed:
             continue
         hops = " → ".join(rw.chain) if rw.chain else rw.rewriter
-        chain_lines.append(f"  [{hops}] {rw.original[:80]} → {rw.unwrapped[:100]}")
+        chain_items.append(f"  [{hops}] {rw.original[:80]} → {rw.unwrapped[:100]}")
+    chain_lines = _clip_lines(chain_items, 8)
 
-    flag_bits: list[str] = []
-    for att in (result.attachments or [])[:12]:
+    flag_items: list[str] = []
+    for att in result.attachments or []:
         flags = [f for f in (att.risk_flags or []) if f not in {"archive", "zip_container", "image_attachment"}]
         if flags:
-            flag_bits.append(f"  {att.filename}: {', '.join(flags[:8])}")
+            flag_items.append(f"  {att.filename}: {', '.join(flags[:8])}")
+    flag_bits = _clip_lines(flag_items, 12)
+    action_bits = _clip_lines(reason_items + flag_items, 12)
 
     spoof_line = "—"
     for reason in (v.reasons if v else []) or []:
@@ -156,11 +173,12 @@ def _handoff_values(
     return {
         "product": __app_name__,
         "version": __version__,
-        "verdict": v.level.value.upper() if v else "—",
+        "verdict": verdict_card_label(v.level) if v else "—",
         "score": str(v.score) if v else "—",
         "summary": (v.summary if v else "") or "—",
         "reasons": reasons or "  - —",
-        "actions": "",
+        "actions": "\n".join(action_bits) if action_bits else "  —",
+        "confidence": confidence_label_ru(getattr(v, "confidence", "") or "") if v else "—",
         "breakdown": breakdown or "  —",
         "file": src,
         "from": from_hdr,
@@ -169,6 +187,8 @@ def _handoff_values(
         "auth": auth,
         "iocs": "\n".join(ioc_lines) if ioc_lines else "  —",
         "batch": "\n".join(batch_lines) if batch_lines else "",
+        "batch_shown": str(shown_rows),
+        "batch_total": str(len(rows)),
         "chains": "\n".join(chain_lines) if chain_lines else "  —",
         "att_flags": "\n".join(flag_bits) if flag_bits else "  —",
         "campaign": campaign,
@@ -193,40 +213,46 @@ def render_default_handoff(
 ) -> str:
     """Built-in compact triage block (no template file)."""
     values = _handoff_values(result, iocs, defang=defang, max_iocs=max_iocs)
-    lines: list[str] = [f"=== {values['product']} — handoff ===", ""]
+    lines: list[str] = [f"=== {values['product']} — тикет ===", ""]
     if values["verdict"] != "—":
-        lines.append(f"Verdict: {values['verdict']} (score {values['score']}/100)")
+        conf = values.get("confidence") or ""
+        conf_bit = f" · уверенность {conf}" if conf and conf != "—" else ""
+        lines.append(f"Вердикт: {values['verdict']} (score {values['score']}/100){conf_bit}")
         if values["summary"] and values["summary"] != "—":
-            lines.append(f"Summary: {values['summary']}")
-        lines.append(f"Campaign: {values['campaign']}")
+            lines.append(f"Сводка: {values['summary']}")
+        lines.append(f"Кампания: {values['campaign']}")
         if values["spoof"] and values["spoof"] != "—":
-            lines.append(f"Display-spoof: {values['spoof']}")
-        lines.append("Reasons:")
+            lines.append(f"Подмена имени: {values['spoof']}")
+        lines.append("Причины:")
         lines.append(values["reasons"])
+        if values["actions"] and values["actions"] != "  —":
+            lines.append("Действия:")
+            lines.append(values["actions"])
         lines.append("")
-    lines.append(f"File: {values['file']}")
+    lines.append(f"Файл: {values['file']}")
     lines.append(f"From: {values['from']}")
-    lines.append(f"Subject: {values['subject']}")
+    lines.append(f"Тема: {values['subject']}")
     lines.append(f"Message-ID: {values['msg_id']}")
     if values["auth"] != "—":
-        lines.append(f"Auth: {values['auth']}")
+        lines.append(f"Аутентификация: {values['auth']}")
     if values["chains"] and values["chains"] != "  —":
         lines.append("")
-        lines.append("URL unwrap chains:")
+        lines.append("Цепочки URL:")
         lines.append(values["chains"])
     if values["att_flags"] and values["att_flags"] != "  —":
         lines.append("")
-        lines.append("Attachment flags:")
+        lines.append("Флаги вложений:")
         lines.append(values["att_flags"])
     evidence = list(iocs if iocs is not None else result.iocs)
     if evidence:
         lines.append("")
-        lines.append(f"IOC evidence ({min(len(evidence), max_iocs)}/{len(evidence)}):")
+        lines.append(f"IOC ({min(len(evidence), max_iocs)}/{len(evidence)}):")
         lines.append(values["iocs"])
     if values["batch"]:
-        rows = result.file_rows or []
+        shown = values.get("batch_shown") or "0"
+        total = values.get("batch_total") or shown
         lines.append("")
-        lines.append(f"Batch files ({len(rows)}):")
+        lines.append(f"Письма пакета (показано {shown} из {total}):")
         lines.append(values["batch"])
     lines.append("")
     return "\n".join(lines)

@@ -149,17 +149,74 @@ class FilterState:
     def filtered_result(self, result: AnalysisResult) -> AnalysisResult:
         return with_iocs(result, self.apply(result))
 
+    def hidden_summary(self, result: AnalysisResult) -> str:
+        """Short RU line: how many IOC each active filter hid."""
+        from reliquary.core.exporters import source_file_matches
+        from reliquary.core.models import IocType
+
+        shown = {
+            (i.ioc_type.value, i.value, i.source, tuple(i.tags)) for i in self.apply(result)
+        }
+        hidden = [
+            i
+            for i in result.iocs
+            if (i.ioc_type.value, i.value, i.source, tuple(i.tags)) not in shown
+        ]
+        if not hidden:
+            return ""
+        parts: list[str] = []
+
+        def _count(pred) -> int:
+            return sum(1 for ioc in hidden if pred(ioc))
+
+        if self.actionable_only or self.hide_rewriter:
+            n = _count(lambda i: "url_rewriter" in i.tags or "noise_candidate" in i.tags)
+            if n:
+                parts.append(f"SafeLinks {n}")
+        if self.actionable_only or self.hide_allowlisted:
+            n = _count(lambda i: "allowlisted" in i.tags)
+            if n:
+                parts.append(f"allowlist {n}")
+        if self.actionable_only or self.hide_private:
+            n = _count(lambda i: "private" in i.tags)
+            if n:
+                parts.append(f"локальные IP {n}")
+        if self.actionable_only:
+            n = _count(
+                lambda i: i.ioc_type == IocType.FILENAME
+                and "url_rewriter" not in i.tags
+                and "allowlisted" not in i.tags
+                and "private" not in i.tags
+            )
+            if n:
+                parts.append(f"к разбору {n}")
+        if self.source_file:
+            n = _count(
+                lambda i: any(t.startswith("file:") for t in i.tags)
+                and not any(
+                    source_file_matches(t[5:], self.source_file)
+                    for t in i.tags
+                    if t.startswith("file:")
+                )
+            )
+            if n:
+                parts.append(f"файл {n}")
+        query = (self.search or "").strip().lower()
+        if query:
+            n = _count(lambda i: query not in (i.value or "").lower())
+            if n:
+                parts.append(f"поиск {n}")
+        return " · ".join(parts)
+
     def with_focus(self, source_file: str) -> FilterState:
-        # Basename must work for both POSIX and Windows paths (CI runs on Linux).
         raw = (source_file or "").replace("\\", "/").rstrip("/")
-        base = raw.rsplit("/", 1)[-1] if raw else ""
         return FilterState(
             hide_rewriter=self.hide_rewriter,
             hide_allowlisted=self.hide_allowlisted,
             hide_private=self.hide_private,
             actionable_only=self.actionable_only,
             search=self.search,
-            source_file=base,
+            source_file=raw,
             cat_network=self.cat_network,
             cat_hashes=self.cat_hashes,
             cat_host=self.cat_host,

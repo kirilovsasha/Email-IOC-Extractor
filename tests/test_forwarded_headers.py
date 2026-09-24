@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from reliquary.core.document_parser import normalize_email_bytes, normalize_email_text
-from reliquary.core.pipeline import analyze_text, _looks_like_rfc822
+from reliquary.core.pipeline import _looks_like_rfc822, analyze_text
 
 
 def _forward_source(*, banner: str, with_received: bool = True) -> str:

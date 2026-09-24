@@ -6,8 +6,9 @@ import tkinter as tk
 from pathlib import Path
 
 from reliquary.core.diff import diff_results, find_batch_peer
-from reliquary.core.labels import verdict_label_ru
+from reliquary.core.labels import confidence_label_ru, verdict_card_label, verdict_label_ru
 from reliquary.core.models import AnalysisResult
+from reliquary.core.pipeline import parser_failures
 from reliquary.gui.theme import SEVERITY_LABELS_RU
 
 
@@ -25,8 +26,11 @@ def campaign_banner_text(result: AnalysisResult) -> str:
     rows = list(result.file_rows or [])
     if len(rows) < 2:
         return ""
-    current = Path(result.source_path or "").name
-    mine = next((row for row in rows if Path(row.path).name == current), None)
+    current_path = result.source_path or ""
+    mine = next((row for row in rows if row.path == current_path), None)
+    if mine is None:
+        current = Path(current_path).name
+        mine = next((row for row in rows if Path(row.path).name == current), None)
     if mine is None or not mine.campaign_peers:
         return ""
     group = [row for row in rows if row.campaign_key and row.campaign_key == mine.campaign_key]
@@ -129,7 +133,7 @@ class ResultPanelsMixin:
                     continue
             level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
             score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
-            reason = (row.top_reason or "—")[:60]
+            reason = row.top_reason or "—"
             peers = ", ".join(row.campaign_peers[:3]) if row.campaign_peers else ""
             if filt and filt not in f"{name} {level} {score} {reason} {peers}".lower():
                 continue
@@ -164,7 +168,7 @@ class ResultPanelsMixin:
             name = Path(row.path).name
             level = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
             score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
-            reason = (row.top_reason or "—")[:60]
+            reason = row.top_reason or "—"
             peers = ", ".join(row.campaign_peers[:3]) if row.campaign_peers else ""
             if filt and filt not in f"{name} {level} {score} {reason} {peers}".lower():
                 continue
@@ -275,7 +279,7 @@ class ResultPanelsMixin:
         for idx, row in enumerate(rows):
             name = Path(row.path).name
             tag = f"batchrow_{idx}"
-            self._batch_row_tags[tag] = name
+            self._batch_row_tags[tag] = row.path
             level_ru = verdict_label_ru(row.verdict_level) if row.verdict_level else "—"
             level_key = (row.verdict_level or "").lower()
             color = {
@@ -285,11 +289,10 @@ class ResultPanelsMixin:
                 "benign": "ok",
             }.get(level_key, "muted")
             score = f"{row.verdict_score}" if row.verdict_score is not None else "—"
-            reason = (row.top_reason or "—")[:48]
-            display = name if len(name) <= 34 else name[:31] + "…"
-            self._put(self.batch_box, f"  {display:<36} ", "ioc_click", tag, color)
-            self._put(self.batch_box, f"{level_ru:<12} ", color)
-            self._put(self.batch_box, f"{score:>5}  ", "value")
+            reason = row.top_reason or "—"
+            self._put(self.batch_box, f"  {name}  ", "ioc_click", tag, color)
+            self._put(self.batch_box, f"{level_ru}  ", color)
+            self._put(self.batch_box, f"{score}  ", "value")
             self._put(self.batch_box, f"{reason}\n", "meta")
             if row.campaign_peers:
                 peers = ", ".join(row.campaign_peers[:4])
@@ -336,11 +339,27 @@ class ResultPanelsMixin:
         row = getattr(self, "_batch_row_map", {}).get(sel[0])
         if row is None:
             return
-        name = Path(row.path).name
-        self._focus_source_file = name
+        if hasattr(self, "_present_batch_message"):
+            self._present_batch_message(row.path, preload_text=True)
+            return
+        self._focus_source_file = row.path
         self._update_focus_hint()
         self._refresh_views()
-        self._set_status(f"Фокус: {name}")
+        self._set_status(f"Фокус: {Path(row.path).name}")
+
+    def _on_batch_tree_motion(self, event: tk.Event) -> None:  # type: ignore[type-arg]
+        tree = getattr(self, "batch_tree", None)
+        tip = getattr(self, "_batch_reason_tip", None)
+        if tree is None or tip is None:
+            return
+        iid = tree.identify_row(event.y)
+        row = getattr(self, "_batch_row_map", {}).get(iid)
+        if row is None:
+            tip.configure(text="")
+            return
+        reason = row.top_reason or ""
+        name = Path(row.path).name
+        tip.configure(text=f"{name}: {reason}" if reason else name)
 
     def _on_batch_tree_diff(self, _event: object = None) -> None:
         tree = getattr(self, "batch_tree", None)
@@ -408,29 +427,29 @@ class ResultPanelsMixin:
         index = widget.index(f"@{event.x},{event.y}")
         for tag in widget.tag_names(index):
             if tag.startswith("batchrow_") and tag in self._batch_row_tags:
-                name = self._batch_row_tags[tag]
-                self._focus_source_file = name
-                self._refresh_views()
-                if "ioc" in self._tab_label_by_key:
-                    label = self._tab_label_by_key["ioc"]
-                    self._tab_var.set(label)
-                    self._tab_seg.set(label)
-                    self._show_tab_frame("ioc")
-                self._set_status(f"Фокус IOC: {name}")
+                path = self._batch_row_tags[tag]
+                if hasattr(self, "_present_batch_message"):
+                    self._present_batch_message(path, preload_text=True)
+                else:
+                    self._focus_source_file = path
+                    self._refresh_views()
+                    self._set_status(f"Фокус: {Path(path).name}")
                 return
 
     def _fill_iocs(self, result: AnalysisResult, filtered) -> None:
         if not filtered:
             self.ioc_table.clear()
             msg = "Доказательства не найдены"
-            if result.errors:
-                msg += f"  ·  {len(result.errors)} замечаний → вкладка «Ошибки»"
+            failures = parser_failures(result.errors)
+            if failures:
+                msg += f"  ·  {len(failures)} ошибок → вкладка «Ошибки»"
             self.ioc_empty_label.configure(text=msg)
             return
 
         note = ""
-        if result.errors:
-            note = f"{len(result.errors)} замечаний → вкладка «Ошибки»"
+        failures = parser_failures(result.errors)
+        if failures:
+            note = f"{len(failures)} ошибок → вкладка «Ошибки»"
         self.ioc_empty_label.configure(text=note)
         show_file = bool(result.file_rows and len(result.file_rows) > 1) or (
             len(self._batch_results) > 1
@@ -523,10 +542,10 @@ class ResultPanelsMixin:
                 if qr_lines:
                     self._put(
                         self.att_box,
-                        f"      QR      {'; '.join(qr_lines[:5])}\n",
+                        f"      QR      {'; '.join(qr_lines)}\n",
                         "danger",
                     )
-            for note in a.notes[:5]:
+            for note in a.notes:
                 self._put(self.att_box, f"      — {note}\n", "muted")
             self._put(self.att_box, "\n")
 
@@ -546,14 +565,19 @@ class ResultPanelsMixin:
             self._put(self.mail_box, "▸ Вердикт  ", "section")
             self._put(
                 self.mail_box,
-                f"{verdict_label_ru(v.level).upper()} ({v.level.value}) · score {v.score}",
+                f"{verdict_card_label(v.level)} · score {v.score}",
                 color_tag,
                 "hero",
             )
             conf = getattr(v, "confidence", "") or ""
             if conf:
                 conf_tag = {"high": "ok", "medium": "info", "low": "warn"}.get(conf, "info")
-                self._put(self.mail_box, f" · уверенность {conf}\n", conf_tag, "hero")
+                self._put(
+                    self.mail_box,
+                    f" · уверенность {confidence_label_ru(conf)}\n",
+                    conf_tag,
+                    "hero",
+                )
             else:
                 self._put(self.mail_box, "\n", color_tag, "hero")
             self._put(self.mail_box, f"  {v.summary}\n", "value")
@@ -626,7 +650,7 @@ class ResultPanelsMixin:
                 if r.verdict_level:
                     self._put(
                         self.mail_box,
-                        f"      Verdict {r.verdict_level.upper()}"
+                        f"      {verdict_card_label(r.verdict_level)}"
                         + (f" {r.verdict_score}" if r.verdict_score is not None else "")
                         + "\n",
                         "warn",
@@ -644,7 +668,7 @@ class ResultPanelsMixin:
             ]
             self._put(
                 self.mail_box,
-                f"▸ Findings  ({len(result.headers)}"
+                f"▸ Находки  ({len(result.headers)}"
                 + (f", замечаний: {len(alerts)}" if alerts else "")
                 + ")\n",
                 "section",
@@ -700,25 +724,37 @@ class ResultPanelsMixin:
             widget.bind("<Key-r>", lambda _e: self.copy_verdict_reasons(), add="+")
             widget.bind("<Key-R>", lambda _e: self.copy_verdict_reasons(), add="+")
 
-        if not result.errors:
-            self._put(self.err_box, "Ошибок разбора нет\n", "ok")
+        notices: list[str] = []
+        if not getattr(self, "_self_check_dismissed", True):
+            notices.extend(list(getattr(self, "_self_check_warnings", []) or []))
+        if not getattr(self, "_remarks_dismissed", True):
+            notices.extend(list(getattr(self, "_extra_remarks", []) or []))
+        if notices:
+            self._put(self.err_box, "▸ Замечания\n", "section")
+            for note in notices:
+                self._put(self.err_box, f"  · {note}\n", "warn")
+            self._put(self.err_box, "  [закрыть замечания]\n\n", "info", "dismiss_notes")
+            widget = self._tk(self.err_box)
+            if widget is not None:
+                widget.tag_bind("dismiss_notes", "<Button-1>", self._dismiss_notices)
+        failures = parser_failures(result.errors) if result is not None else []
+        if not failures:
+            if not notices:
+                self._put(self.err_box, "Ошибок разбора нет\n", "ok")
             return
-        # Group soft notes vs hard failures
-        hard = [e for e in result.errors if e.startswith("⚠") or "ошиб" in e.lower() or "fail" in e.lower()]
-        soft = [e for e in result.errors if e not in hard]
         self._put(
             self.err_box,
-            f"▸ Ошибки / замечания  ({len(result.errors)})\n",
+            f"▸ Ошибки разбора  ({len(failures)})\n",
             "section",
         )
-        if hard:
-            self._put(self.err_box, "  Сбои:\n", "danger")
-            for err in hard:
-                self._put(self.err_box, f"  ! {err}\n", "danger")
-        if soft:
-            self._put(self.err_box, "  Замечания:\n", "warn")
-            for err in soft:
-                self._put(self.err_box, f"  · {err}\n", "meta")
+        for err in failures:
+            self._put(self.err_box, f"  ! {err}\n", "danger")
+
+    def _dismiss_notices(self, _event: object = None) -> None:
+        self._self_check_dismissed = True
+        self._remarks_dismissed = True
+        self._refresh_views(full=True)
+        self._set_status("Замечания закрыты")
 
     def _open_error_log_dir(self) -> None:
         import os

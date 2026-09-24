@@ -10,6 +10,7 @@ from typing import Callable
 import customtkinter as ctk
 
 from reliquary.core.defang import defang_value
+from reliquary.core.exporters import file_display_name
 from reliquary.core.models import Ioc
 from reliquary.gui.theme import (
     COLORS,
@@ -205,6 +206,7 @@ class IocTable(ctk.CTkFrame):
         if getattr(self, "tree", None) is not None:
             self.tree.tag_configure("odd", background=COLORS.get("row_alt", "#151c24"))
             self.tree.tag_configure("even", background=COLORS["surface_alt"])
+            self.tree.tag_configure("search_hit", background=COLORS["accent_dim"])
             for ioc_type, color in IOC_TYPE_COLORS.items():
                 self.tree.tag_configure(f"t_{ioc_type}", foreground=color)
 
@@ -257,6 +259,7 @@ class IocTable(ctk.CTkFrame):
 
         self.tree.tag_configure("odd", background=COLORS.get("row_alt", "#151c24"))
         self.tree.tag_configure("even", background=COLORS["surface_alt"])
+        self.tree.tag_configure("search_hit", background=COLORS["accent_dim"])
         for ioc_type, color in IOC_TYPE_COLORS.items():
             self.tree.tag_configure(f"t_{ioc_type}", foreground=color)
 
@@ -495,7 +498,9 @@ class IocTable(ctk.CTkFrame):
         self._set_value_text(ioc.value, color=color)
 
         tags = [x for x in ioc.tags if not x.startswith("file:")]
-        file_tag = next((x[5:] for x in ioc.tags if x.startswith("file:")), "")
+        file_tag = file_display_name(
+            next((x[5:] for x in ioc.tags if x.startswith("file:")), "")
+        )
         src = (ioc.source or "").strip()
         ctx = (ioc.context or "").strip().replace("\n", " ")
         parts: list[str] = []
@@ -540,7 +545,9 @@ class IocTable(ctk.CTkFrame):
         self._last_sig = sig
         self._apply_responsive_layout()
         for idx, ioc in enumerate(iocs):
-            file_tag = next((t[5:] for t in ioc.tags if t.startswith("file:")), "")
+            file_tag = file_display_name(
+                next((t[5:] for t in ioc.tags if t.startswith("file:")), "")
+            )
             iid = f"ioc{idx}"
             self._by_iid[iid] = ioc
             zebra = "odd" if idx % 2 else "even"
@@ -557,6 +564,27 @@ class IocTable(ctk.CTkFrame):
                 ),
                 tags=(zebra, type_tag),
             )
+
+    def highlight_first(self, query: str) -> bool:
+        """Select and mark the first row whose value matches the search."""
+        needle = (query or "").strip().lower()
+        if len(needle) < 2:
+            return False
+        for iid in self.tree.get_children(""):
+            ioc = self._by_iid.get(iid)
+            hay = " ".join(str(v) for v in self.tree.item(iid, "values")).lower()
+            if ioc is not None:
+                hay = f"{hay} {ioc.value.lower()} {' '.join(ioc.tags).lower()}"
+            if needle not in hay:
+                continue
+            tags = [t for t in self.tree.item(iid, "tags") if t != "search_hit"]
+            tags.append("search_hit")
+            self.tree.item(iid, tags=tuple(tags))
+            self.tree.selection_set(iid)
+            self.tree.see(iid)
+            self._update_inspector(ioc)
+            return True
+        return False
 
     def selected_ioc(self) -> Ioc | None:
         sel = self.tree.selection()

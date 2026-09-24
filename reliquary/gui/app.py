@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections import Counter
+from pathlib import Path
 
 import customtkinter as ctk
 
@@ -14,7 +15,11 @@ from reliquary.core.models import AnalysisResult, Ioc
 from reliquary.core.offline import enforce_offline
 from reliquary.core.paths import app_dir
 from reliquary.core.prefs import load_prefs
-from reliquary.core.self_check import build_self_check_lines
+from reliquary.core.self_check import (
+    build_self_check_lines,
+    self_check_warnings,
+    startup_status_text,
+)
 from reliquary.core.verdict import probe_verdict_extra_warnings
 from reliquary.gui.about import show_about_dialog
 from reliquary.gui.analysis_actions import AnalysisActionsMixin
@@ -97,8 +102,15 @@ class ExtractorApp(
 
         self.result: AnalysisResult | None = None
         self._batch_results: list[AnalysisResult] = []
+        self._batch_merged: AnalysisResult | None = None
         self._failed_paths: list[str] = []
         self._focus_source_file = ""
+        self._self_check_warnings: list[str] = []
+        self._self_check_dismissed = True
+        self._extra_remarks: list[str] = []
+        self._remarks_dismissed = True
+        self._batch_current_name = ""
+        self._pending_ingest_notes: list[str] = []
         self._placeholder_active = True
         self._cancel_batch = False
         self._batch_row_tags: dict[str, str] = {}
@@ -173,10 +185,13 @@ class ExtractorApp(
                 verdict_path=self._verdict_path,
                 verdict_warnings=self._verdict_extra_warnings,
             )
-            short = " · ".join(lines[:2])
-            if self._verdict_extra_warnings:
-                short = f"⚠ verdict_extra · {short}"
-            self.after(200, lambda: self._set_status(short[:180]))
+            warnings = self_check_warnings(lines)
+            self._self_check_warnings = warnings
+            self._self_check_dismissed = not bool(warnings)
+            status = startup_status_text(lines)
+            self.after(200, lambda: self._set_status(status))
+            if warnings:
+                self.after(250, self._show_startup_warnings)
         except (OSError, AttributeError, TypeError, ValueError):
             pass
 
@@ -518,8 +533,26 @@ class ExtractorApp(
     ) -> list[tuple[str, str]]:
         return desired_result_tabs(result, filtered_count, compact=self._tabs_compact)
 
+    def _pending_notices(self) -> bool:
+        if not getattr(self, "_self_check_dismissed", True) and getattr(
+            self, "_self_check_warnings", None
+        ):
+            return True
+        if not getattr(self, "_remarks_dismissed", True) and getattr(self, "_extra_remarks", None):
+            return True
+        return False
+
+    def _show_startup_warnings(self) -> None:
+        if not self._pending_notices():
+            return
+        self._sync_result_tabs(self.result)
+        if hasattr(self, "_fill_errors"):
+            self._fill_errors(self.result)
+
     def _sync_result_tabs(self, result: AnalysisResult | None, filtered_count: int = 0) -> None:
-        desired = self._desired_tabs(result, filtered_count)
+        desired = list(self._desired_tabs(result, filtered_count))
+        if self._pending_notices() and not any(key == "err" for key, _ in desired):
+            desired.append(("err", "Замечания"))
         labels = [label for _, label in desired]
         key_by_label = {label: key for key, label in desired}
         label_by_key = {key: label for key, label in desired}
@@ -586,8 +619,9 @@ class ExtractorApp(
 
     def _update_focus_hint(self) -> None:
         if self._focus_source_file:
+            shown = Path(self._focus_source_file).name
             self.focus_hint.configure(
-                text=f"Фокус файла: {self._focus_source_file}  [снять]"
+                text=f"Фокус файла: {shown}  [снять]"
             )
             if not self.focus_clear_btn.winfo_ismapped():
                 self.focus_clear_btn.pack(side="right", padx=(8, 0))
@@ -657,14 +691,21 @@ class ExtractorApp(
 
         self._update_focus_hint()
 
+        hidden = ""
+        try:
+            hidden = self._current_filter_state().hidden_summary(self.result)
+        except (AttributeError, TypeError, ValueError):
+            hidden = ""
         if total == full_count:
-            self.ioc_summary_label.configure(text=f"доказательства {total}")
+            self.ioc_summary_label.configure(text=f"доказательства {total}/{full_count}")
             hint = "Вердикт → вложения / URL → IOC · Enter копирует · 2×клик — к фрагменту"
         else:
             self.ioc_summary_label.configure(text=f"доказательства {total}/{full_count}")
             hint = f"Показано {total} из {full_count} · фильтр/поиск · Enter копирует выбранное"
         if total == 0 and full_count > 0:
             hint = "Пусто — снимите «к разбору» или ослабьте «Шум»"
+        if hidden:
+            hint = f"{hint} · скрыто: {hidden}"
         self._set_hint_default(hint)
 
         # Type breakdown only in the hint line — not beside the verdict badge
@@ -732,15 +773,21 @@ class ExtractorApp(
                     widget.see(first)
                 except tk.TclError:
                     pass
+        table = getattr(self, "ioc_table", None)
+        if table is not None and len(query) >= 2 and hasattr(table, "highlight_first"):
+            if table.highlight_first(query):
+                self._hotkey_tab("ioc")
 
     def _update_verdict_badge(self, result: AnalysisResult) -> None:
+        from reliquary.core.labels import verdict_card_label
+
         v = result.verdict
         if not v:
             self.verdict_badge.configure(text="Вердикт —", text_color=COLORS["muted"])
             return
         color = VERDICT_COLORS.get(v.level.value, COLORS["muted"])
         self.verdict_badge.configure(
-            text=f"{v.level.value.upper()} · {v.score}",
+            text=f"{verdict_card_label(v.level)} · {v.score}",
             text_color=color,
         )
 

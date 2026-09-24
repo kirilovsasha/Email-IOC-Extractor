@@ -13,11 +13,15 @@ from reliquary.core.content_signals import analyze_content_signals
 from reliquary.core.feedback import FeedbackEvent, append_feedback, suggest_threshold_overrides
 from reliquary.core.formats import expand_input_paths, is_supported
 from reliquary.core.lookalike import normalize_homoglyph
+from reliquary.core.models import AnalysisResult, MailIdentity, Verdict, VerdictLevel
 from reliquary.core.office_extract import detect_office_dde
-from reliquary.core.pipeline import analyze_file, apply_campaign_divergence, campaign_divergence_keys
+from reliquary.core.pipeline import (
+    analyze_file,
+    apply_campaign_divergence,
+    campaign_divergence_keys,
+)
 from reliquary.core.pst_ingest import expand_pst_to_emls, looks_like_pst, pst_library_available
 from reliquary.core.verdict import VerdictConfig
-from reliquary.core.models import AnalysisResult, MailIdentity, Verdict, VerdictLevel
 
 CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 ROOT = Path(__file__).resolve().parents[1]

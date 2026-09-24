@@ -166,29 +166,14 @@ class HotkeysMixin:
         except ValueError:
             nxt = 0 if direction > 0 else len(paths) - 1
         target = batch[nxt]
-        # Reuse analysis result already in memory
-        self.result = target
-        self._focus_source_file = target.source_path
-        if hasattr(self, "_refresh_views"):
-            self._refresh_views(full=True)
-        name = Path(target.source_path).name
-        peers: list[str] = []
-        if target.file_rows:
-            for row in target.file_rows:
-                if Path(row.path).name == name:
-                    peers = list(row.campaign_peers or [])
-                    break
+        if hasattr(self, "_present_batch_message"):
+            self._present_batch_message(target.source_path, preload_text=True)
         else:
-            for r in batch:
-                for row in r.file_rows or []:
-                    if Path(row.path).name == name and row.campaign_peers:
-                        peers = list(row.campaign_peers)
-                        break
-                if peers:
-                    break
-        if peers and hasattr(self, "_show_campaign_diff"):
-            self._show_campaign_diff(name, peers[0])
-        self._set_status(f"Пакет {nxt + 1}/{len(batch)}: {name}")
+            self.result = target
+            self._focus_source_file = target.source_path
+            if hasattr(self, "_refresh_views"):
+                self._refresh_views(full=True)
+            self._set_status(f"Письмо {nxt + 1}/{len(batch)}: {Path(target.source_path).name}")
         return "break"
 
     def _focus_search(self, _event: object = None) -> str:

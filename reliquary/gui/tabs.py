@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from reliquary.core.models import AnalysisResult
+from reliquary.core.pipeline import parser_failures
 
 
 def desired_result_tabs(
@@ -34,12 +35,15 @@ def desired_result_tabs(
         tabs.append(("url", f"URL {total}"))
 
     if result.iocs:
-        tabs.append(("ioc", f"IOC {len(result.iocs)}"))
+        total = len(result.iocs)
+        shown = filtered_count if filtered_count >= 0 else total
+        tabs.append(("ioc", f"IOC {shown}/{total}"))
 
     rows = result.file_rows or []
     if len(rows) >= 2:
         tabs.append(("batch", f"Пакет {len(rows)}"))
 
-    if result.errors:
-        tabs.append(("err", f"Ошибки {len(result.errors)}"))
+    failures = parser_failures(result.errors)
+    if failures:
+        tabs.append(("err", f"Ошибки {len(failures)}"))
     return tabs

@@ -73,8 +73,8 @@ def test_ru_mail_segments_and_corpus() -> None:
 def test_handoff_includes_chains_and_campaign() -> None:
     r = analyze_file(CORPUS / "suspicious_vk_away.eml")
     text = render_default_handoff(r)
-    assert "Campaign:" in text
-    assert "URL unwrap" in text or "chains" in text.lower() or "→" in text
+    assert "Кампания:" in text
+    assert "Цепочки URL" in text or "→" in text
 
 
 def test_campaign_pack_ndjson(tmp_path: Path) -> None:
