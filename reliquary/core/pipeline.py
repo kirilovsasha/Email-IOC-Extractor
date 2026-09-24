@@ -57,19 +57,33 @@ def _ioc_priority(ioc: Ioc) -> int:
     return score
 
 
+def _merge_ioc_pair(stronger: Ioc, weaker: Ioc) -> Ioc:
+    """Keep the stronger IOC and fold in the weaker tags and unwrap chain."""
+    kept = copy(stronger)
+    kept.tags = list(stronger.tags)
+    for tag in weaker.tags:
+        if tag not in kept.tags:
+            kept.tags.append(tag)
+    weak_from = (weaker.rewritten_from or "").strip()
+    strong_from = (kept.rewritten_from or "").strip()
+    if weak_from and weak_from != strong_from:
+        parts = [p.strip() for p in strong_from.split("|")] if strong_from else []
+        if weak_from not in parts:
+            kept.rewritten_from = f"{strong_from} | {weak_from}" if strong_from else weak_from
+    return kept
+
+
 def _dedup_iocs(iocs: list[Ioc]) -> list[Ioc]:
     dedup: dict[tuple[str, str], Ioc] = {}
     for ioc in iocs:
         key = (ioc.ioc_type.value, ioc.value.lower())
         prev = dedup.get(key)
-        if prev is None or _ioc_priority(ioc) > _ioc_priority(prev):
+        if prev is None:
             dedup[key] = ioc
-        elif prev is not None:
-            for tag in ioc.tags:
-                if tag not in prev.tags:
-                    prev.tags.append(tag)
-            if ioc.rewritten_from and not prev.rewritten_from:
-                prev.rewritten_from = ioc.rewritten_from
+        elif _ioc_priority(ioc) > _ioc_priority(prev):
+            dedup[key] = _merge_ioc_pair(ioc, prev)
+        else:
+            dedup[key] = _merge_ioc_pair(prev, ioc)
 
     domains = [i for i in dedup.values() if i.ioc_type == IocType.DOMAIN]
     rewriter_keys = {
@@ -219,11 +233,29 @@ def campaign_divergence_keys(results: list[AnalysisResult]) -> set[str]:
     return {k for k, doms in by_key.items() if len(doms) >= 2}
 
 
-def apply_campaign_divergence(results: list[AnalysisResult]) -> None:
-    """Mark content_signals + re-render verdict when campaign From domains diverge."""
+def apply_campaign_divergence(
+    results: list[AnalysisResult],
+    *,
+    options: AnalysisOptions | None = None,
+) -> None:
+    """Mark content_signals + re-render verdict when campaign From domains diverge.
+
+    The second pass uses the same ``AnalysisOptions`` as the first (verdict
+    extra, brands, org domains, allowlist).
+    """
     divergent = campaign_divergence_keys(results)
     if not divergent:
         return
+    opts = options or AnalysisOptions()
+    cfg = load_verdict_config(opts.verdict_path)
+    allow_domains: set[str] = set()
+    try:
+        from reliquary.core.allowlist import build_allowlist
+
+        domains, _ips = build_allowlist(extra_path=opts.allowlist_path)
+        allow_domains = domains
+    except (OSError, TypeError, ValueError, ImportError):
+        allow_domains = set()
     for r in results:
         key = campaign_key_for(r)
         if key not in divergent:
@@ -231,10 +263,13 @@ def apply_campaign_divergence(results: list[AnalysisResult]) -> None:
         if "campaign_divergence" not in (r.content_signals or []):
             r.content_signals = list(r.content_signals or []) + ["campaign_divergence"]
         if r.source_kind == "email" and r.verdict is not None:
-            from reliquary.core.verdict import load_verdict_config, render_verdict
-
-            cfg = load_verdict_config()
-            r.verdict = render_verdict(r, cfg)
+            r.verdict = render_verdict(
+                r,
+                cfg,
+                brands_path=opts.brands_path,
+                org_domains_path=opts.org_domains_path,
+                allowlist_domains=allow_domains or None,
+            )
 
 
 
@@ -258,6 +293,32 @@ def _top_ioc_strings(iocs: list[Ioc], n: int = 5) -> list[str]:
     return out
 
 
+def is_parser_failure(line: str) -> bool:
+    """True for a real parse failure. Findings and batch bookkeeping are not."""
+    text = (line or "").strip()
+    if not text:
+        return False
+    if text.startswith("Кампании:"):
+        return False
+    if "карточка почты" in text:
+        return False
+    if text.startswith("QR data:image:"):
+        return False
+    if "vbaProject.bin" in text or "vbaData.xml" in text:
+        return False
+    if text.startswith("OOXML: найден") or text.startswith("OOXML: присутствует"):
+        return False
+    if text.startswith("OLE разбор") or ": OLE разбор" in text or text.startswith("OLE "):
+        return False
+    if ": OLE " in text and "разбор" in text:
+        return False
+    return True
+
+
+def parser_failures(errors: list[str] | None) -> list[str]:
+    return [line for line in (errors or []) if is_parser_failure(line)]
+
+
 def file_triage_row(result: AnalysisResult) -> FileTriageRow:
     mid = result.mail_identity
     top_reason = ""
@@ -271,7 +332,7 @@ def file_triage_row(result: AnalysisResult) -> FileTriageRow:
         ioc_count=len(result.iocs),
         top_iocs=_top_ioc_strings(result.iocs),
         top_reason=top_reason,
-        errors=list(result.errors),
+        errors=parser_failures(result.errors),
         message_id=(mid.message_id if mid else "") or "",
         subject=result.subject or (mid.subject if mid else ""),
         sender=result.sender or (mid.from_header if mid else ""),
@@ -361,6 +422,11 @@ def _parse_office_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
 
         text, errs = extract_office_text(att.data, suffix)
         text = clean_extracted(text or "")
+        findings = [err for err in errs if not is_parser_failure(err)]
+        errs = [err for err in errs if is_parser_failure(err)]
+        for note in findings:
+            if note not in att.notes:
+                att.notes.append(note)
         urls = extract_office_urls(att.data, suffix)
         if urls:
             if "office_hyperlink" not in att.risk_flags:
@@ -406,8 +472,25 @@ def _parse_web_attachment(att: AttachmentInfo) -> tuple[str, list[str]]:
         return "", [f"Web-att {att.filename}: {exc}"]
 
 
+def _append_body_qr_note(result: AnalysisResult, notes: list[str], payloads: list[str]) -> None:
+    """Park HTML-body QR payloads on an attachment note (not in parser errors)."""
+    if not notes and not payloads:
+        return
+    att = AttachmentInfo(
+        filename="тело.html",
+        size=0,
+        mime_guess="text/html",
+        md5="",
+        sha1="",
+        sha256="",
+        notes=list(notes),
+        archive_entries=[f"QR:{p}" for p in payloads],
+    )
+    result.attachments.append(att)
+
+
 def _decode_data_image_qr(html: str, result: AnalysisResult) -> str:
-    """Decode data:image/*;base64 blobs in HTML for QR payloads; append notes to result."""
+    """Decode data:image/*;base64 blobs in HTML. Payloads become notes and IOC text."""
     import base64
     import re as _re
 
@@ -417,26 +500,47 @@ def _decode_data_image_qr(html: str, result: AnalysisResult) -> str:
     except ImportError:
         return extra
     if not qr_decoder_available():
+        result.errors.append("QR: сбой декодера (недоступен)")
         return extra
+    starts = list(
+        _re.finditer(
+            r"data:image/(?:png|jpeg|jpg|gif);base64,",
+            html,
+            flags=_re.IGNORECASE,
+        )
+    )
+    payloads_all: list[str] = []
+    notes: list[str] = []
+    decoder_failed = False
     found = 0
-    for m in _re.finditer(
-        r"data:image/(?:png|jpeg|jpg|gif);base64,([A-Za-z0-9+/=\s]{80,})",
-        html,
-        flags=_re.IGNORECASE,
-    ):
+    for idx, m in enumerate(starts):
         if found >= 4:
             break
+        end = starts[idx + 1].start() if idx + 1 < len(starts) else len(html)
+        blob = _re.sub(r"\s+", "", html[m.end() : end])
+        if len(blob) < 80:
+            continue
         try:
-            raw = base64.b64decode(m.group(1), validate=False)
+            raw = base64.b64decode(blob, validate=False)
         except (ValueError, TypeError):
             continue
         if len(raw) < 64 or len(raw) > 2 * 1024 * 1024:
             continue
-        payloads, _notes = decode_qr_payloads(raw)
+        payloads, dec_notes = decode_qr_payloads(raw)
+        if dec_notes and not payloads:
+            decoder_failed = True
         for p in payloads:
-            extra += f"\n{p}"
-            result.errors.append(f"QR data:image: {p[:120]}")
+            if p not in payloads_all:
+                payloads_all.append(p)
+                extra += f"\n{p}"
         found += 1
+    if len(starts) > 4:
+        notes.append("просмотрено 4, дальше не декодировалось")
+    if payloads_all:
+        notes.insert(0, "QR: " + "; ".join(payloads_all))
+    if decoder_failed and not any(e.startswith("QR: сбой декодера") for e in result.errors):
+        result.errors.append("QR: сбой декодера")
+    _append_body_qr_note(result, notes, payloads_all)
     return extra
 
 
@@ -604,6 +708,17 @@ MAX_SOURCE_BYTES = 40 * 1024 * 1024
 DEFAULT_ANALYSIS_TIMEOUT_S = 120.0
 
 
+def source_too_large_message(size: int) -> str:
+    """User-facing stop line. The cap is fixed; there is no setting to raise it."""
+    mb = MAX_SOURCE_BYTES // (1024 * 1024)
+    return f"Файл больше {mb} МБ ({size} байт). Разбор остановлен."
+
+
+def text_too_large_message() -> str:
+    mb = MAX_SOURCE_BYTES // (1024 * 1024)
+    return f"Текст больше {mb} МБ. Разбор остановлен."
+
+
 def _enrich_parsed_result(
     result: AnalysisResult,
     parsed,
@@ -696,12 +811,13 @@ def _enrich_parsed_result(
             msg = f"⚠ {att.filename}: архив защищён паролем — содержимое не извлечено"
             if msg not in result.errors:
                 result.errors.append(msg)
-        if surface_ole_notes:
-            for note in att.notes:
-                if note.startswith("⚠") or note.startswith("OLE разбор"):
-                    tagged = f"{att.filename}: {note}"
-                    if tagged not in result.errors:
-                        result.errors.append(tagged)
+        for note in list(att.notes):
+            if "сбой декодера" in note and not any(
+                e.startswith("QR: сбой декодера") for e in result.errors
+            ):
+                result.errors.append("QR: сбой декодера")
+                break
+    _ = surface_ole_notes
 
     try:
         result.url_rewrites = find_and_unwrap(blob)
@@ -806,10 +922,7 @@ def analyze_file(
         return AnalysisResult(
             source_path=str(path),
             source_kind="unknown",
-            errors=[
-                f"Файл слишком большой для офлайн-разбора: {size} байт "
-                f"(лимит {MAX_SOURCE_BYTES}). Разбейте вложение или увеличьте лимит."
-            ],
+            errors=[source_too_large_message(size)],
             meta=_build_meta(str(path), options=opts),
         )
     try:
@@ -856,7 +969,7 @@ def analyze_file(
         opts=opts,
         verdict_cfg=verdict_cfg,
         ioc_source=parsed.kind,
-        tag_filename=path.name,
+        tag_filename=str(path),
         surface_ole_notes=True,
     )
 
@@ -908,7 +1021,7 @@ def analyze_text(
         return AnalysisResult(
             source_path=label,
             source_kind="unknown",
-            errors=[f"Текст слишком большой (лимит {MAX_SOURCE_BYTES} байт)"],
+            errors=[text_too_large_message()],
             meta=_build_meta(label, options=opts),
         )
     from reliquary.core.document_parser import normalize_email_bytes, parse_eml
@@ -962,8 +1075,8 @@ def merge_results(
 
     rows = [file_triage_row(r) for r in results]
     annotate_campaigns(rows)
-    apply_campaign_divergence(results)
-    # Refresh rows after divergence re-score
+    apply_campaign_divergence(results, options=opts)
+    # Refresh rows after divergence re-score (per-message verdicts stay).
     rows = [file_triage_row(r) for r in results]
     annotate_campaigns(rows)
 
@@ -979,62 +1092,63 @@ def merge_results(
         file_rows=rows,
     )
     iocs: list[Ioc] = []
-    mail_sources: list[str] = []
     for r in results:
-        fname = Path(r.source_path).name
+        fname = r.source_path or Path(r.source_path).name
         for ioc in r.iocs:
             iocs.append(_tag_file(ioc, fname))
         merged.url_rewrites.extend(r.url_rewrites)
         merged.attachments.extend(r.attachments)
         merged.headers.extend(r.headers)
-        merged.errors.extend(r.errors)
-        if r.mail_identity:
-            mail_sources.append(Path(r.source_path).name)
-            if merged.mail_identity is None:
-                merged.mail_identity = r.mail_identity
-                merged.raw_headers = dict(r.raw_headers)
-    if len(mail_sources) > 1:
-        merged.errors.append(
-            f"Batch: карточка почты от первого письма; всего писем с identity: "
-            f"{len(mail_sources)} ({', '.join(mail_sources[:5])}"
-            + ("…" if len(mail_sources) > 5 else "")
-            + ") — см. вкладку «Пакет»"
-        )
-    camp_groups = sum(1 for r in rows if r.campaign_peers)
-    if camp_groups:
-        merged.errors.append(
-            f"Кампании: {camp_groups} писем связаны по Msg-ID/теме/хешу вложения — см. «Пакет»"
-        )
-    merged.iocs = _finalize_iocs(iocs)
-    # Batch of emails: score from merged email signals
-    email_only = AnalysisResult(
-        source_path=merged.source_path,
-        source_kind="email",
-        subject=merged.subject,
-        sender=merged.sender,
-        recipients=list(merged.recipients),
-        iocs=list(merged.iocs),
-        headers=list(merged.headers),
-        raw_headers=dict(merged.raw_headers),
-        mail_identity=merged.mail_identity,
-        url_rewrites=list(merged.url_rewrites),
-        attachments=list(merged.attachments),
-        raw_text_preview=merged.raw_text_preview,
-        errors=list(merged.errors),
-        content_signals=list(
-            dict.fromkeys(
-                sig
-                for r in results
-                for sig in (r.content_signals or [])
-            )
-        ),
-        file_rows=rows,
-    )
-    cfg = verdict_cfg or load_verdict_config(opts.verdict_path)
-    merged.verdict = render_verdict(
-        email_only,
-        cfg,
-        brands_path=opts.brands_path,
-        org_domains_path=opts.org_domains_path,
-    )
+        for err in parser_failures(r.errors):
+            if err not in merged.errors:
+                merged.errors.append(err)
+        if r.mail_identity and merged.mail_identity is None:
+            merged.mail_identity = r.mail_identity
+            merged.raw_headers = dict(r.raw_headers)
+    merged.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
+    # The batch card is not a re-score of every signal piled together.
+    # GUI shows the already computed verdict of the selected message.
+    merged.verdict = None
+    _ = verdict_cfg
     return merged
+
+
+def rescore_with_options(
+    result: AnalysisResult,
+    options: AnalysisOptions | None = None,
+) -> AnalysisResult:
+    """Re-run the current message with a new options set (allowlist file)."""
+    opts = _resolve_options(options=options)
+    path = Path(result.source_path) if result.source_path else None
+    if (
+        path is not None
+        and path.is_file()
+        and path.suffix.lower() in {".eml", ".msg"}
+    ):
+        return analyze_file(path, options=opts)
+    iocs = []
+    for ioc in result.iocs:
+        cloned = copy(ioc)
+        cloned.tags = [tag for tag in ioc.tags if tag != "allowlisted"]
+        iocs.append(cloned)
+    result.iocs = _finalize_iocs(iocs, allowlist_path=opts.allowlist_path)
+    if result.source_kind == "email":
+        cfg = load_verdict_config(opts.verdict_path)
+        allow_domains: set[str] = set()
+        try:
+            from reliquary.core.allowlist import build_allowlist
+
+            domains, _ips = build_allowlist(extra_path=opts.allowlist_path)
+            allow_domains = domains
+        except (OSError, TypeError, ValueError, ImportError):
+            allow_domains = set()
+        result.verdict = render_verdict(
+            result,
+            cfg,
+            brands_path=opts.brands_path,
+            org_domains_path=opts.org_domains_path,
+            allowlist_domains=allow_domains or None,
+        )
+        if result.verdict is not None:
+            result.file_rows = [file_triage_row(result)]
+    return result

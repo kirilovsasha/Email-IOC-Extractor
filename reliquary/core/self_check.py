@@ -130,6 +130,23 @@ def build_self_check_lines(
     return lines
 
 
+def self_check_warnings(lines: list[str]) -> list[str]:
+    """Lines the analyst must see whole: broken extra, SHA256, QR, damaged zip."""
+    out: list[str] = []
+    for line in lines:
+        if any(mark in line for mark in ("⚠", "НЕ СОВПАЛ", "недоступен", "поврежд")):
+            out.append(line)
+    return out
+
+
+def startup_status_text(lines: list[str]) -> str:
+    """Warnings stay intact. A quiet startup still fits the status bar."""
+    warnings = self_check_warnings(lines)
+    if warnings:
+        return " · ".join(warnings)
+    return " · ".join(lines[:2])[:180]
+
+
 def format_self_check(
     *,
     profile_dir: str | Path | None = None,

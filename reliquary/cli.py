@@ -25,6 +25,7 @@ from reliquary.core.exporters import (
 )
 from reliquary.core.filter_state import FilterState
 from reliquary.core.formats import (
+    cleanup_ingest_dirs,
     collect_supported,
     expand_input_paths,
     formats_help_line,
@@ -496,6 +497,8 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             print(f"Ошибка ввода: {exc}", file=sys.stderr)
             return 1
+        finally:
+            cleanup_ingest_dirs()
 
         filtered = filters.filtered_result(result)
         filt_meta = filters.serializable()

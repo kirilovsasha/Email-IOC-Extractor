@@ -358,7 +358,7 @@ class LayoutMixin:
         left.grid_propagate(False)
         self._left = left
 
-        left_head = ctk.CTkFrame(left, fg_color="transparent", height=28)
+        left_head = ctk.CTkFrame(left, fg_color="transparent", height=46)
         left_head.pack(fill="x", padx=12, pady=(10, 4))
         left_head.pack_propagate(False)
         ctk.CTkLabel(
@@ -373,6 +373,7 @@ class LayoutMixin:
             font=ctk_font("caption"),
             text_color=COLORS["muted"],
             anchor="e",
+            justify="right",
         )
         self.source_meta.pack(side="right", fill="x", expand=True, padx=(8, 0))
 
@@ -649,6 +650,17 @@ class LayoutMixin:
         ys.pack(side="right", fill="y")
         self.batch_tree.bind("<<TreeviewSelect>>", self._on_batch_tree_select)
         self.batch_tree.bind("<Double-1>", self._on_batch_tree_diff)
+        self.batch_tree.bind("<Motion>", self._on_batch_tree_motion)
+        self._batch_reason_tip = ctk.CTkLabel(
+            self._batch_tree_scroll,
+            text="",
+            font=ctk_font("dense"),
+            text_color=COLORS["muted"],
+            anchor="w",
+            justify="left",
+            wraplength=520,
+        )
+        self._batch_reason_tip.pack(side="bottom", fill="x", pady=(4, 0))
         self._batch_sort_col = str(self._prefs.get("batch_sort_column") or "score")
         self._batch_sort_reverse = bool(self._prefs.get("batch_sort_reverse", True))
         self.batch_box = self._make_text(batch_frame)

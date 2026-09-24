@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox, simpledialog
 
 from reliquary import __app_name__
@@ -43,11 +44,7 @@ class AnalystActionsMixin:
             path = resolve_allowlist_path(prefs.get("allowlist_path") or None)
             written = append_allowlist_entry(entry, path=path)
             self._set_status(f"Allowlist ← {entry} → {written.name}")
-            messagebox.showinfo(
-                __app_name__,
-                f"Добавлено в {written.name}.\n"
-                "Переразберите письмо, чтобы тег allowlisted применился.",
-            )
+            self._rescore_current_allowlist(written)
         except (OSError, ValueError, TypeError) as exc:
             append_error_log("allowlist append failed", exc=exc)
             messagebox.showerror(__app_name__, str(exc))
@@ -84,6 +81,11 @@ class AnalystActionsMixin:
         )
         if note.strip():
             v.reasons = [f"Аналитик: {note.strip()}"] + list(v.reasons)
+        if v.reasons:
+            self._sync_override_to_batch(v.reasons[0])
+        else:
+            self._sync_override_to_batch("")
+        self._write_override_feedback(old, new_level.value, note.strip())
         self._refresh_views(full=True)
         self._set_status(
             f"Вердикт: {verdict_label_ru(old)} → {verdict_label_ru(new_level)}"
@@ -127,7 +129,12 @@ class AnalystActionsMixin:
     def _record_feedback(self, kind: str) -> None:
         """FP / FN / confirm → analyst_feedback.ndjson рядом с EXE."""
         from reliquary.core.calibration import segment_for
-        from reliquary.core.feedback import FeedbackEvent, append_feedback, format_feedback_ack
+        from reliquary.core.feedback import (
+            FeedbackEvent,
+            append_feedback,
+            feedback_summary,
+            format_feedback_ack,
+        )
 
         if not self.result or not self.result.verdict:
             messagebox.showinfo(__app_name__, "Сначала разберите письмо")
@@ -148,7 +155,11 @@ class AnalystActionsMixin:
         )
         if choice is None:
             return
-        expected = (choice or expected).strip().lower() or expected
+        parsed = parse_verdict_level(choice or expected)
+        if parsed is None:
+            messagebox.showerror(__app_name__, f"Неизвестный уровень: {choice}")
+            return
+        expected = parsed.value
         note = simpledialog.askstring(
             __app_name__, "Комментарий (необязательно):", parent=self
         ) or ""
@@ -173,4 +184,114 @@ class AnalystActionsMixin:
         )
         self._set_status(f"Feedback {kind} → {path.name}")
         note_text = format_feedback_ack(kind, seg, list(v.breakdown or []))
-        messagebox.showinfo(__app_name__, f"{note_text}\n\nФайл: {path.name}")
+        messagebox.showinfo(
+            __app_name__,
+            f"{note_text}\n\n{feedback_summary()}\n\nФайл: {path.name}",
+        )
+
+    def _sync_override_to_batch(self, top_reason: str) -> None:
+        if not self.result or not self.result.verdict:
+            return
+        level = self.result.verdict.level.value
+        score = self.result.verdict.score
+        path = self.result.source_path or ""
+        rows = list(self.result.file_rows or [])
+        merged = getattr(self, "_batch_merged", None)
+        if merged is not None:
+            rows.extend(merged.file_rows or [])
+        seen: set[int] = set()
+        for row in rows:
+            if id(row) in seen:
+                continue
+            seen.add(id(row))
+            if row.path == path:
+                row.verdict_level = level
+                row.verdict_score = score
+                if top_reason:
+                    row.top_reason = top_reason
+        for item in getattr(self, "_batch_results", []) or []:
+            if item.source_path == path and item.verdict is not None and item.verdict is not self.result.verdict:
+                item.verdict.level = self.result.verdict.level
+                item.verdict.analyst_override = self.result.verdict.analyst_override
+                item.verdict.analyst_note = self.result.verdict.analyst_note
+                item.verdict.summary = self.result.verdict.summary
+                item.verdict.reasons = list(self.result.verdict.reasons)
+
+    def _write_override_feedback(self, observed: str, expected: str, note: str) -> None:
+        from reliquary.core.calibration import segment_for
+        from reliquary.core.feedback import FeedbackEvent, append_feedback
+
+        if not self.result or not self.result.verdict:
+            return
+        sha = ""
+        if self.result.meta and self.result.meta.source_sha256:
+            sha = self.result.meta.source_sha256
+        try:
+            seg = segment_for(self.result)
+        except Exception:  # noqa: BLE001
+            seg = ""
+        try:
+            path = append_feedback(
+                FeedbackEvent(
+                    kind="override",
+                    expected_level=expected,
+                    observed_level=observed,
+                    score=int(self.result.verdict.score),
+                    source_path=self.result.source_path or "",
+                    source_sha256=sha,
+                    note=note,
+                    segment=seg,
+                )
+            )
+            self._set_status(f"Feedback override → {path.name}")
+        except OSError as exc:
+            from reliquary.core.error_log import append_error_log
+
+            append_error_log("override feedback failed", exc=exc)
+
+    def _rescore_current_allowlist(self, allowlist_path) -> None:
+        from reliquary.core.pipeline import rescore_with_options
+
+        if not self.result:
+            self._set_status("Allowlist записан, письма для пересчёта нет")
+            return
+        opts = self._analysis_options()
+        opts.allowlist_path = allowlist_path
+        target = self.result
+        for item in getattr(self, "_batch_results", []) or []:
+            if item.source_path == self.result.source_path:
+                target = item
+                break
+        try:
+            fresh = rescore_with_options(target, opts)
+        except (OSError, ValueError, TypeError) as exc:
+            from reliquary.core.error_log import append_error_log
+
+            append_error_log("allowlist rescore failed", exc=exc)
+            messagebox.showerror(__app_name__, str(exc))
+            return
+        batch = list(getattr(self, "_batch_results", []) or [])
+        replaced = False
+        for idx, item in enumerate(batch):
+            if item.source_path == fresh.source_path:
+                batch[idx] = fresh
+                replaced = True
+                break
+        if replaced:
+            self._batch_results = batch
+        else:
+            self._batch_results = [fresh]
+        merged = getattr(self, "_batch_merged", None)
+        if merged is not None:
+            for row in merged.file_rows or []:
+                if row.path == fresh.source_path and fresh.verdict is not None:
+                    row.verdict_level = fresh.verdict.level.value
+                    row.verdict_score = fresh.verdict.score
+                    if fresh.verdict.reasons:
+                        row.top_reason = fresh.verdict.reasons[0]
+                    row.ioc_count = len(fresh.iocs)
+        if len(self._batch_results) >= 2 and hasattr(self, "_present_batch_message"):
+            self._present_batch_message(fresh.source_path, preload_text=False)
+        else:
+            self._apply_result(fresh, preload_text=False, batch_results=self._batch_results)
+        self._set_status(f"Пересчитано с allowlist: {Path(str(allowlist_path)).name}")

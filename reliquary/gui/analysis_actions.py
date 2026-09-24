@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -10,24 +11,39 @@ from reliquary import __app_name__
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.batch import default_max_workers, format_eta, run_batch
 from reliquary.core.error_log import append_error_log
-from reliquary.core.formats import collect_supported, expand_input_paths, tk_filetypes
+from reliquary.core.formats import (
+    cleanup_ingest_dirs,
+    collect_supported,
+    expand_input_paths,
+    ingest_problem_notes,
+    take_ingest_notes,
+    tk_filetypes,
+)
 from reliquary.core.models import AnalysisResult
 from reliquary.core.org_profile import load_org_profile
 from reliquary.core.pipeline import analyze_text
 
 
 def _source_meta_line(kind: str, name: str, subject: str) -> str:
-    """One line for the letter header — wrapping here grows the left pane."""
-    subject = " ".join(subject.split())
-    if subject and name:
-        text = f"{name}  ·  {subject}"
-    elif name:
-        text = f"{kind}  ·  {name}" if kind else name
-    else:
-        text = subject or kind
-    if len(text) > 68:
-        return text[:67].rstrip() + "…"
-    return text
+    """File name and subject on two lines. The subject is not cut."""
+    subject = " ".join((subject or "").split())
+    name = name or ""
+    if name and subject:
+        return f"{name}\n{subject}"
+    if name:
+        return f"{kind}  ·  {name}" if kind else name
+    return subject or kind
+
+
+def cancel_in_progress_status(current_name: str = "") -> str:
+    name = (current_name or "").strip()
+    if name:
+        return f"Отмена: {name} ещё дочитывается"
+    return "Отмена: текущий файл ещё дочитывается"
+
+
+def cancelled_batch_status() -> str:
+    return "Отменено: текущий файл дочитан, результат не применён"
 
 
 class AnalysisActionsMixin:
@@ -66,7 +82,7 @@ class AnalysisActionsMixin:
 
     def cancel_batch(self) -> None:
         self._cancel_batch = True
-        self._set_status("Отмена…")
+        self._set_status(cancel_in_progress_status())
 
     def analyze_text_area(self) -> None:
         if self._placeholder_active:
@@ -86,12 +102,12 @@ class AnalysisActionsMixin:
         try:
             if self._cancel_batch:
                 self.after(0, lambda: self._sync_job_row(busy=False))
-                self.after(0, lambda: self._set_status("Отменено"))
+                self.after(0, lambda: self._set_status(cancelled_batch_status()))
                 return
             result = analyze_text(text, options=self._analysis_options())
             if self._cancel_batch:
                 self.after(0, lambda: self._sync_job_row(busy=False))
-                self.after(0, lambda: self._set_status("Отменено"))
+                self.after(0, lambda: self._set_status(cancelled_batch_status()))
                 return
 
             def _ok() -> None:
@@ -126,7 +142,15 @@ class AnalysisActionsMixin:
             return
         self._last_dir = str(Path(paths[0]).parent)
         self._persist_prefs()
-        self._analyze_paths(expand_input_paths(list(paths)))
+        expanded = expand_input_paths(list(paths))
+        notes = take_ingest_notes()
+        if not expanded:
+            cleanup_ingest_dirs()
+            self._show_ingest_notes(notes or ["Не удалось разобрать выбранные файлы."], dialog=True)
+            return
+        self._pending_ingest_notes = ingest_problem_notes(notes)
+        self._announce_ingest_notes(self._pending_ingest_notes)
+        self._analyze_paths(expanded)
 
     def open_folder(self) -> None:
         folder = filedialog.askdirectory(
@@ -138,11 +162,11 @@ class AnalysisActionsMixin:
         self._last_dir = folder
         self._persist_prefs()
         paths = collect_supported(Path(folder), recursive=True)
+        notes = take_ingest_notes()
         if not paths:
-            messagebox.showinfo(
-                __app_name__,
-                "В папке нет писем (.eml / .msg / .mbox / .pst).",
-            )
+            cleanup_ingest_dirs()
+            text = "\n".join(notes) if notes else "В папке нет писем (.eml / .msg / .mbox / .pst)."
+            self._show_ingest_notes(ingest_problem_notes(notes) or [text], dialog=True)
             return
         try:
             threshold = int(self._prefs.get("folder_warn_threshold") or 80)
@@ -154,7 +178,10 @@ class AnalysisActionsMixin:
                 f"Найдено писем: {len(paths)} (порог: {threshold}).\n"
                 "Продолжить пакетный разбор?",
             ):
+                cleanup_ingest_dirs()
                 return
+        self._pending_ingest_notes = ingest_problem_notes(notes)
+        self._announce_ingest_notes(self._pending_ingest_notes)
         self._analyze_paths(paths)
 
     def _on_drop(self, files) -> None:
@@ -177,14 +204,18 @@ class AnalysisActionsMixin:
             elif path.is_dir():
                 paths.extend(collect_supported(path, recursive=True))
         paths = expand_input_paths(sorted(set(paths)))
+        notes = take_ingest_notes()
         if not paths:
-            self.after(
-                0,
-                lambda: messagebox.showinfo(
-                    __app_name__, "Нет писем (.eml / .msg / .mbox / .pst) для разбора"
-                ),
-            )
+            cleanup_ingest_dirs()
+
+            def _empty() -> None:
+                text = "\n".join(notes) if notes else "Нет писем (.eml / .msg / .mbox / .pst) для разбора"
+                self._show_ingest_notes(ingest_problem_notes(notes) or [text], dialog=True)
+
+            self.after(0, _empty)
             return
+        self._pending_ingest_notes = ingest_problem_notes(notes)
+        self.after(0, lambda: self._announce_ingest_notes(self._pending_ingest_notes))
         self.after(0, lambda: self._analyze_paths(paths))
 
     def _analyze_paths(self, paths: list[str]) -> None:
@@ -211,7 +242,11 @@ class AnalysisActionsMixin:
             frac = done / total if total else 0
 
             def _ui() -> None:
-                self._set_status(label)
+                self._batch_current_name = name
+                if self._cancel_batch:
+                    self._set_status(cancel_in_progress_status())
+                else:
+                    self._set_status(label)
                 try:
                     self._progress.set(frac)
                 except Exception:  # noqa: BLE001
@@ -233,6 +268,7 @@ class AnalysisActionsMixin:
             err = str(exc)
 
             def _fail() -> None:
+                cleanup_ingest_dirs()
                 self._sync_job_row(busy=False)
                 messagebox.showerror("Ошибка", err)
                 self._set_status("Ошибка разбора")
@@ -241,8 +277,12 @@ class AnalysisActionsMixin:
             return
 
         def _finish() -> None:
+            cleanup_ingest_dirs()
             self._set_failed(outcome.failed)
             self._sync_job_row(busy=False)
+            if outcome.cancelled:
+                self._set_status(cancelled_batch_status())
+                return
             if outcome.result is None:
                 msg = "Не удалось разобрать ни одного письма.\n" + "\n".join(
                     outcome.errors[:8]
@@ -272,6 +312,87 @@ class AnalysisActionsMixin:
         self._failed_paths = list(failed)
         self._sync_job_row()
 
+    def _announce_ingest_notes(self, notes: list[str]) -> None:
+        clean = [n for n in notes if (n or "").strip()]
+        if not clean:
+            return
+        messagebox.showinfo(__app_name__, "\n".join(clean))
+
+    def _show_ingest_notes(self, notes: list[str], *, dialog: bool = False) -> None:
+        """Keep mailbox/PST remarks on the notes tab until the analyst closes them."""
+        clean = [n for n in notes if (n or "").strip()]
+        if not clean:
+            return
+        self._extra_remarks = list(getattr(self, "_extra_remarks", []) or [])
+        for note in clean:
+            if note not in self._extra_remarks:
+                self._extra_remarks.append(note)
+        self._remarks_dismissed = False
+        if dialog:
+            messagebox.showinfo(__app_name__, "\n".join(clean))
+        self._set_status(clean[0] if len(clean) == 1 else " · ".join(clean))
+        if getattr(self, "result", None) is not None:
+            self._refresh_views(full=True)
+            return
+        try:
+            self._sync_result_tabs(None)
+            self._fill_errors(None)
+            if "err" in getattr(self, "_tab_label_by_key", {}):
+                self._hotkey_tab("err")
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _present_batch_message(self, path: str, *, preload_text: bool = True) -> None:
+        """Open one already-scored message and keep the batch table and peers."""
+        from copy import copy
+
+        batch = list(getattr(self, "_batch_results", None) or [])
+        target = next((r for r in batch if r.source_path == path), None)
+        if target is None:
+            name = Path(path).name
+            target = next((r for r in batch if Path(r.source_path).name == name), None)
+        if target is None:
+            self._set_status(f"Нет письма: {path}")
+            return
+        merged = getattr(self, "_batch_merged", None)
+        shown = copy(target)
+        rows = list(getattr(merged, "file_rows", None) or [])
+        if len(rows) >= 2:
+            shown.file_rows = rows
+        self.result = shown
+        self._focus_source_file = target.source_path
+        self._panels_result_id = None
+        kind = shown.source_kind
+        name = Path(shown.source_path).name if shown.source_path else ""
+        self.source_meta.configure(text=_source_meta_line(kind, name, shown.subject or ""))
+        if preload_text:
+            preview = shown.raw_text_preview or ""
+            meta_lines = [
+                f"Файл: {shown.source_path}",
+                f"Тип: {shown.source_kind}",
+            ]
+            if shown.sender:
+                meta_lines.append(f"From: {shown.sender}")
+            if shown.subject:
+                meta_lines.append(f"Subject: {shown.subject}")
+            if shown.verdict:
+                meta_lines.append(
+                    f"Вердикт: {shown.verdict.level.value} · {shown.verdict.score}"
+                )
+            meta_lines.extend(["=" * 40, "", preview])
+            self._placeholder_active = False
+            self.input_box.delete("1.0", "end")
+            self.input_box.insert("1.0", "\n".join(meta_lines))
+            from reliquary.gui.theme import COLORS
+
+            self.input_box.configure(text_color=COLORS["text"])
+        self._refresh_views(full=True)
+        try:
+            idx = next(i for i, r in enumerate(batch) if r.source_path == target.source_path)
+        except StopIteration:
+            idx = 0
+        self._set_status(f"Письмо {idx + 1}/{len(batch)}: {name}")
+
     def _apply_result(
         self,
         result: AnalysisResult,
@@ -279,10 +400,21 @@ class AnalysisActionsMixin:
         batch_results: list[AnalysisResult] | None = None,
         failed: list[str] | None = None,
     ) -> None:
-        self.result = result
         self._batch_results = list(batch_results or ([result] if result else []))
+        self._batch_merged = result
         self._panels_result_id = None
         self._set_failed(failed or [])
+        notices = list(getattr(self, "_pending_ingest_notes", None) or [])
+        self._pending_ingest_notes = []
+        if notices:
+            self._extra_remarks = list(getattr(self, "_extra_remarks", []) or []) + notices
+            self._remarks_dismissed = False
+        if len(self._batch_results) >= 2 and result.file_rows:
+            self._present_batch_message(
+                self._batch_results[0].source_path, preload_text=preload_text
+            )
+            return
+        self.result = result
         kind = result.source_kind
         name = Path(result.source_path).name if result.source_path else ""
         self.source_meta.configure(text=_source_meta_line(kind, name, result.subject or ""))

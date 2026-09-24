@@ -10,6 +10,24 @@ from typing import Iterable
 from reliquary.core.models import SCHEMA_VERSION, AnalysisResult, Ioc, IocType
 
 
+def source_file_matches(tag_value: str, wanted: str) -> bool:
+    """Match an IOC ``file:`` tag to a focus path. Full path wins over the basename."""
+    got = (tag_value or "").replace("\\", "/").rstrip("/").lower()
+    want = (wanted or "").replace("\\", "/").rstrip("/").lower()
+    if not want:
+        return True
+    if got == want:
+        return True
+    if "/" not in got:
+        return got == want.rsplit("/", 1)[-1]
+    return False
+
+
+def file_display_name(tag_value: str) -> str:
+    text = (tag_value or "").replace("\\", "/")
+    return text.rsplit("/", 1)[-1]
+
+
 def filter_iocs(
     result: AnalysisResult,
     types: set[str] | None = None,
@@ -27,7 +45,6 @@ def filter_iocs(
     filename IOCs (attachment names without risk flags).
     """
     q = (search or "").strip().lower()
-    base = Path(source_file).name.lower() if source_file else ""
     out: list[Ioc] = []
     for ioc in result.iocs:
         if types is not None and ioc.ioc_type.value not in types:
@@ -56,9 +73,9 @@ def filter_iocs(
                 )
             ):
                 continue
-        if base:
+        if source_file:
             file_tags = [t for t in ioc.tags if t.startswith("file:")]
-            if file_tags and not any(t[5:].lower() == base for t in file_tags):
+            if file_tags and not any(source_file_matches(t[5:], source_file) for t in file_tags):
                 continue
         if q:
             hay = " ".join(

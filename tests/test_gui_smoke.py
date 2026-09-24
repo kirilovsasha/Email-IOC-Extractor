@@ -82,8 +82,8 @@ def test_filter_state_from_prefs_and_cli() -> None:
     assert cli.types == {"url", "domain"}
     assert cli.search == "evil"
     focused = cli.with_focus(r"C:\inbox\mail.eml")
-    assert focused.source_file == "mail.eml"
-    assert cli.with_focus("/var/mail/inbox/other.eml").source_file == "other.eml"
+    assert focused.source_file == "C:/inbox/mail.eml"
+    assert cli.with_focus("/var/mail/inbox/other.eml").source_file == "/var/mail/inbox/other.eml"
 
     full_args = SimpleNamespace(
         types=None,

@@ -19,7 +19,7 @@ CORPUS = SAMPLES / "corpus"
 def test_handoff_and_batch_export(tmp_path: Path):
     result = analyze_file(SAMPLES / "phishing_sample.eml")
     text = render_handoff(result)
-    assert "Verdict:" in text
+    assert "Вердикт:" in text
     assert "Message-ID:" in text or "File:" in text
 
     out = run_export("handoff", result, tmp_path / "h.txt", filtered_iocs=result.iocs)

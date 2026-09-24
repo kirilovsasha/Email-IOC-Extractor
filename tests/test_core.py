@@ -93,7 +93,9 @@ def test_merge_results():
     b = analyze_file(SAMPLES / "phishing_sample.eml")
     merged = merge_results([a, b])
     assert merged.source_kind == "batch"
-    assert merged.verdict is not None
+    assert merged.verdict is None
+    assert a.verdict is not None and b.verdict is not None
+    assert merged.file_rows[0].verdict_score == a.verdict.score
     assert len(merged.iocs) >= max(len(a.iocs), len(b.iocs))
 
 

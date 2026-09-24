@@ -694,6 +694,8 @@ def _qr_urls_from_image(data: bytes) -> tuple[list[str], list[str]]:
         from reliquary.core.qr_scan import decode_qr_payloads
 
         payloads, notes = decode_qr_payloads(data)
+        if notes and not payloads and not any("сбой декодера" in n for n in notes):
+            notes.append("QR: сбой декодера")
         return payloads, notes
     except (OSError, RuntimeError, ValueError, ImportError) as exc:
         return [], [f"QR: сбой декодера ({type(exc).__name__}: {exc})"]
@@ -711,12 +713,16 @@ def _qr_from_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
         return hits, ["QR PDF: модуль недоступен"]
     if not qr_decoder_available():
         return hits, []
+    decoder_failed = False
     for magic, label in ((b"\xff\xd8\xff", "jpeg"), (b"\x89PNG\r\n\x1a\n", "png")):
         start = 0
         found = 0
-        while found < 4:
+        while True:
             idx = data.find(magic, start)
             if idx < 0:
+                break
+            if found >= 4:
+                notes.append(f"QR PDF {label}: просмотрено 4, дальше не декодировалось")
                 break
             if label == "jpeg":
                 end = data.find(b"\xff\xd9", idx + 2)
@@ -729,14 +735,18 @@ def _qr_from_pdf_bytes(data: bytes) -> tuple[list[str], list[str]]:
                     idx : (end + 8 if end > idx else idx + min(512_000, len(data) - idx))
                 ]
             if len(chunk) >= 64:
-                payloads, _n = decode_qr_payloads(chunk)
+                payloads, dec_notes = decode_qr_payloads(chunk)
+                if dec_notes and not payloads:
+                    decoder_failed = True
                 for p in payloads:
                     if p not in hits:
                         hits.append(p)
             start = idx + 4
             found += 1
+    if decoder_failed:
+        notes.append("QR: сбой декодера")
     if hits:
-        notes.append(f"QR PDF: найдено {len(hits)} полезных нагрузок в растрах")
+        notes.append("QR PDF: " + "; ".join(hits))
     return hits[:20], notes
 
 
@@ -941,8 +951,8 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         notes.extend(qr_notes)
         if qr_hits:
             flags.append("qr_url")
-            notes.append("QR в PDF: " + "; ".join(qr_hits[:5]))
-            archive_entries.extend(f"QR:{q}" for q in qr_hits[:20])
+            notes.append("QR в PDF: " + "; ".join(qr_hits))
+            archive_entries.extend(f"QR:{q}" for q in qr_hits)
 
     # TNEF / winmail.dat
     if (
@@ -961,8 +971,8 @@ def inspect_bytes(filename: str, data: bytes, *, keep_bytes: bool | None = None)
         notes.extend(qr_notes)
         if qr_hits:
             flags.append("qr_url")
-            notes.append("QR: " + "; ".join(qr_hits[:5]))
-            archive_entries.extend(f"QR:{q}" for q in qr_hits[:20])
+            notes.append("QR: " + "; ".join(qr_hits))
+            archive_entries.extend(f"QR:{q}" for q in qr_hits)
 
     # OLE magic
     if data[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":

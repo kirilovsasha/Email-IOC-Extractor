@@ -71,10 +71,15 @@ def expand_pst_to_emls(
     """
     src = Path(path)
     notes: list[str] = []
+    owned = dest is None
     if dest is None:
         dest = Path(tempfile.mkdtemp(prefix="reliquary_pst_"))
     else:
         dest.mkdir(parents=True, exist_ok=True)
+    if owned:
+        from reliquary.core.formats import register_ingest_temp
+
+        register_ingest_temp(dest)
 
     if not src.is_file():
         notes.append(f"PST: файл не найден — {src}")
@@ -119,14 +124,19 @@ def compose_eml(
     attachments: list[tuple[str, bytes]],
     *,
     html: bool = False,
+    plain: bytes | None = None,
+    html_body: bytes | None = None,
 ) -> bytes:
-    """RFC822 bytes. Attachments become a multipart message; otherwise headers+body."""
+    """RFC822 bytes. Plain and HTML are both kept; HTML is ``text/html``."""
     payload = [(n, d) for n, d in attachments if d][:_MAX_PST_ATTACHMENTS]
     hdr = headers or ""
     if hdr and not hdr.endswith("\n"):
         hdr += "\n"
-    if not payload:
-        return (hdr + "\n").encode("utf-8", errors="replace") + (body or b"")
+    plain_bytes = plain if plain is not None else (b"" if html else (body or b""))
+    html_bytes = html_body if html_body is not None else ((body or b"") if html else b"")
+    if not payload and not (plain_bytes and html_bytes):
+        raw_body = html_bytes or plain_bytes or body or b""
+        return (hdr + "\n").encode("utf-8", errors="replace") + raw_body
     msg = EmailMessage()
     seen: set[str] = set()
     for line in hdr.splitlines():
@@ -142,8 +152,15 @@ def compose_eml(
         except (ValueError, IndexError, KeyError):
             continue
         seen.add(low)
-    text = (body or b"").decode("utf-8", errors="replace")
-    msg.set_content(text, subtype="html" if html else "plain", charset="utf-8")
+    plain_text = (plain_bytes or b"").decode("utf-8", errors="replace")
+    html_text = (html_bytes or b"").decode("utf-8", errors="replace")
+    if plain_bytes and html_bytes:
+        msg.set_content(plain_text, subtype="plain", charset="utf-8")
+        msg.add_alternative(html_text, subtype="html", charset="utf-8")
+    elif html_bytes:
+        msg.set_content(html_text, subtype="html", charset="utf-8")
+    else:
+        msg.set_content(plain_text, subtype="plain", charset="utf-8")
     for name, data in payload:
         msg.add_attachment(
             data[:_MAX_PST_ATTACHMENT_BYTES],
@@ -160,7 +177,7 @@ def _folder_label(folder) -> str:
     except Exception:  # noqa: BLE001
         name = ""
     cleaned = re.sub(r"[^\w.-]+", "_", str(name), flags=re.UNICODE).strip("._")
-    return cleaned[:24]
+    return cleaned
 
 
 def _attachment_bytes(att, index: int) -> tuple[str, bytes] | None:
@@ -208,14 +225,17 @@ def _attachment_bytes(att, index: int) -> tuple[str, bytes] | None:
     return name, bytes(data[:_MAX_PST_ATTACHMENT_BYTES])
 
 
-def _collect_attachments(msg) -> list[tuple[str, bytes]]:
+def _collect_attachments(msg) -> tuple[list[tuple[str, bytes]], list[str]]:
     out: list[tuple[str, bytes]] = []
+    notes: list[str] = []
     getter = getattr(msg, "get_number_of_attachments", None)
     if callable(getter):
         try:
             count = int(getter() or 0)
         except Exception:  # noqa: BLE001
             count = 0
+        if count > _MAX_PST_ATTACHMENTS:
+            notes.append(f"вложений {count}, сохранено {_MAX_PST_ATTACHMENTS}")
         for i in range(min(count, _MAX_PST_ATTACHMENTS)):
             try:
                 att = msg.get_attachment(i)
@@ -224,48 +244,53 @@ def _collect_attachments(msg) -> list[tuple[str, bytes]]:
             item = _attachment_bytes(att, i)
             if item:
                 out.append(item)
-        return out
+        return out, notes
     raw = getattr(msg, "attachments", None)
     if raw is None:
-        return out
+        return out, notes
     try:
         seq = list(raw)
     except Exception:  # noqa: BLE001
-        return out
+        return out, notes
+    if len(seq) > _MAX_PST_ATTACHMENTS:
+        notes.append(f"вложений {len(seq)}, сохранено {_MAX_PST_ATTACHMENTS}")
     for i, att in enumerate(seq[:_MAX_PST_ATTACHMENTS]):
         item = _attachment_bytes(att, i)
         if item:
             out.append(item)
-    return out
+    return out, notes
 
 
-def _message_to_eml(msg) -> bytes:
+def _message_bodies(msg) -> tuple[bytes, bytes]:
+    plain = ""
+    try:
+        plain = msg.get_plain_text_body() or ""
+    except Exception:  # noqa: BLE001
+        plain = getattr(msg, "plain_text_body", None) or ""
+    html_body = ""
+    try:
+        html_body = msg.get_html_body() or ""
+    except Exception:  # noqa: BLE001
+        html_body = getattr(msg, "html_body", None) or ""
+    plain_b = b""
+    html_b = b""
+    if plain:
+        plain_b = plain if isinstance(plain, bytes) else str(plain).encode("utf-8", "replace")
+    if html_body:
+        html_b = html_body if isinstance(html_body, bytes) else str(html_body).encode("utf-8", "replace")
+    return plain_b, html_b
+
+
+def _message_to_eml(msg, notes: list[str] | None = None) -> bytes:
     """RFC822 from a pypff/libratom message, including attachment bytes when present."""
     headers = ""
-    body = b""
-    html = False
     try:
         transport = msg.get_transport_headers()
     except Exception:  # noqa: BLE001
         transport = getattr(msg, "headers", None)
     if transport:
         headers = transport if isinstance(transport, str) else bytes(transport).decode("utf-8", "replace")
-    plain = ""
-    try:
-        plain = msg.get_plain_text_body() or ""
-    except Exception:  # noqa: BLE001
-        plain = getattr(msg, "plain_text_body", None) or ""
-    if plain:
-        body = plain if isinstance(plain, bytes) else str(plain).encode("utf-8", "replace")
-    else:
-        html_body = ""
-        try:
-            html_body = msg.get_html_body() or ""
-        except Exception:  # noqa: BLE001
-            html_body = getattr(msg, "html_body", None) or ""
-        if html_body:
-            html = True
-            body = html_body if isinstance(html_body, bytes) else str(html_body).encode("utf-8", "replace")
+    plain_b, html_b = _message_bodies(msg)
     if not headers:
         subject = ""
         sender = ""
@@ -278,11 +303,17 @@ def _message_to_eml(msg) -> bytes:
         except Exception:  # noqa: BLE001
             sender = str(getattr(msg, "sender_name", "") or "")
         headers = f"From: {sender}\nSubject: {subject}\n"
+    atts, att_notes = _collect_attachments(msg)
+    if notes is not None:
+        for note in att_notes:
+            if note not in notes:
+                notes.append(note)
     try:
-        return compose_eml(headers, body, _collect_attachments(msg), html=html)
+        return compose_eml(headers, plain_b or html_b, atts, plain=plain_b, html_body=html_b)
     except Exception:  # noqa: BLE001
         if headers and not headers.endswith("\n"):
             headers += "\n"
+        body = plain_b or html_b
         return (headers + "\n").encode("utf-8", errors="replace") + body
 
 
@@ -293,11 +324,14 @@ def _extract_with_pypff(
 
     out: list[str] = []
     with_att = 0
+    skipped = [0]
     pst = pypff.file()
     pst.open(str(src))
     try:
         root = pst.get_root_folder()
-        with_att = _walk_pypff_folder(root, dest, out, limit=limit, prefix="")
+        with_att = _walk_pypff_folder(
+            root, dest, out, limit=limit, prefix="", skipped=skipped, notes=notes
+        )
     finally:
         try:
             pst.close()
@@ -307,15 +341,24 @@ def _extract_with_pypff(
         f"PST pypff: извлечено {len(out)} писем из «{src.name}»"
         + (f", с вложениями: {with_att}" if with_att else "")
     )
+    if skipped[0]:
+        notes.append(
+            f"PST «{src.name}»: пропущено {skipped[0]} писем — остальные не разобраны"
+        )
     return out
 
 
 def _walk_pypff_folder(
-    folder, dest: Path, out: list[str], *, limit: int, prefix: str
+    folder,
+    dest: Path,
+    out: list[str],
+    *,
+    limit: int,
+    prefix: str,
+    skipped: list[int],
+    notes: list[str],
 ) -> int:
     """Walk the folder tree. Returns how many written messages had attachments."""
-    if len(out) >= limit:
-        return 0
     label = _folder_label(folder)
     here = f"{prefix}{label}__" if label else prefix
     written_att = 0
@@ -324,13 +367,14 @@ def _walk_pypff_folder(
     except Exception:  # noqa: BLE001
         n = 0
     for i in range(n):
-        if len(out) >= limit:
-            return written_att
         try:
             msg = folder.get_sub_message(i)
         except Exception:  # noqa: BLE001
             continue
-        raw = _message_to_eml(msg)
+        if len(out) >= limit:
+            skipped[0] += 1
+            continue
+        raw = _message_to_eml(msg, notes)
         if not raw:
             continue
         if b"Content-Disposition: attachment" in raw or b'filename="' in raw:
@@ -343,13 +387,13 @@ def _walk_pypff_folder(
     except Exception:  # noqa: BLE001
         n_sub = 0
     for i in range(n_sub):
-        if len(out) >= limit:
-            return written_att
         try:
             sub = folder.get_sub_folder(i)
         except Exception:  # noqa: BLE001
             continue
-        written_att += _walk_pypff_folder(sub, dest, out, limit=limit, prefix=here)
+        written_att += _walk_pypff_folder(
+            sub, dest, out, limit=limit, prefix=here, skipped=skipped, notes=notes
+        )
     return written_att
 
 
@@ -360,12 +404,14 @@ def _extract_with_libratom(
 
     out: list[str] = []
     with_att = 0
+    skipped = 0
     with PffArchive(str(src)) as archive:
         for i, message in enumerate(archive.messages()):
             if i >= limit:
-                break
+                skipped += 1
+                continue
             try:
-                raw = _message_to_eml(message)
+                raw = _message_to_eml(message, notes)
             except Exception:  # noqa: BLE001
                 continue
             if not raw:
@@ -377,7 +423,7 @@ def _extract_with_libratom(
                 folder = str(getattr(message, "folder_name", "") or getattr(message, "folder", "") or "")
             except Exception:  # noqa: BLE001
                 folder = ""
-            label = re.sub(r"[^\w.-]+", "_", folder, flags=re.UNICODE).strip("._")[:24]
+            label = re.sub(r"[^\w.-]+", "_", folder, flags=re.UNICODE).strip("._")
             prefix = f"{label}__" if label else ""
             name = dest / f"{prefix}{len(out):04d}.eml"
             name.write_bytes(raw)
@@ -386,4 +432,8 @@ def _extract_with_libratom(
         f"PST libratom: извлечено {len(out)} писем из «{src.name}»"
         + (f", с вложениями: {with_att}" if with_att else "")
     )
+    if skipped:
+        notes.append(
+            f"PST «{src.name}»: пропущено {skipped} писем — остальные не разобраны"
+        )
     return out

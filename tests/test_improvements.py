@@ -72,8 +72,9 @@ def test_batch_runner_two_files(tmp_path: Path):
 
     outcome = run_batch(paths, max_workers=2, on_progress=on_progress)
     assert outcome.result is not None
-    assert outcome.result.verdict is not None
+    assert outcome.result.verdict is None
     assert len(outcome.batch_results) == 2
+    assert all(item.verdict is not None for item in outcome.batch_results)
     assert progress
     assert format_eta(30).startswith("~")
 
