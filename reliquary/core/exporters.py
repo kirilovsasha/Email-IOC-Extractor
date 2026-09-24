@@ -126,13 +126,41 @@ def with_iocs(result: AnalysisResult, iocs: list[Ioc]) -> AnalysisResult:
         attachments=list(result.attachments),
         verdict=result.verdict,
         raw_text_preview=result.raw_text_preview,
+        html_preview=result.html_preview,
+        score_text=result.score_text,
+        score_html=result.score_html,
+        body_chars=result.body_chars,
+        content_signals=list(result.content_signals),
         errors=list(result.errors),
+        status_notes=list(result.status_notes),
         file_rows=list(result.file_rows),
         meta=result.meta,
     )
 
 
-def export_csv(result: AnalysisResult, path: str | Path) -> Path:
+def export_ioc_summary(shown: int, total: int, hidden: str = "") -> str:
+    """Badge line from the IOC strip, plus the on-screen hidden count when any."""
+    badge = f"доказательства {shown}/{total}"
+    hidden = (hidden or "").strip()
+    if hidden:
+        return f"{badge} · скрыто: {hidden}"
+    return badge
+
+
+def _join_visible(items: list[str], limit: int) -> str:
+    """Join up to ``limit`` items. A cut tail is marked, not dropped quietly."""
+    if len(items) <= limit:
+        return "|".join(items)
+    rest = len(items) - limit
+    return "|".join([*items[:limit], f"ещё {rest}"])
+
+
+def export_csv(
+    result: AnalysisResult,
+    path: str | Path,
+    *,
+    ioc_summary: str | None = None,
+) -> Path:
     out = Path(path)
     fieldnames = [
         "ioc_type",
@@ -147,6 +175,8 @@ def export_csv(result: AnalysisResult, path: str | Path) -> Path:
         "sender",
         "file",
     ]
+    if ioc_summary:
+        fieldnames.append("ioc_summary")
     verdict_level = result.verdict.level.value if result.verdict else ""
     score = result.verdict.score if result.verdict else ""
     with out.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -167,6 +197,7 @@ def export_csv(result: AnalysisResult, path: str | Path) -> Path:
                     "subject": result.subject,
                     "sender": result.sender,
                     "file": result.source_path,
+                    **({"ioc_summary": ioc_summary} if ioc_summary else {}),
                 }
             )
         for ioc in rows:
@@ -183,6 +214,7 @@ def export_csv(result: AnalysisResult, path: str | Path) -> Path:
                     "subject": result.subject,
                     "sender": result.sender,
                     "file": result.source_path,
+                    **({"ioc_summary": ioc_summary} if ioc_summary else {}),
                 }
             )
     return out
@@ -232,7 +264,7 @@ def export_batch_csv(
                     ),
                     "top_iocs": "",
                     "top_reason": "",
-                    "errors": "|".join(result.errors[:5]),
+                    "errors": _join_visible(list(result.errors), 5),
                 }
             )
         for row in rows:
@@ -246,9 +278,9 @@ def export_batch_csv(
                     "subject": row.subject,
                     "sender": row.sender,
                     "message_id": row.message_id,
-                    "top_iocs": "|".join(row.top_iocs[:8]),
+                    "top_iocs": _join_visible(list(row.top_iocs), 8),
                     "top_reason": row.top_reason or "",
-                    "errors": "|".join(row.errors[:5]),
+                    "errors": _join_visible(list(row.errors), 5),
                 }
             )
     return out

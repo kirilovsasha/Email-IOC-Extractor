@@ -15,7 +15,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from reliquary.core.attachment_inspector import inspect_bytes
+from reliquary.core.attachment_inspector import decode_payload_text, inspect_bytes
 from reliquary.core.formats import EMAIL_SUFFIXES
 from reliquary.core.models import AttachmentInfo
 
@@ -125,6 +125,39 @@ def _collect_recipients(msg: Message) -> list[str]:
     return out
 
 
+def _part_payload(part: Message) -> bytes:
+    """Bytes of a MIME part, including a nameless message/rfc822 sub-message."""
+    try:
+        payload = part.get_payload(decode=True)
+    except (TypeError, ValueError, AttributeError, OSError):
+        payload = None
+    if isinstance(payload, (bytes, bytearray)) and payload:
+        return bytes(payload)
+    inner = part.get_payload()
+    if isinstance(inner, list) and inner and hasattr(inner[0], "as_bytes"):
+        try:
+            return inner[0].as_bytes()
+        except (TypeError, ValueError, AttributeError, OSError):
+            pass
+    if isinstance(inner, str) and inner.strip():
+        return inner.encode("utf-8", errors="replace")
+    return b""
+
+
+def _nameless_attachment_name(ctype: str) -> str:
+    if ctype == "message/rfc822":
+        return "nested.eml"
+    if ctype == "text/calendar":
+        return "invite.ics"
+    subtype = ctype.split("/")[-1].split("+")[0]
+    safe = re.sub(r"[^A-Za-z0-9]+", "", subtype) or "bin"
+    return f"attachment.{safe[:20]}"
+
+
+def _decode_part_text(payload: bytes, charset: str | None) -> str:
+    return decode_payload_text(payload, charset)
+
+
 def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
     text_parts: list[str] = []
     html_parts: list[str] = []
@@ -173,12 +206,20 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                 if payload:
                     attachments.append(inspect_bytes("winmail.dat", payload, keep_bytes=True))
                 continue
+            if ctype in {"message/rfc822", "text/calendar"}:
+                payload = _part_payload(part)
+                if payload:
+                    name = "nested.eml" if ctype == "message/rfc822" else "invite.ics"
+                    attachments.append(inspect_bytes(name, payload, keep_bytes=True))
+                continue
             if "attachment" in disp.lower():
+                payload = _part_payload(part)
+                if payload:
+                    attachments.append(inspect_bytes(_nameless_attachment_name(ctype), payload))
                 continue
             try:
                 payload = part.get_payload(decode=True) or b""
-                charset = part.get_content_charset() or "utf-8"
-                decoded = payload.decode(charset, errors="replace")
+                decoded = _decode_part_text(payload, part.get_content_charset())
             except (LookupError, UnicodeError, TypeError, ValueError, AttributeError) as exc:
                 attachments.append(
                     AttachmentInfo(
@@ -201,8 +242,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
         ctype = msg.get_content_type()
         try:
             payload = msg.get_payload(decode=True) or b""
-            charset = msg.get_content_charset() or "utf-8"
-            decoded = payload.decode(charset, errors="replace")
+            decoded = _decode_part_text(payload, msg.get_content_charset())
         except Exception as exc:  # noqa: BLE001
             decoded = str(msg.get_payload())
             attachments.append(

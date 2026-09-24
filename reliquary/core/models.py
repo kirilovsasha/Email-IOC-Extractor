@@ -269,8 +269,13 @@ class AnalysisResult:
     verdict: Verdict | None = None
     raw_text_preview: str = ""
     html_preview: str = ""
+    # Full IOC corpus for scoring. Not exported: the source panel stays a preview.
+    score_text: str = ""
+    score_html: str = ""
+    body_chars: int = 0
     content_signals: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    status_notes: list[str] = field(default_factory=list)
     file_rows: list[FileTriageRow] = field(default_factory=list)
     meta: AnalysisMeta | None = None
 
@@ -302,6 +307,7 @@ class AnalysisResult:
             "html_preview": self.html_preview,
             "content_signals": list(self.content_signals),
             "errors": self.errors,
+            "status_notes": list(self.status_notes),
             "file_rows": [r.to_dict() for r in self.file_rows],
             "meta": self.meta.to_dict() if self.meta else None,
         }

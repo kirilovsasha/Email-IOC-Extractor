@@ -52,6 +52,7 @@ def run_export(
     filters_applied: dict[str, Any] | None = None,
     batch_results: list[AnalysisResult] | None = None,
     filtered_iocs: list[Ioc] | None = None,
+    ioc_summary: str | None = None,
     handoff_template_path: str | Path | None = None,
     handoff_by_level: dict[str, Path | str] | None = None,
     post_export_hook: str | Path | None = None,
@@ -60,7 +61,7 @@ def run_export(
     kind_n = normalize_export_kind(kind)
     out = Path(path)
     if kind_n in ("csv",):
-        written = export_csv(result, out)
+        written = export_csv(result, out, ioc_summary=ioc_summary)
     elif kind_n in ("batch_csv", "batch-csv"):
         written = export_batch_csv(result, out, batch_results=batch_results)
     elif kind_n == "handoff":

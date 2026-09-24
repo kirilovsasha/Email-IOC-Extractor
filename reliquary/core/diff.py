@@ -121,9 +121,16 @@ def find_batch_peer(
     *,
     filename: str,
 ) -> AnalysisResult | None:
-    """Locate a batch member by basename."""
-    needle = filename.lower()
-    for r in batch_results:
-        if Path(r.source_path).name.lower() == needle:
-            return r
+    """Locate a batch member by full path, or by a unique basename."""
+    raw = (filename or "").replace("\\", "/")
+    if not raw:
+        return None
+    for result in batch_results:
+        src = (result.source_path or "").replace("\\", "/")
+        if src == raw or src.lower() == raw.lower():
+            return result
+    needle = Path(raw).name.lower()
+    hits = [r for r in batch_results if Path(r.source_path).name.lower() == needle]
+    if len(hits) == 1:
+        return hits[0]
     return None

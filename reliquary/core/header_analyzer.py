@@ -147,11 +147,11 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                 "Результаты SPF/DKIM/DMARC от принимающего MTA",
             )
         )
+        resolved_auth = resolve_auth_results(msg)
         for proto, label in (("spf", "SPF"), ("dkim", "DKIM"), ("dmarc", "DMARC")):
-            m = re.search(rf"{proto}\s*=\s*([a-z]+)", auth_blob)
-            if not m:
+            result = resolved_auth.get(proto, "")
+            if not result:
                 continue
-            result = m.group(1)
             if result == "fail":
                 findings.append(
                     HeaderFinding(
@@ -260,6 +260,25 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
                 "Нет Authentication-Results — сложнее оценить подлинность",
             )
         )
+        spf_only = resolve_auth_results(msg).get("spf", "")
+        if spf_only == "fail":
+            findings.append(
+                HeaderFinding(
+                    "SPF result",
+                    spf_only,
+                    Severity.HIGH,
+                    "SPF fail — сильный сигнал подделки/несанкционированной отправки",
+                )
+            )
+        elif spf_only == "softfail":
+            findings.append(
+                HeaderFinding(
+                    "SPF result",
+                    spf_only,
+                    Severity.MEDIUM,
+                    "SPF softfail — домен не подтверждён жёстко (часто фишинг)",
+                )
+            )
 
     # Sender ≠ From is common on lists (List-Id) and on DMARC-aligned mail.
     # Score only the unauthenticated external on-behalf case.
@@ -270,7 +289,7 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
         if sender_dom and from_dom_sender and not _same_domain(sender_dom, from_dom_sender):
             precedence = (msg.get("Precedence") or "").strip().lower()
             mailing = bool(msg.get("List-Id")) or precedence in {"bulk", "list", "junk"}
-            dmarc_pass = bool(re.search(r"dmarc\s*=\s*pass", auth_blob))
+            dmarc_pass = resolve_auth_results(msg).get("dmarc") == "pass"
             if mailing or dmarc_pass:
                 findings.append(
                     HeaderFinding(
@@ -437,12 +456,38 @@ def extract_raw_headers(msg: Message) -> dict[str, str]:
     return out
 
 
+_AUTH_PROTOS = ("spf", "dkim", "dmarc")
+
+
+def resolve_auth_results(msg: Message) -> dict[str, str]:
+    """SPF/DKIM/DMARC for the card. A later fail/softfail is not hidden by pass."""
+    found: dict[str, list[str]] = {proto: [] for proto in _AUTH_PROTOS}
+    for header in _get_all(msg, "Authentication-Results"):
+        low = header.lower()
+        for proto in _AUTH_PROTOS:
+            found[proto].extend(re.findall(rf"{proto}\s*=\s*([a-z]+)", low))
+    for header in _get_all(msg, "Received-SPF"):
+        match = re.match(r"\s*([a-z]+)", header.strip().lower())
+        if match:
+            found["spf"].append(match.group(1))
+    chosen: dict[str, str] = {}
+    for proto, values in found.items():
+        if not values:
+            continue
+        if "fail" in values:
+            chosen[proto] = "fail"
+        elif "softfail" in values:
+            chosen[proto] = "softfail"
+        else:
+            chosen[proto] = values[0]
+    return chosen
+
+
 def build_mail_identity(msg: Message) -> MailIdentity:
-    auth_blob = " | ".join(_get_all(msg, "Authentication-Results")).lower()
+    resolved = resolve_auth_results(msg)
 
     def _auth(proto: str) -> str:
-        m = re.search(rf"{proto}\s*=\s*([a-z]+)", auth_blob)
-        return m.group(1) if m else ""
+        return resolved.get(proto, "")
 
     received = _get_all(msg, "Received")
     return MailIdentity(
