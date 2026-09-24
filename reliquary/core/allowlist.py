@@ -160,6 +160,8 @@ _CLOUD_STORAGE_ROOTS = frozenset(
         "google.com",
         "live.com",
         "office.com",
+        "github.com",
+        "icloud.com",
     }
 )
 
@@ -177,6 +179,13 @@ _MS_USER_HOSTS = (
     "onedrive.live.com",
     "storage.live.com",
     "sway.office.com",
+    "forms.office.com",
+)
+
+# User content that is not mail. Mail and CDN names stay allowlisted.
+_USER_CONTENT_HOSTS = (
+    "gist.github.com",
+    "share.icloud.com",
 )
 
 
@@ -195,6 +204,10 @@ def _is_ms_user_host(host: str) -> bool:
     return any(host == name or host.endswith("." + name) for name in _MS_USER_HOSTS)
 
 
+def _is_user_content_host(host: str) -> bool:
+    return any(host == name or host.endswith("." + name) for name in _USER_CONTENT_HOSTS)
+
+
 def is_user_cloud_storage_host(host: str) -> bool:
     """User bucket / Drive host, not the provider's own mail or CDN name."""
     h = (host or "").lower().rstrip(".")
@@ -203,7 +216,12 @@ def is_user_cloud_storage_host(host: str) -> bool:
     if h.endswith(".amazonaws.com") and (".s3." in h or ".s3-" in h):
         if not (h.startswith("s3.") or h.startswith("s3-")):
             return True
-    if _is_path_style_s3(h) or _is_google_user_host(h) or _is_ms_user_host(h):
+    if (
+        _is_path_style_s3(h)
+        or _is_google_user_host(h)
+        or _is_ms_user_host(h)
+        or _is_user_content_host(h)
+    ):
         return True
     if re.search(
         r"^[a-z0-9][a-z0-9-]{1,62}\.(?:blob|file|dfs|web)\.core\.windows\.net$",

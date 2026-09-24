@@ -168,7 +168,7 @@
   },
   "malicious_kaspersky_wrap.eml": {
     "level": "malicious",
-    "score_min": 90,
+    "score_min": 85,
     "score_max": 100,
     "reason_substrings": [
       "micros0ft",
@@ -177,7 +177,7 @@
   },
   "malicious_lookalike.eml": {
     "level": "malicious",
-    "score_min": 90,
+    "score_min": 85,
     "score_max": 100,
     "reason_substrings": [
       "lookalike",
@@ -251,8 +251,8 @@
   },
   "suspicious_bitrix_redir.eml": {
     "level": "malicious",
-    "score_min": 80,
-    "score_max": 92
+    "score_min": 60,
+    "score_max": 75
   },
   "suspicious_brand_spoof.eml": {
     "level": "malicious",
@@ -274,8 +274,8 @@
   },
   "suspicious_cid_phishing.eml": {
     "level": "suspicious",
-    "score_min": 42,
-    "score_max": 59
+    "score_min": 34,
+    "score_max": 50
   },
   "suspicious_cloud_lure.eml": {
     "level": "malicious",
@@ -335,8 +335,8 @@
   },
   "suspicious_display_spoof_privatbank.eml": {
     "level": "malicious",
-    "score_min": 86,
-    "score_max": 100
+    "score_min": 78,
+    "score_max": 94
   },
   "suspicious_display_spoof_sber.eml": {
     "level": "malicious",
@@ -384,8 +384,8 @@
   },
   "suspicious_href_mismatch.eml": {
     "level": "suspicious",
-    "score_min": 44,
-    "score_max": 59,
+    "score_min": 36,
+    "score_max": 50,
     "reason_substrings": [
       "evil.top",
       ".top",
@@ -393,9 +393,9 @@
     ]
   },
   "suspicious_html_attachment.eml": {
-    "level": "malicious",
-    "score_min": 64,
-    "score_max": 76,
+    "level": "suspicious",
+    "score_min": 50,
+    "score_max": 59,
     "reason_substrings": [
       "smuggl",
       "HTML",
@@ -642,8 +642,8 @@
   },
   "suspicious_yandex_wrap.eml": {
     "level": "suspicious",
-    "score_min": 43,
-    "score_max": 59,
+    "score_min": 30,
+    "score_max": 45,
     "reason_substrings": [
       "rewrite",
       "URL",
@@ -689,8 +689,8 @@
     ]
   },
   "unknown_msg_sample.msg": {
-    "level": "malicious",
-    "score_min": 60,
-    "score_max": 75
+    "level": "suspicious",
+    "score_min": 40,
+    "score_max": 55
   }
 }

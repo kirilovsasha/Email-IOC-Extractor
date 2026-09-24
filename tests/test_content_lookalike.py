@@ -31,7 +31,7 @@ def test_content_href_mismatch() -> None:
 
 
 def test_content_credential() -> None:
-    sigs = analyze_content_signals("Please sign in to OWA webmail now")
+    sigs = analyze_content_signals("Please enter your password")
     assert any(s.kind == "credential_harvest" for s in sigs)
 
 

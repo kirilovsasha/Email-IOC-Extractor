@@ -13,13 +13,14 @@ from reliquary.core.verdict_config import DEFAULT_SUSPICIOUS_TLDS
 
 CREDENTIAL_RE = re.compile(
     r"(?i)\b("
-    r"login|sign[\s-]?in|log[\s-]?in|"
+    # Ask to enter or change a password. A bare login/sign-in/webmail/OWA
+    # and the host label "login" are ordinary words.
     r"(?:enter|type|input|provide|reset|change|submit)\s+(?:your\s+|the\s+|a\s+)?passwords?|"
-    r"your\s+passwords?|"
     r"password(?!\s+polic(?:y|ies))|passwd|passcode|"
-    r"webmail|owa|outlook\s*web|account\s*verify|verify\s*account|"
+    r"outlook\s*web|account\s*verify|verify\s*account|"
     r"update\s*your\s*(?:password|account)|"
-    r"войти|пароль|учетн\w*\s*запис|подтвердите\s*аккаунт|"
+    r"(?:введите|ввести|смените|сменить|обновите|укажите|подтверд\w*)\s+парол\w*|"
+    r"учетн\w*\s*запис|подтвердите\s*аккаунт|"
     r"веб[- ]?почт"
     r")\b"
 )
@@ -33,19 +34,14 @@ BEC_RE = re.compile(
     r"смен\w*\s*реквизит\w*|нов\w{2,8}\s+реквизит\w*|"
     r"оплат\w*\s*сегодня|срочн\w*\s*оплат|"
     r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
-    r"пишите\s*только\s*сюда|не\s*звоните|CEO\s*urgent|"
-    r"генеральн\w*\s*директор|финансов\w*\s*директор|"
-    # Payment change and out-of-band payment. An invoice, a reconciliation
-    # act, a bare account number or the letters CFO are ordinary finance mail.
+    r"пишите\s*только\s*сюда|CEO\s*urgent|"
+    # A job title, «не звоните» and a bare UNP/ЕРИП mention are ordinary mail.
+    # Payment change and out-of-band payment stay.
     r"срочн\w*\s*перев(?:од|ед|ест)\w*|"
     r"реквизит\w*\s+на\s+карт\w*|"
     r"изменит\w*\s+плат[её]жн\w*|"
-    r"главбух\w*|казнач[её]й\w*|"
-    # Беларусь: ЕРИП / УНП / IBAN BY
-    r"ерип|еріp|erip|"
-    r"унп\b|"
+    # Беларусь: IBAN BY. A bare ЕРИП/УНП is not a payment-change.
     r"iban\s*by\d{2}|by\d{2}\s*[a-z0-9]{4}|"
-    r"оплат\w*\s*(?:через\s*)?(?:ерип|еріp|oplati|оплати)|"
     r"новые\s+реквизиты\s+(?:рб|беларус)"
     r")\b"
 )
@@ -105,13 +101,10 @@ PAYMENT_CHANGE_RE = re.compile(
 IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")
 CALLBACK_RE = re.compile(
     r"(?i)("
+    # The call has to be tied to refusing the email. A bare «перезвоните» is not.
     r"не\s+отвечайте\s+на\s+(?:это\s+)?письм|"
     r"не\s+пишите.{0,24}перезвон|"
-    r"перезвоните|"
-    r"позвоните\s+(?:мне|нам|по\s+номер)|"
-    r"call\s+(?:me|us)\s+back|"
-    r"do\s+not\s+reply.{0,48}\bcall\b|"
-    r"только\s+по\s+телефон"
+    r"do\s+not\s+reply.{0,48}\bcall\b"
     r")"
 )
 
@@ -173,11 +166,10 @@ CLICKFIX_RE = re.compile(
     r")"
 )
 
-FAKE_AUTH_RE = re.compile(
-    r"(?i)(authentication-results\s*:|spf\s*=\s*pass|dkim\s*=\s*pass|dmarc\s*=\s*pass)"
-)
-_HEADERISH_AUTH_RE = re.compile(
-    r"(?i)^(authentication-results|received-spf|dkim-signature|arc-authentication-results)\s*:"
+# A painted header line with a value, not an spf=pass token inside a sentence
+# and not an empty "Authentication-Results:" label.
+_DRAWN_AUTH_LINE_RE = re.compile(
+    r"(?i)^(?:authentication-results|received-spf|arc-authentication-results)\s*:\s*\S"
 )
 
 
@@ -424,28 +416,31 @@ def _url_userinfo(blob: str) -> list[ContentSignal]:
     ]
 
 
+def _drawn_auth_line(blob: str) -> str:
+    """Header-shaped Authentication-Results line. A token in a sentence is not one."""
+    for line in (blob or "").splitlines():
+        stripped = line.strip()
+        if _DRAWN_AUTH_LINE_RE.match(stripped):
+            return stripped
+    return ""
+
+
 def _fake_auth_in_body(text: str, html: str) -> ContentSignal | None:
-    """SPF/DKIM/DMARC pass painted into the body, not a real header."""
-    blobs: list[str] = []
+    """SPF/DKIM/DMARC pass painted as a header block, not a token in a sentence."""
+    blobs = [text or ""]
     if html:
         blobs.append(html)
-    lines: list[str] = []
-    for line in (text or "").splitlines():
-        if _HEADERISH_AUTH_RE.match(line.strip()):
-            continue
-        lines.append(line)
-    if lines:
-        blobs.append("\n".join(lines))
-    match = None
+        blobs.append(_reader_text(html))
+    drawn = ""
     for blob in blobs:
-        match = FAKE_AUTH_RE.search(blob)
-        if match:
+        drawn = _drawn_auth_line(blob)
+        if drawn:
             break
-    if not match:
+    if not drawn:
         return None
     return ContentSignal(
         "fake_auth_results",
-        f"В теле письма поддельный Authentication-Results: {match.group(0)[:48]}",
+        f"В теле письма поддельный Authentication-Results: {drawn[:48]}",
         "weight_fake_auth_results",
     )
 

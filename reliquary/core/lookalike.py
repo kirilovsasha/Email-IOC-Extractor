@@ -126,7 +126,8 @@ _BRAND_DISPLAY_NAMES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("белвэб", ("belveb.by",)),
     ("ббсбанк", ("bsb.by",)),
     ("нацбанк рб", ("nbrb.by",)),
-    ("нацбанк", ("nbrb.by",)),
+    # nationalbank.kz already belongs to «нацбанк кз»; the same word covers it.
+    ("нацбанк", ("nbrb.by", "nationalbank.kz")),
     ("нбрб", ("nbrb.by",)),
     ("мнс рб", ("nalog.gov.by",)),
     ("мнс", ("nalog.gov.by",)),
@@ -411,6 +412,32 @@ def host_from_email_or_url(value: str) -> str:
         return value.lower()
 
 
+# Longer product name of the same vendor, not a foreign suffix (microsoft-login).
+_VENDOR_LONGER_LABELS = frozenset(
+    {
+        "googlemail",
+        "amazonaws",
+        "office365",
+        "microsoftonline",
+        "facebookmail",
+    }
+)
+
+
+def _allowlisted_host(host: str) -> bool:
+    from reliquary.core.allowlist import build_allowlist, domain_matches
+
+    domains, _ips = build_allowlist()
+    return domain_matches((host or "").lower().rstrip("."), domains)
+
+
+def _label_as_word(label: str, text: str) -> bool:
+    """Label on a word boundary. «цб» must not win inside «нацбанк»."""
+    if not label or not text:
+        return False
+    return re.search(rf"(?iu)(?<!\w){re.escape(label)}(?!\w)", text) is not None
+
+
 def check_domain(
     domain: str,
     brands: tuple[str, ...] | None = None,
@@ -419,7 +446,11 @@ def check_domain(
 ) -> list[LookalikeHit]:
     """Compare a domain against brand list for IDN / homoglyph / near-miss."""
     brands = brands or DEFAULT_BRANDS
-    domain = domain.lower().strip(".")
+    domain = domain.lower().strip().strip(".")
+    if "://" in domain or "/" in domain:
+        host = host_from_email_or_url(domain)
+        if host:
+            domain = host.lower().strip(".")
     if not domain or "." not in domain:
         return []
     ascii_dom, is_idn = to_ascii_domain(domain)
@@ -428,6 +459,8 @@ def check_domain(
     visual_reg = _registrable(_idna_unicode(domain))
     norm = normalize_homoglyph(visual_reg)
     hits: list[LookalikeHit] = []
+    own_host = _allowlisted_host(domain)
+    longer_vendor = (reg.split(".")[0] if reg else "") in _VENDOR_LONGER_LABELS
 
     if is_idn:
         hits.append(
@@ -468,15 +501,21 @@ def check_domain(
                 # e.g. secure-microsoft.top
                 pass
             if brand_label in norm and not reg.endswith(brand_reg):
-                hits.append(
-                    LookalikeHit(
-                        value=domain,
-                        brand=brand,
-                        kind="brand_spoof",
-                        detail=f"Похоже на бренд {brand}: {domain}",
+                # Allowlisted hosts and a longer name of the same vendor are not spoofs.
+                # A skipped letter (microsft) and a foreign suffix (microsoft-login) stay.
+                if not own_host and not longer_vendor:
+                    hits.append(
+                        LookalikeHit(
+                            value=domain,
+                            brand=brand,
+                            kind="brand_spoof",
+                            detail=f"Похоже на бренд {brand}: {domain}",
+                        )
                     )
-                )
                 continue
+        # mail.com is one deletion from gmail.com and is not that typo.
+        if reg == "mail.com" and brand_reg == "gmail.com":
+            continue
         dist = levenshtein(norm, brand_norm)
         eff_max = 1 if short_brand else max_distance
         len_slack = 0 if short_brand else max_distance
@@ -521,7 +560,7 @@ def check_display_name_spoof(
     host = addr.rsplit("@", 1)[-1].lower().strip(".")
     hits: list[LookalikeHit] = []
     for label, brands in _BRAND_DISPLAY_NAMES + extra_names:
-        if label not in display:
+        if not _label_as_word(label, display):
             continue
         # Exact / subdomain match (works for portal.gov.by, nalog.gov.by, …)
         if any(
