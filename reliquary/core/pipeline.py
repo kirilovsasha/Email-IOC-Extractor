@@ -170,26 +170,23 @@ def _build_meta(
 
 
 def campaign_key_for(result: AnalysisResult) -> str:
-    """Stable campaign fingerprint: thread root → Msg-ID → attachment → subject."""
+    """Campaign fingerprint: thread root → attachment hash → subject.
+
+    The message's own Message-ID is not a thread root and does not occupy
+    the key. The subject fallback is the subject alone.
+    """
     mid = result.mail_identity
     if mid is not None:
         thread = mid.thread_root_id()
         if thread:
             return f"thread:{thread}"
-    msg_id = ((mid.message_id if mid else "") or "").strip().lower()
-    if msg_id:
-        return f"msgid:{msg_id}"
     att_hashes = sorted({a.sha256 for a in result.attachments if a.sha256})
     if att_hashes:
         return f"att:{att_hashes[0][:16]}"
     subject = (result.subject or (mid.subject if mid else "") or "").strip().lower()
-    sender = (result.sender or (mid.from_header if mid else "") or "").strip().lower()
-    # Normalize sender to domain
-    if "@" in sender:
-        sender = sender.rsplit("@", 1)[-1].strip(">")
     subject = re.sub(r"\s+", " ", subject)[:80]
-    if subject or sender:
-        return f"subj:{subject}|from:{sender}"
+    if subject:
+        return f"subj:{subject}"
     return ""
 
 
@@ -429,23 +426,35 @@ def file_triage_row(result: AnalysisResult) -> FileTriageRow:
     )
 
 
+# Digests of b"" — not useful IOCs when a part was saved empty.
+_EMPTY_FILE_DIGESTS = frozenset(
+    {
+        "d41d8cd98f00b204e9800998ecf8427e",
+        "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    }
+)
+
+
 def _lift_attachment_iocs(attachments: list[AttachmentInfo], iocs: list[Ioc]) -> None:
     for att in attachments:
+        skip_hashes = "empty_file" in (att.risk_flags or [])
         for algo, value, itype in (
             ("md5", att.md5, IocType.MD5),
             ("sha1", att.sha1, IocType.SHA1),
             ("sha256", att.sha256, IocType.SHA256),
         ):
-            if value:
-                iocs.append(
-                    Ioc(
-                        value=value,
-                        ioc_type=itype,
-                        source="attachment",
-                        context=att.filename,
-                        tags=["attachment_hash", algo, *att.risk_flags],
-                    )
+            if not value or skip_hashes or value.lower() in _EMPTY_FILE_DIGESTS:
+                continue
+            iocs.append(
+                Ioc(
+                    value=value,
+                    ioc_type=itype,
+                    source="attachment",
+                    context=att.filename,
+                    tags=["attachment_hash", algo, *att.risk_flags],
                 )
+            )
         if att.filename:
             iocs.append(
                 Ioc(
@@ -713,6 +722,7 @@ def _parse_nested_email_attachment(
         parts = [
             f"Nested EML {att.filename}",
             f"From: {msg.get('From', '')}",
+            f"Reply-To: {msg.get('Reply-To', '')}",
             f"Subject: {msg.get('Subject', '')}",
             f"Message-ID: {msg.get('Message-ID', '')}",
             f"In-Reply-To: {msg.get('In-Reply-To', '')}",
@@ -727,7 +737,12 @@ def _parse_nested_email_attachment(
                     fl = fname.lower()
                     if fl.endswith((".eml", ".msg")) and depth < max_depth:
                         try:
-                            raw = part.get_payload(decode=True)
+                            if part.get_content_type() == "message/rfc822":
+                                from reliquary.core.document_parser import _part_payload
+
+                                raw = _part_payload(part)
+                            else:
+                                raw = part.get_payload(decode=True)
                         except (TypeError, ValueError, AttributeError):
                             raw = None
                         if isinstance(raw, (bytes, bytearray)) and raw:
@@ -810,6 +825,36 @@ def source_too_large_message(size: int) -> str:
 def text_too_large_message() -> str:
     mb = MAX_SOURCE_BYTES // (1024 * 1024)
     return f"Текст больше {mb} МБ. Разбор остановлен."
+
+
+def _mailbox_ioc_lines(value: str) -> list[str]:
+    """Display name and mailbox. Angle brackets hide the address from extract_iocs."""
+    text = (value or "").strip()
+    if not text:
+        return []
+    lines: list[str] = []
+    for name, addr in email.utils.getaddresses([text]):
+        if name and name.strip():
+            lines.append(name.strip())
+        if addr and "@" in addr:
+            lines.append(addr.strip())
+    if lines:
+        return lines
+    return [text.replace("<", " ").replace(">", " ")]
+
+
+def _header_ioc_text(result: AnalysisResult, parsed) -> str:
+    """Already-parsed Subject, From and Reply-To for the same IOC extractor."""
+    mid = result.mail_identity
+    subject = (mid.subject if mid else "") or getattr(parsed, "subject", "") or ""
+    sender = (mid.from_header if mid else "") or getattr(parsed, "sender", "") or ""
+    reply = (mid.reply_to if mid else "") or ""
+    if not reply and getattr(parsed, "message", None) is not None:
+        reply = str(parsed.message.get("Reply-To", "") or "")
+    chunks = [subject.strip()] if subject and subject.strip() else []
+    chunks.extend(_mailbox_ioc_lines(sender))
+    chunks.extend(_mailbox_ioc_lines(reply))
+    return "\n".join(chunks)
 
 
 def _enrich_parsed_result(
@@ -963,6 +1008,12 @@ def _enrich_parsed_result(
     except (ValueError, TypeError, AttributeError, KeyError, IndexError, re.error) as exc:
         result.errors.append(f"IOC: {exc}")
         iocs = []
+    header_text = _header_ioc_text(result, parsed)
+    if header_text:
+        try:
+            iocs.extend(extract_iocs(header_text, source="header"))
+        except (ValueError, TypeError, AttributeError, KeyError, IndexError, re.error) as exc:
+            result.errors.append(f"IOC: {exc}")
 
     unwrap_map = {r.unwrapped: r.original for r in result.url_rewrites if r.changed}
     rewriter_hosts: set[str] = set()

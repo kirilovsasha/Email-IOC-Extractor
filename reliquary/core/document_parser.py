@@ -144,6 +144,25 @@ def _part_payload(part: Message) -> bytes:
     return b""
 
 
+def _is_inline_or_cid_image(part: Message, ctype: str, disp: str) -> bool:
+    """Image kept for QR that is not a file attachment."""
+    if not ctype.startswith("image/"):
+        return False
+    if "attachment" in (disp or "").lower():
+        return False
+    if str(part.get("Content-ID") or "").strip():
+        return True
+    if "inline" in (disp or "").lower():
+        return True
+    return not part.get_filename()
+
+
+def _mark_inline_image(info: AttachmentInfo) -> AttachmentInfo:
+    if "inline_image" not in info.risk_flags:
+        info.risk_flags.append("inline_image")
+    return info
+
+
 def _nameless_attachment_name(ctype: str) -> str:
     if ctype == "message/rfc822":
         return "nested.eml"
@@ -171,8 +190,14 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
             cid = str(part.get("Content-ID", "") or "").strip("<> ")
             if filename:
                 try:
-                    payload = part.get_payload(decode=True) or b""
-                    attachments.append(inspect_bytes(filename, payload))
+                    if ctype == "message/rfc822":
+                        payload = _part_payload(part)
+                    else:
+                        payload = part.get_payload(decode=True) or b""
+                    info = inspect_bytes(filename, payload)
+                    if _is_inline_or_cid_image(part, ctype, disp):
+                        _mark_inline_image(info)
+                    attachments.append(info)
                 except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as exc:
                     attachments.append(
                         AttachmentInfo(
@@ -195,7 +220,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                     payload = b""
                 if payload:
                     synth = f"cid-{cid[:40] or 'inline'}.{ctype.split('/')[-1].split('+')[0]}"
-                    attachments.append(inspect_bytes(synth, payload))
+                    attachments.append(_mark_inline_image(inspect_bytes(synth, payload)))
                 continue
             # TNEF without filename
             if ctype in {"application/ms-tnef", "application/vnd.ms-tnef"}:

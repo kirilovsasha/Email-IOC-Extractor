@@ -702,6 +702,28 @@ def _trim_cmdline(cmd: str) -> str:
     return cmd
 
 
+def _mask_url_tails(text: str) -> str:
+    """Blank URL path, query and fragment so a file segment is not a domain."""
+
+    def repl(match: re.Match[str]) -> str:
+        url = match.group(0)
+        scheme_idx = url.find("://")
+        if scheme_idx < 0:
+            return url
+        rest = url[scheme_idx + 3 :]
+        cut = len(rest)
+        for sep in ("/", "?", "#"):
+            pos = rest.find(sep)
+            if pos >= 0:
+                cut = min(cut, pos)
+        if cut == len(rest):
+            return url
+        start = scheme_idx + 3 + cut
+        return url[:start] + (" " * (len(url) - start))
+
+    return URL_RE.sub(repl, text)
+
+
 def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
     """Extract and deduplicate IOCs from arbitrary text."""
     if not text:
@@ -860,7 +882,7 @@ def extract_iocs(text: str, source: str = "text") -> list[Ioc]:
             continue
         add(cmd, IocType.COMMAND_LINE, m, ["process"])
 
-    for m in DOMAIN_RE.finditer(cleaned):
+    for m in DOMAIN_RE.finditer(_mask_url_tails(cleaned)):
         raw = m.group(0).rstrip(".")
         start, raw = _extend_domain_left_label(cleaned, m.start(), m.end())
         raw = raw.rstrip(".")
