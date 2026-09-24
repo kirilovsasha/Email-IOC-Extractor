@@ -511,7 +511,12 @@ def _parse_nested_email_attachment(
             parts.append(html if isinstance(html, str) else "")
             return "\n".join(parts), errors
         # .eml / rfc822
-        msg = email.message_from_bytes(att.data, policy=email.policy.default)  # type: ignore[arg-type]
+        from reliquary.core.document_parser import normalize_email_bytes
+
+        msg = email.message_from_bytes(
+            normalize_email_bytes(att.data),  # type: ignore[arg-type]
+            policy=email.policy.default,
+        )
         parts = [
             f"Nested EML {att.filename}",
             f"From: {msg.get('From', '')}",
@@ -857,7 +862,9 @@ def analyze_file(
 
 
 def _looks_like_rfc822(text: str) -> bool:
-    head = text.lstrip()[:4000]
+    from reliquary.core.document_parser import normalize_email_text
+
+    head = normalize_email_text(text).lstrip()[:4000]
     if not head:
         return False
     lower = head.lower()
@@ -904,8 +911,9 @@ def analyze_text(
             errors=[f"Текст слишком большой (лимит {MAX_SOURCE_BYTES} байт)"],
             meta=_build_meta(label, options=opts),
         )
-    from reliquary.core.document_parser import parse_eml
+    from reliquary.core.document_parser import normalize_email_bytes, parse_eml
 
+    data = normalize_email_bytes(data)
     path = Path(f"{label}.eml") if not str(label).lower().endswith(".eml") else Path(label)
     source_sha, source_size = _source_hash_bytes(data)
     parsed = parse_eml(path, data=data)
