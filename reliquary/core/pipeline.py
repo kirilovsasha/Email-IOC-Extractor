@@ -16,6 +16,8 @@ from reliquary.core.allowlist import build_allowlist, resolve_allowlist_path, ta
 from reliquary.core.analysis_options import AnalysisOptions
 from reliquary.core.document_parser import parse_document
 from reliquary.core.header_analyzer import (
+    GATEWAY_SUBJECT_PREFIX_RE,
+    SUBJECT_REPLY_PREFIX_RE,
     analyze_headers,
     build_mail_identity,
     extract_raw_headers,
@@ -180,23 +182,13 @@ def _counts_as_campaign_file(att) -> bool:
     return not name.startswith("cid-")
 
 
-# Same reply prefix the thread mitigation strips, plus Ответ / Переслано / Пересылка / На / Re[n].
-_CAMPAIGN_SUBJECT_PREFIX_RE = re.compile(
-    r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересылка|пересл|на)\s*:\s*"
-)
-
-# Gateway tag in front of that prefix. The thread mitigation strips the same list.
-_GATEWAY_SUBJECT_PREFIX_RE = re.compile(
-    r"(?i)^(?:\[(?:external|внешнее|spam)\]|(?:external|внешнее)\s*:|внешняя\s+почта:)\s*"
-)
-
-
 def _campaign_subject(subject: str) -> str:
+    """Subject key. Gateway tags and reply/forward prefixes use the shared list."""
     text = (subject or "").strip()
     for _ in range(6):
-        stripped = _GATEWAY_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
+        stripped = GATEWAY_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
         if stripped == text:
-            stripped = _CAMPAIGN_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
+            stripped = SUBJECT_REPLY_PREFIX_RE.sub("", text, count=1).strip()
         if stripped == text:
             break
         text = stripped
@@ -905,12 +897,19 @@ def _header_ioc_text(result: AnalysisResult, parsed) -> str:
             list_unsub = str(msg.get("List-Unsubscribe", "") or "")
         sender_hdr = str(msg.get("Sender", "") or "")
         resent_from = str(msg.get("Resent-From", "") or "")
+        to_hdr = str(msg.get("To", "") or "")
+        cc_hdr = str(msg.get("Cc", "") or "")
+    else:
+        to_hdr = ""
+        cc_hdr = ""
     chunks = [subject.strip()] if subject and subject.strip() else []
     chunks.extend(_mailbox_ioc_lines(sender))
     chunks.extend(_mailbox_ioc_lines(reply))
     chunks.extend(_mailbox_ioc_lines(return_path))
     chunks.extend(_mailbox_ioc_lines(sender_hdr))
     chunks.extend(_mailbox_ioc_lines(resent_from))
+    chunks.extend(_mailbox_ioc_lines(to_hdr))
+    chunks.extend(_mailbox_ioc_lines(cc_hdr))
     if list_unsub.strip():
         chunks.append(list_unsub.strip())
     return "\n".join(chunks)

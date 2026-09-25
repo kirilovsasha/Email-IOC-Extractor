@@ -39,7 +39,7 @@ IPV6_RE = re.compile(
 )
 # Bracketed IPv6 is a host, not the end of the URL (']' still ends a normal URL).
 URL_RE = re.compile(
-    r"(?i)\b(?:https?|hxxps?|ftp)://(?:"
+    r"(?i)\b(?:https?|hxxps?|ftp|file)://(?:"
     r"\[[A-Fa-f0-9:.]+\][^\s<>\"')\]]*"
     r"|[^\s<>\"')\]]+"
     r")"

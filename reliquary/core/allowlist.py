@@ -182,6 +182,8 @@ _GOOGLE_USER_HOSTS = (
     "meet.google.com",
     "classroom.google.com",
     "lookerstudio.google.com",
+    "chat.google.com",
+    "datastudio.google.com",
 )
 
 # User content on Microsoft consumer hosts. Mail names stay allowlisted.
@@ -202,6 +204,9 @@ _MS_USER_HOSTS = (
     "loop.microsoft.com",
     "visio.office.com",
     "delve.office.com",
+    "onenote.office.com",
+    "onenote.microsoft.com",
+    "whiteboard.office.com",
 )
 
 # User content that is not mail. Mail and CDN names stay allowlisted.

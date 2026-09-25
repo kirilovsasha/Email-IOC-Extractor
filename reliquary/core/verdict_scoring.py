@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from reliquary.core.content_signals import analyze_content_signals
+from reliquary.core.header_analyzer import SUBJECT_REPLY_PREFIX_RE, strip_gateway_subject_prefix
 from reliquary.core.lookalike import load_brands, load_org_domains, scan_lookalikes
 from reliquary.core.models import (
     AnalysisResult,
@@ -1709,21 +1710,8 @@ def _benign_marker_parts(
         )
     if mid and (mid.in_reply_to or mid.references) and not foreign_reply:
         # Same gateway prefix the campaign subject key strips, then the reply prefix.
-        thread_subj = subj
-        for _ in range(4):
-            stripped = re.sub(
-                r"(?i)^(?:\[(?:external|внешнее|spam)\]|(?:external|внешнее)\s*:|внешняя\s+почта:)\s*",
-                "",
-                thread_subj,
-                count=1,
-            ).strip()
-            if stripped == thread_subj:
-                break
-            thread_subj = stripped
-        if re.match(
-            r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересылка|пересл|на)\s*:",
-            thread_subj,
-        ):
+        thread_subj = strip_gateway_subject_prefix(subj)
+        if SUBJECT_REPLY_PREFIX_RE.match(thread_subj):
             parts.append(
                 ScoreContribution(
                     "mitigation",

@@ -100,9 +100,17 @@ _DATA_URI_BIG_RE = re.compile(rb"(?i)data:(?:application|text)[^,]{0,80},[A-Za-z
 # Same order as script / lure shortcut decoders.
 PAYLOAD_TEXT_ENCODINGS = ("utf-8", "utf-16", "utf-16-le", "cp1251", "koi8-r", "latin-1")
 
-# Single-byte Cyrillic codecs. Compared together so a real iso-8859-5 or cp866
-# body is not rewritten to cp1251, and a wrong declared charset can still lose.
-_CYRILLIC_CANDIDATES = ("cp1251", "koi8-r", "iso-8859-5", "cp866")
+# Single-byte Cyrillic codecs. Compared together so a real iso-8859-5, cp866,
+# koi8-u or mac-cyrillic body is not rewritten to cp1251, and a wrong declared
+# charset can still lose.
+_CYRILLIC_CANDIDATES = (
+    "cp1251",
+    "koi8-r",
+    "iso-8859-5",
+    "cp866",
+    "koi8-u",
+    "mac-cyrillic",
+)
 
 _DECLARED_CYRILLIC = {
     "windows-1251": "cp1251",
@@ -114,9 +122,11 @@ _DECLARED_CYRILLIC = {
     "iso8859-5": "iso-8859-5",
     "cp866": "cp866",
     "ibm866": "cp866",
+    "koi8-u": "koi8-u",
+    "mac-cyrillic": "mac-cyrillic",
 }
 
-# These codecs accept every byte, so a declared latin-1/cp1251/koi8-r body can hide another Cyrillic encoding.
+# These codecs accept every byte, so a declared latin-1/cp1251/koi8-r/koi8-u/mac-cyrillic body can hide another Cyrillic encoding.
 _PERMISSIVE_CHARSETS = frozenset(
     {
         "iso-8859-1",
@@ -135,6 +145,8 @@ _PERMISSIVE_CHARSETS = frozenset(
         "iso8859-5",
         "cp866",
         "ibm866",
+        "koi8-u",
+        "mac-cyrillic",
     }
 )
 
@@ -168,10 +180,11 @@ def decode_payload_text(data: bytes, charset: str | None = None) -> str:
     """Decode a mail part. Empty or broken charset uses the attachment encodings.
 
     A declared charset that decodes cleanly is kept. Encodings that accept every
-    byte (latin-1, cp1252, koi8-r, windows-1251, iso-8859-5, cp866) use the same
-    Cyrillic comparison as an empty charset. Otherwise UTF-8 wins when it is
-    valid, and the candidate with the most lowercase Cyrillic wins. A correct
-    iso-8859-5 or cp866 body stays that encoding.
+    byte (latin-1, cp1252, koi8-r, koi8-u, mac-cyrillic, windows-1251,
+    iso-8859-5, cp866) use the same Cyrillic comparison as an empty charset.
+    Otherwise UTF-8 wins when it is valid, and the candidate with the most
+    lowercase Cyrillic wins. A correct iso-8859-5, cp866, koi8-u or
+    mac-cyrillic body stays that encoding.
     """
     if not data:
         return ""
