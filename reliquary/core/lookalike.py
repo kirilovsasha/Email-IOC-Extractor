@@ -425,6 +425,21 @@ _VENDOR_LONGER_LABELS = frozenset(
         "googleusercontent",
         "githubusercontent",
         "icloud-content",
+        "googleadservices",
+        "googlevideo",
+        "dropboxusercontent",
+        "paypalobjects",
+        "apple-cloudkit",
+        "amazontrust",
+    }
+)
+
+# Same vendor on another TLD. A typo and a foreign suffix stay spoofs.
+_VENDOR_OTHER_TLDS = frozenset(
+    {
+        "yandex.net",
+        "office.net",
+        "github.io",
     }
 )
 
@@ -445,6 +460,23 @@ _DISPLAY_PRODUCT_WORDS = frozenset(
         "нефть",
         "маркет",
         "notification",
+        "365",
+        "edge",
+        "word",
+        "docs",
+        "drive",
+        "meet",
+        "диск",
+        "музыка",
+        "почта",
+        "прайм",
+        "music",
+        "pay",
+        "инвестиции",
+        "онлайн",
+        "gold",
+        "медиа",
+        "страхование",
     }
 )
 
@@ -460,7 +492,7 @@ def _label_as_word(label: str, text: str) -> bool:
 
 
 def _brand_plus_product(display: str, label: str) -> bool:
-    """Teams, Calendar, Еда, нефть, Маркет, notification after the brand."""
+    """A product word after the brand. A bare brand name still is the brand."""
     words = "|".join(
         re.escape(word) for word in sorted(_DISPLAY_PRODUCT_WORDS, key=len, reverse=True)
     )
@@ -496,6 +528,7 @@ def check_domain(
     hits: list[LookalikeHit] = []
     own_host = _allowlisted_host(domain)
     longer_vendor = (reg.split(".")[0] if reg else "") in _VENDOR_LONGER_LABELS
+    own_tld = reg in _VENDOR_OTHER_TLDS
 
     if is_idn:
         hits.append(
@@ -536,9 +569,9 @@ def check_domain(
                 # e.g. secure-microsoft.top
                 pass
             if brand_label in norm and not reg.endswith(brand_reg):
-                # Allowlisted hosts and a longer name of the same vendor are not spoofs.
+                # Allowlisted hosts, a longer name, and another TLD of the vendor are not spoofs.
                 # A skipped letter (microsft) and a foreign suffix (microsoft-login) stay.
-                if not own_host and not longer_vendor:
+                if not own_host and not longer_vendor and not own_tld:
                     hits.append(
                         LookalikeHit(
                             value=domain,

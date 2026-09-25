@@ -150,7 +150,9 @@ def test_password_attribute_is_not_a_credential_phrase() -> None:
     assert "html_password_form" in (result.content_signals or [])
     assert "учётных данных" not in _reasons(result)
     assert "полем password" in _reasons(result)
-    assert "DMARC+DKIM" in _reasons(result)
+    assert "DMARC+DKIM" not in _reasons(result)
+    assert result.verdict is not None
+    assert result.verdict.level.value == "unknown"
 
 
 def test_reply_to_subdomain_is_related() -> None:

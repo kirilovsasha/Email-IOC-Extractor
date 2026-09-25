@@ -1397,6 +1397,7 @@ def _score_mitigations(
     bad_content = {
         "href_mismatch",
         "credential_harvest",
+        "html_password_form",
         "bec_payment",
         "qr_only",
         "qr_lure",
@@ -1711,7 +1712,7 @@ def _benign_marker_parts(
         thread_subj = subj
         for _ in range(4):
             stripped = re.sub(
-                r"(?i)^(?:\[(?:external|внешнее)\]|внешняя\s+почта:)\s*",
+                r"(?i)^(?:\[(?:external|внешнее|spam)\]|(?:external|внешнее)\s*:|внешняя\s+почта:)\s*",
                 "",
                 thread_subj,
                 count=1,
@@ -1720,7 +1721,7 @@ def _benign_marker_parts(
                 break
             thread_subj = stripped
         if re.match(
-            r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересл|на)\s*:",
+            r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересылка|пересл|на)\s*:",
             thread_subj,
         ):
             parts.append(

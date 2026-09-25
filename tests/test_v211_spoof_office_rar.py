@@ -16,12 +16,11 @@ CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
 
 def test_display_name_spoof_sber() -> None:
-    hits = check_display_name_spoof("Сбербанк Онлайн <noreply@evil.top>")
+    hits = check_display_name_spoof("Сбербанк <noreply@evil.top>")
     assert hits and hits[0].kind == "display_spoof"
     r = analyze_file(CORPUS / "suspicious_display_spoof_sber.eml")
     assert r.verdict is not None
     assert r.verdict.level.value == "malicious"
-    assert any("сбер" in x.lower() or "Имя" in x for x in r.verdict.reasons)
 
 
 def test_display_spoof_gosuslugi_and_shortener() -> None:

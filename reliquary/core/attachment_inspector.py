@@ -51,7 +51,7 @@ ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".gz", ".tar", ".cab", ".iso"}
 MACRO_OFFICE = {".doc", ".docm", ".xls", ".xlsm", ".ppt", ".pptm", ".rtf"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff"}
 NESTED_MAIL_EXT = {".eml", ".msg"}
-WEB_PAYLOAD_EXT = {".html", ".htm", ".shtml", ".mht", ".mhtml", ".svg"}
+WEB_PAYLOAD_EXT = {".html", ".htm", ".shtml", ".xhtml", ".mht", ".mhtml", ".svg"}
 PDF_EXT = {".pdf"}
 SCRIPT_EXT = {".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".hta", ".ps1", ".bat", ".cmd"}
 DISK_IMAGE_EXT = {".vhd", ".vhdx", ".wim", ".esd"}
@@ -233,6 +233,7 @@ def _guess_mime(data: bytes, filename: str) -> str:
         ".pdf": "application/pdf",
         ".html": "text/html",
         ".htm": "text/html",
+        ".xhtml": "application/xhtml+xml",
         ".mht": "multipart/related",
         ".mhtml": "multipart/related",
         ".svg": "image/svg+xml",
@@ -709,7 +710,7 @@ def _scan_web_payload(filename: str, data: bytes) -> tuple[list[str], list[str],
     notes: list[str] = []
     ext = Path(filename.lower()).suffix
     kind = ""
-    if ext in {".html", ".htm", ".shtml"} or b"<html" in data[:4096].lower():
+    if ext in {".html", ".htm", ".shtml", ".xhtml"} or b"<html" in data[:4096].lower():
         flags.append("html_attachment")
         kind = "html"
         notes.append("HTML-вложение — офлайн-разбор ссылок/форм")
@@ -735,7 +736,7 @@ def _scan_web_payload(filename: str, data: bytes) -> tuple[list[str], list[str],
     head8 = data[: min(len(data), 8192)]
     htmlish = bool(
         re.search(rb"(?i)<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]", head8[:512])
-        or ext in {".html", ".htm", ".shtml"}
+        or ext in {".html", ".htm", ".shtml", ".xhtml"}
     )
     if htmlish and (b"PK\x03\x04" in head8[32:] or b"%PDF" in head8[32:]):
         flags.append("html_polyglot")

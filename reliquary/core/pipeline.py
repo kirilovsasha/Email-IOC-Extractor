@@ -180,14 +180,14 @@ def _counts_as_campaign_file(att) -> bool:
     return not name.startswith("cid-")
 
 
-# Same reply prefix the thread mitigation strips, plus Ответ / Переслано / На / Re[n].
+# Same reply prefix the thread mitigation strips, plus Ответ / Переслано / Пересылка / На / Re[n].
 _CAMPAIGN_SUBJECT_PREFIX_RE = re.compile(
-    r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересл|на)\s*:\s*"
+    r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересылка|пересл|на)\s*:\s*"
 )
 
 # Gateway tag in front of that prefix. The thread mitigation strips the same list.
 _GATEWAY_SUBJECT_PREFIX_RE = re.compile(
-    r"(?i)^(?:\[(?:external|внешнее)\]|внешняя\s+почта:)\s*"
+    r"(?i)^(?:\[(?:external|внешнее|spam)\]|(?:external|внешнее)\s*:|внешняя\s+почта:)\s*"
 )
 
 
