@@ -210,7 +210,7 @@ def _decode_part_text(payload: bytes, charset: str | None) -> str:
 
 
 def _append_named_plain_text(part: Message, text_parts: list[str]) -> None:
-    """text/plain with a filename still feeds the extractor and the verdict."""
+    """text/plain or text/csv with a filename still feeds the extractor and the verdict."""
     try:
         payload = part.get_payload(decode=True) or b""
         decoded = _decode_part_text(payload, part.get_content_charset())
@@ -218,6 +218,17 @@ def _append_named_plain_text(part: Message, text_parts: list[str]) -> None:
         return
     if decoded.strip():
         text_parts.append(decoded)
+
+
+def _append_html_text(part: Message, html_parts: list[str]) -> None:
+    """text/html and text/x-amp-html use the same HTML parse."""
+    try:
+        payload = part.get_payload(decode=True) or b""
+        decoded = _decode_part_text(payload, part.get_content_charset())
+    except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
+        return
+    if decoded.strip():
+        html_parts.append(decoded)
 
 
 def _append_enriched_or_rtf(part: Message, ctype: str, text_parts: list[str]) -> None:
@@ -267,9 +278,12 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                             notes=[str(exc)],
                         )
                     )
-                # A named text/plain part is still body text for the extractor and verdict.
-                if ctype == "text/plain":
+                # A named text/plain or text/csv part is still body text.
+                # text/x-amp-html uses the same HTML parse as text/html.
+                if ctype in {"text/plain", "text/csv"}:
                     _append_named_plain_text(part, text_parts)
+                elif ctype == "text/x-amp-html":
+                    _append_html_text(part, html_parts)
                 continue
             # CID / inline images without filename → still inspect for QR
             if ctype.startswith("image/") and "attachment" not in disp.lower():
@@ -341,9 +355,9 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                     )
                 )
                 continue
-            if ctype in {"text/plain", "text/rfc822-headers"}:
+            if ctype in {"text/plain", "text/rfc822-headers", "text/csv"}:
                 text_parts.append(decoded)
-            elif ctype == "text/html":
+            elif ctype in {"text/html", "text/x-amp-html"}:
                 html_parts.append(decoded)
     else:
         ctype = msg.get_content_type()
@@ -379,7 +393,7 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                         notes=[f"Декод тела письма с ошибкой: {exc}"],
                     )
                 )
-            if ctype == "text/html":
+            if ctype in {"text/html", "text/x-amp-html"}:
                 html_parts.append(decoded)
             else:
                 text_parts.append(decoded)

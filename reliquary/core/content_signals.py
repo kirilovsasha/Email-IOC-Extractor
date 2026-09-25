@@ -15,11 +15,11 @@ CREDENTIAL_RE = re.compile(
     r"(?i)\b("
     # Ask to enter or change a password. A bare password / passwd / passcode,
     # outlook web, account verify and «подтвердите аккаунт» are ordinary words.
-    # «verify account number», «password policy» and «update your account»
-    # without a password are not a password ask.
+    # «verify account number/status/balance/details», «password policy» and
+    # «update your account» without a password are not a password ask.
     r"(?:enter|type|input|provide|reset|change|submit)\s+(?:your\s+|the\s+|a\s+)?passwords?(?!\s+polic(?:y|ies)\b)|"
-    r"verify\s*account(?!\s+numbers?\b)|"
-    r"update\s*your\s*password|"
+    r"verify\s*account(?!\s+(?:numbers?|status|balance|details)\b)|"
+    r"update\s*your\s*passwords?(?!\s+polic(?:y|ies)\b)|"
     r"(?:введите|ввести|смените|сменить|обновите|укажите|подтверд\w*)\s+парол\w*|"
     r"учетн\w*\s*запис|"
     r"веб[- ]?почт"
@@ -30,25 +30,28 @@ BEC_RE = re.compile(
     r"(?i)\b("
     # These need a payment object. «new details», a handbook, «of knowledge»,
     # banking hours, a transfer receipt and a bare wire/bank transfer are ordinary mail.
-    r"(?:wire|bank)\s*transfer\s+of\s+(?:funds|money|payment|cash|the\s+(?:funds|money|payment|amount))\b|"
+    # «payment plan» is not the object. A handbook stays quiet with or without «updated».
+    r"(?:wire|bank)\s*transfer\s+of\s+(?:funds|money|payment(?!\s+plan\b)|cash|"
+    r"the\s+(?:funds|money|payment(?!\s+plan\b)|amount))\b|"
     r"change\s+(?:of\s+)?banking\s+details|"
     r"new\s+(?:bank|payment)\s+details|"
-    r"(?:new|updated?|chang(?:e|ed|ing))\s+payment\s+instructions|"
+    r"(?:new|updated?|chang(?:e|ed|ing))\s+payment\s+instructions(?!(?:\s+\w+){0,8}\s+handbook\b)|"
     # A bare «реквизиты» is ordinary finance mail. Payment-change phrases stay.
     # «на карту», not «на карте». «перевод документов» is not a money transfer.
     # «насчет» is not «на счет».
     r"перевод\w*\s*(?:на\s+)?(?:сч[её]т|карту)|"
     r"смен\w*\s*реквизит\w*|нов\w{2,8}\s+реквизит\w*|"
-    # «не» and «уже» are not a request to pay today.
-    r"оплат\w*\s*сегодня(?!\s+(?:не|уже)\b)|срочн\w*\s*оплат|"
-    r"пишите\s*только\s*сюда|CEO\s*urgent|"
+    # «не», «уже», a cancelled payment and one that already went through are not a request.
+    # «оплатите» and «оплата» are the same ask urgency already knows.
+    r"оплат\w*\s*сегодня(?!\s+(?:не|уже|отмен\w*|прошл\w*)\b)|срочн\w*\s*оплат(?:ите|а)?|"
+    r"пишите\s*только\s*сюда|CEO\s*urgent\s+(?:wire|bank)\s*transfer|"
     # A job title, «не звоните» and a bare UNP/ЕРИП mention are ordinary mail.
     # Payment change and out-of-band payment stay.
     # Moving an employee is not a money transfer.
     r"срочн\w*\s*перев(?:од|ед|ест)\w*(?!\s+(?:документ|сотрудник)\w*)|"
     r"реквизит\w*\s+на\s+карту|"
-    # A payment calendar is not a change of payment details.
-    r"изменит\w*\s+плат[её]жн\w*(?!\s+календар\w*)|"
+    # A payment calendar or a payment day is not a change of payment details.
+    r"изменит\w*\s+плат[её]жн\w*(?!\s+(?:календар|д(?:ень|ня|ню|не))\w*)|"
     # Full IBAN stays with the payment-change tokens. «IBAN BY20» is not one.
     r"новые\s+реквизиты\s+(?:рб|беларус)"
     r")\b"
@@ -77,21 +80,25 @@ QR_LURE_RE = re.compile(
 )
 
 # Full values only. opacity:0.85, font-size:0.9em and a percent unit are visible.
+# A fraction of only zeros (0.0) is still zero. A nonzero fraction is visible.
+# overflow:hidden and a zero height/width hide in either order.
 # A one-to-three digit left shift is visible; left:-9999px is not.
 # White is a color, not a hide, so color:#fff / #ffffff is not in this list.
 HIDDEN_STYLE_RE = re.compile(
     r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|"
-    r"font-size\s*:\s*0(?:px|pt|em)?(?![.\w%])|"
-    r"opacity\s*:\s*0(?![.\d%])|"
+    r"font-size\s*:\s*0(?:\.0+)?(?:px|pt|em)?(?![.\w%])|"
+    r"opacity\s*:\s*0(?:\.0+)?(?![.\d%])|"
     r"mso-hide\s*:\s*all|"
     r"position\s*:\s*absolute\s*;\s*left\s*:\s*-\d{4,}|"
     r"left\s*:\s*-\d{4,}|"
     r"max-height\s*:\s*0(?![.\d%])|max-width\s*:\s*0(?![.\d%])|"
-    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0(?![.\d%]))"
+    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0(?:\.0+)?(?![.\d%])|"
+    r"(?:height|width)\s*:\s*0(?:\.0+)?(?![.\d%])\s*;\s*overflow\s*:\s*hidden)"
 )
 
+# «file:» in prose is not a scheme. file:// is, same as search-ms: and ms-msdt:.
 DANGEROUS_SCHEME_RE = re.compile(
-    r"(?i)(?:search-ms|ms-msdt|ms-officecmd|ms-appinstaller|vbscript|mhtml|file)\s*:"
+    r"(?i)(?:(?:search-ms|ms-msdt|ms-officecmd|ms-appinstaller|vbscript|mhtml)\s*:|file\s*://)"
 )
 USERINFO_URL_RE = re.compile(
     r"(?i)\bhttps?://([^\s/@<>\"']*\.[^\s/@<>\"']*)@[^\s/<>\"']+"

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from reliquary.core.verdict_config import DEFAULT_SUSPICIOUS_TLDS
+
 # Well-known brand registrable domains (ASCII). Org profiles may extend via brands.txt.
 DEFAULT_BRANDS: tuple[str, ...] = (
     "microsoft.com",
@@ -327,12 +329,37 @@ def load_brands(extra_path: str | Path | None = None) -> tuple[str, ...]:
     return tuple(out)
 
 
+# Country-code second level. The label in front of these is the registrable name.
+_MULTI_LABEL_ZONES = frozenset({"co.uk", "com.br", "com.au", "com.tr"})
+_SUSPICIOUS_ZONES = frozenset(item.lstrip(".") for item in DEFAULT_SUSPICIOUS_TLDS)
+
+
 def _registrable(host: str) -> str:
     host = host.lower().strip(".").strip()
-    parts = host.split(".")
+    parts = [part for part in host.split(".") if part]
+    if len(parts) >= 3 and ".".join(parts[-2:]) in _MULTI_LABEL_ZONES:
+        return ".".join(parts[-3:])
     if len(parts) >= 2:
         return ".".join(parts[-2:])
     return host
+
+
+def _label_and_zone(reg: str) -> tuple[str, str]:
+    """Registrable label and its zone. co.uk keeps the label in front of it."""
+    parts = [part for part in (reg or "").split(".") if part]
+    if len(parts) >= 3 and ".".join(parts[-2:]) in _MULTI_LABEL_ZONES:
+        return parts[0], ".".join(parts[1:])
+    if len(parts) >= 2:
+        return parts[0], ".".join(parts[1:])
+    return reg, ""
+
+
+def _vendor_own_zone(reg: str, brand_label: str) -> bool:
+    """Exact brand label on the vendor's own zone. A typo and a suspicious suffix stay."""
+    label, zone = _label_and_zone(reg)
+    if not label or label != brand_label or not zone:
+        return False
+    return zone not in _SUSPICIOUS_ZONES
 
 
 def _idna_unicode(host: str) -> str:
@@ -431,6 +458,9 @@ _VENDOR_LONGER_LABELS = frozenset(
         "paypalobjects",
         "apple-cloudkit",
         "amazontrust",
+        "googletagmanager",
+        "google-analytics",
+        "githubassets",
     }
 )
 
@@ -477,6 +507,12 @@ _DISPLAY_PRODUCT_WORDS = frozenset(
         "gold",
         "медиа",
         "страхование",
+        "office",
+        "excel",
+        "outlook",
+        "chrome",
+        "браузер",
+        "бизнес",
     }
 )
 
@@ -499,6 +535,24 @@ def _brand_plus_product(display: str, label: str) -> bool:
     return (
         re.search(
             rf"(?iu)(?<![\w-]){re.escape(label)}(?![\w-])\s+(?:{words})(?![\w-])",
+            display,
+        )
+        is not None
+    )
+
+
+def _follows_other_brand(display: str, label: str) -> bool:
+    """This label is the product after another brand. «Outlook» in «Microsoft Outlook»."""
+    names = "|".join(
+        re.escape(name)
+        for name, _brands in sorted(_BRAND_DISPLAY_NAMES, key=lambda item: len(item[0]), reverse=True)
+        if name != label
+    )
+    if not names:
+        return False
+    return (
+        re.search(
+            rf"(?iu)(?<![\w-])(?:{names})(?![\w-])\s+{re.escape(label)}(?![\w-])",
             display,
         )
         is not None
@@ -529,6 +583,8 @@ def check_domain(
     own_host = _allowlisted_host(domain)
     longer_vendor = (reg.split(".")[0] if reg else "") in _VENDOR_LONGER_LABELS
     own_tld = reg in _VENDOR_OTHER_TLDS
+    norm_label, norm_zone = _label_and_zone(norm)
+    visual_label, _visual_zone = _label_and_zone(visual_reg)
 
     if is_idn:
         hits.append(
@@ -545,8 +601,16 @@ def check_domain(
         if reg == brand_reg or visual_reg == brand_reg:
             continue
         brand_norm = normalize_homoglyph(brand_reg)
+        brand_label_n, brand_zone = _label_and_zone(brand_norm)
+        zones_differ = bool(norm_zone) and norm_zone != brand_zone
         # Homoglyph: normalized letters match the brand, the host itself does not.
-        if norm == brand_norm:
+        # A foreign zone is compared on the label, not on the label plus that zone.
+        label_homoglyph = (
+            zones_differ
+            and norm_label == brand_label_n
+            and visual_label != _label_and_zone(brand_reg)[0]
+        )
+        if norm == brand_norm or label_homoglyph:
             hits.append(
                 LookalikeHit(
                     value=domain,
@@ -569,9 +633,15 @@ def check_domain(
                 # e.g. secure-microsoft.top
                 pass
             if brand_label in norm and not reg.endswith(brand_reg):
-                # Allowlisted hosts, a longer name, and another TLD of the vendor are not spoofs.
-                # A skipped letter (microsft) and a foreign suffix (microsoft-login) stay.
-                if not own_host and not longer_vendor and not own_tld:
+                # Allowlisted hosts, a longer name, the vendor's own zone and another
+                # listed TLD are not spoofs. A skipped letter (microsft) and a
+                # foreign suffix (microsoft-login) stay.
+                if (
+                    not own_host
+                    and not longer_vendor
+                    and not own_tld
+                    and not _vendor_own_zone(reg, brand_label)
+                ):
                     hits.append(
                         LookalikeHit(
                             value=domain,
@@ -581,16 +651,23 @@ def check_domain(
                         )
                     )
                 continue
+        # A foreign zone is scored on the label. The same zone keeps the full string.
+        if zones_differ:
+            left, right = norm_label, brand_label_n
+        else:
+            left, right = norm, brand_norm
         # mail.com is one deletion from gmail.com and is not that typo.
-        if reg == "mail.com" and brand_reg == "gmail.com":
+        if (left == "mail" and right == "gmail") or (
+            reg == "mail.com" and brand_reg == "gmail.com"
+        ):
             continue
-        dist = levenshtein(norm, brand_norm)
+        dist = levenshtein(left, right)
         eff_max = 1 if short_brand else max_distance
         len_slack = 0 if short_brand else max_distance
         if (
             1 <= dist <= eff_max
-            and abs(len(norm) - len(brand_norm)) <= len_slack
-            and (not short_brand or len(norm) >= 4)
+            and abs(len(left) - len(right)) <= len_slack
+            and (not short_brand or len(left) >= 4)
         ):
             hits.append(
                 LookalikeHit(
@@ -637,7 +714,7 @@ def check_display_name_spoof(
         ):
             continue
         # Product name, and From is not the brand. A bare brand on a foreign mailbox stays.
-        if _brand_plus_product(display, label):
+        if _brand_plus_product(display, label) or _follows_other_brand(display, label):
             continue
         brand = brands[0]
         hits.append(

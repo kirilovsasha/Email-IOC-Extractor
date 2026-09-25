@@ -16,6 +16,32 @@ _KIT_MAILER_RE = re.compile(
 # Reply prefixes the campaign subject key already strips, including Re[n]: and На:.
 _ORPHAN_REPLY_RE = re.compile(r"(?i)^(?:re(?:\[\d+\])?|ответ|отв|на)\s*:")
 
+# Gateway tag in front of a reply prefix. The subject key and thread mitigation
+# strip this same list, including the short [EXT] / SPAM: forms.
+GATEWAY_SUBJECT_PREFIX_RE = re.compile(
+    r"(?i)^(?:"
+    r"\[(?:external(?:\s+email)?|ext|внешняя\s+почта|внешнее|spam)\]"
+    r"|(?:external|внешнее|spam)\s*:"
+    r"|внешняя\s+почта\s*:"
+    r")\s*"
+)
+
+# Reply and forward prefixes, including Fw[n]: / Fwd[n]:. Same list as the subject key.
+SUBJECT_REPLY_PREFIX_RE = re.compile(
+    r"(?i)^(?:re(?:\[\d+\])?|fwd?(?:\[\d+\])?|ответ|отв|переслано|пересылка|пересл|на)\s*:\s*"
+)
+
+
+def strip_gateway_subject_prefix(subject: str) -> str:
+    """Drop leading gateway tags the campaign subject key already strips."""
+    text = (subject or "").strip()
+    for _ in range(6):
+        stripped = GATEWAY_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
+        if stripped == text:
+            break
+        text = stripped
+    return text
+
 
 def _addr_domain(addr: str) -> str:
     text = (addr or "").strip().lower()
@@ -139,7 +165,11 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
         elif re_subj and in_reply and from_addr:
             # Re: subject + In-Reply-To but no usable prior domain — still note lightly
             pass
-    elif _ORPHAN_REPLY_RE.match(subject_raw.strip()) and not in_reply and not references:
+    elif (
+        _ORPHAN_REPLY_RE.match(strip_gateway_subject_prefix(subject_raw))
+        and not in_reply
+        and not references
+    ):
         findings.append(
             HeaderFinding(
                 "Orphan reply",
