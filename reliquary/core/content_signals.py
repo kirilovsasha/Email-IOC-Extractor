@@ -13,35 +13,40 @@ from reliquary.core.verdict_config import DEFAULT_SUSPICIOUS_TLDS
 
 CREDENTIAL_RE = re.compile(
     r"(?i)\b("
-    # Ask to enter or change a password. A bare login/sign-in/webmail/OWA
-    # and the host label "login" are ordinary words.
+    # Ask to enter or change a password. A bare password / passwd / passcode,
+    # outlook web, account verify and «подтвердите аккаунт» are ordinary words.
     r"(?:enter|type|input|provide|reset|change|submit)\s+(?:your\s+|the\s+|a\s+)?passwords?|"
-    r"password(?!\s+polic(?:y|ies))|passwd|passcode|"
-    r"outlook\s*web|account\s*verify|verify\s*account|"
+    r"verify\s*account|"
     r"update\s*your\s*(?:password|account)|"
     r"(?:введите|ввести|смените|сменить|обновите|укажите|подтверд\w*)\s+парол\w*|"
-    r"учетн\w*\s*запис|подтвердите\s*аккаунт|"
+    r"учетн\w*\s*запис|"
     r"веб[- ]?почт"
     r")\b"
 )
 
 BEC_RE = re.compile(
     r"(?i)\b("
-    r"wire\s*transfer|bank\s*transfer|change\s*(?:of\s*)?banking|"
-    r"new\s*(?:bank\s*)?details|payment\s*instructions|"
+    # These need a payment object. «new details», a handbook, «of knowledge»,
+    # banking hours and a transfer receipt are ordinary mail.
+    r"(?:wire|bank)\s*transfer(?!\s+receipt\b)"
+    r"(?!\s+of\s+(?!funds\b|money\b|payment\b|cash\b|the\s+(?:funds|money|payment|amount)\b)\w)|"
+    r"change\s+(?:of\s+)?banking\s+details|"
+    r"new\s+(?:bank|payment)\s+details|"
+    r"(?:new|updated?|chang(?:e|ed|ing))\s+payment\s+instructions|"
     # A bare «реквизиты» is ordinary finance mail. Payment-change phrases stay.
-    r"перевод\w*\s*(?:на\s*)?(?:сч[её]т|карт)|"
+    # «на карту», not «на карте». «перевод документов» is not a money transfer.
+    r"перевод\w*\s*(?:на\s*)?(?:сч[её]т|карту)|"
     r"смен\w*\s*реквизит\w*|нов\w{2,8}\s+реквизит\w*|"
-    r"оплат\w*\s*сегодня|срочн\w*\s*оплат|"
+    r"оплат\w*\s*сегодня(?!\s+не\b)|срочн\w*\s*оплат|"
     r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
     r"пишите\s*только\s*сюда|CEO\s*urgent|"
     # A job title, «не звоните» and a bare UNP/ЕРИП mention are ordinary mail.
     # Payment change and out-of-band payment stay.
-    r"срочн\w*\s*перев(?:од|ед|ест)\w*|"
-    r"реквизит\w*\s+на\s+карт\w*|"
+    r"срочн\w*\s*перев(?:од|ед|ест)\w*(?!\s+документ\w*)|"
+    r"реквизит\w*\s+на\s+карту|"
     r"изменит\w*\s+плат[её]жн\w*|"
-    # Беларусь: IBAN BY. A bare ЕРИП/УНП is not a payment-change.
-    r"iban\s*by\d{2}|by\d{2}\s*[a-z0-9]{4}|"
+    # Full IBAN stays with the payment-change tokens. A four-character tail is not one.
+    r"iban\s*by\d{2}|"
     r"новые\s+реквизиты\s+(?:рб|беларус)"
     r")\b"
 )
@@ -69,12 +74,12 @@ QR_LURE_RE = re.compile(
     r")"
 )
 
-# Full values only. opacity:0.85 and font-size:0.9em are visible text.
+# Full values only. opacity:0.85, font-size:0.9em and a percent unit are visible.
 # White is a color, not a hide, so color:#fff / #ffffff is not in this list.
 HIDDEN_STYLE_RE = re.compile(
     r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|"
-    r"font-size\s*:\s*0(?:px|pt|em)?(?![.\w])|"
-    r"opacity\s*:\s*0(?![.\d])|"
+    r"font-size\s*:\s*0(?:px|pt|em)?(?![.\w%])|"
+    r"opacity\s*:\s*0(?![.\d%])|"
     r"mso-hide\s*:\s*all|"
     r"position\s*:\s*absolute\s*;\s*left\s*:\s*-|"
     r"left\s*:\s*-\d{3,}|"
@@ -144,23 +149,23 @@ CLOUD_LURE_RE = re.compile(
     r"drive\.google\.com/(?:file|open)|dropbox\.com/s|"
     r"1drv\.ms|onedrive\.live\.com)/[^\s<>\"')\]]*"
     r"|"
+    # A named host or disk. A bare «в облаке» is not a lure.
     r"(?:скача(?:йте|ть)|файл|документ|архив)\s+(?:на|в|по)\s+"
     r"(?:яндекс\.?\s*диск|yandex\s*disk|mail\.ru\s*облак|google\s*drive|"
-    r"облак[еу]|диск[еу]\s+яндекс)"
+    r"диск[еу]\s+яндекс)"
     r")"
 )
 
+# Win+R, powershell and mshta. A bare «выполните команду» or «нажмите win» is not ClickFix.
 CLICKFIX_RE = re.compile(
     r"(?i)("
     r"\bwin\s*\+\s*r\b|"
     r"windows\s*\+\s*r\b|"
     r"клавиш\w{0,8}\s+win\b|"
-    r"нажмите\s+win\b|"
     r"powershell(?:\.exe)?\s+(?:-enc|-e\b|-encodedcommand)|"
     r"\bmshta(?:\.exe)?\b|"
     r"certutil(?:\.exe)?\s+-urlcache|"
     r"вставьте\s+команду|"
-    r"выполните\s+команду|"
     r"\brun\s+dialog\b|"
     r"press\s+(?:the\s+)?windows\s+key"
     r")"

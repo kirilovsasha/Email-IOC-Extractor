@@ -100,7 +100,23 @@ _DATA_URI_BIG_RE = re.compile(rb"(?i)data:(?:application|text)[^,]{0,80},[A-Za-z
 # Same order as script / lure shortcut decoders.
 PAYLOAD_TEXT_ENCODINGS = ("utf-8", "utf-16", "utf-16-le", "cp1251", "koi8-r", "latin-1")
 
-# These codecs accept every byte, so a declared latin-1/cp1252/koi8-r body can hide another Cyrillic encoding.
+# Single-byte Cyrillic codecs. Compared together so a real iso-8859-5 or cp866
+# body is not rewritten to cp1251, and a wrong declared charset can still lose.
+_CYRILLIC_CANDIDATES = ("cp1251", "koi8-r", "iso-8859-5", "cp866")
+
+_DECLARED_CYRILLIC = {
+    "windows-1251": "cp1251",
+    "cp1251": "cp1251",
+    "windows1251": "cp1251",
+    "koi8-r": "koi8-r",
+    "koi8": "koi8-r",
+    "iso-8859-5": "iso-8859-5",
+    "iso8859-5": "iso-8859-5",
+    "cp866": "cp866",
+    "ibm866": "cp866",
+}
+
+# These codecs accept every byte, so a declared latin-1/cp1251/koi8-r body can hide another Cyrillic encoding.
 _PERMISSIVE_CHARSETS = frozenset(
     {
         "iso-8859-1",
@@ -112,6 +128,13 @@ _PERMISSIVE_CHARSETS = frozenset(
         "windows1252",
         "koi8-r",
         "koi8",
+        "windows-1251",
+        "cp1251",
+        "windows1251",
+        "iso-8859-5",
+        "iso8859-5",
+        "cp866",
+        "ibm866",
     }
 )
 
@@ -128,11 +151,12 @@ def _cyrillic_lower_count(text: str) -> int:
 def _best_cyrillic_text(decoded: dict[str, str], declared: str) -> str:
     best = ""
     best_key = (-1, -1, -1)
-    for enc in ("cp1251", "koi8-r"):
+    declared_enc = _DECLARED_CYRILLIC.get(declared, declared)
+    for enc in _CYRILLIC_CANDIDATES:
         text = decoded.get(enc)
         if not text:
             continue
-        prefer = 1 if enc == declared or (enc == "koi8-r" and declared == "koi8") else 0
+        prefer = 1 if enc == declared_enc else 0
         key = (_cyrillic_lower_count(text), _cyrillic_count(text), prefer)
         if key > best_key:
             best_key = key
@@ -144,9 +168,10 @@ def decode_payload_text(data: bytes, charset: str | None = None) -> str:
     """Decode a mail part. Empty or broken charset uses the attachment encodings.
 
     A declared charset that decodes cleanly is kept. Encodings that accept every
-    byte (latin-1, iso-8859-1, windows-1252, koi8-r) use the same Cyrillic
-    comparison as an empty charset. Otherwise UTF-8 wins when it is valid, and
-    cp1251 or koi8-r wins when the bytes are clearly Cyrillic.
+    byte (latin-1, cp1252, koi8-r, windows-1251, iso-8859-5, cp866) use the same
+    Cyrillic comparison as an empty charset. Otherwise UTF-8 wins when it is
+    valid, and the candidate with the most lowercase Cyrillic wins. A correct
+    iso-8859-5 or cp866 body stays that encoding.
     """
     if not data:
         return ""
@@ -162,8 +187,8 @@ def decode_payload_text(data: bytes, charset: str | None = None) -> str:
     except UnicodeError:
         pass
     decoded: dict[str, str] = {}
-    for enc in PAYLOAD_TEXT_ENCODINGS:
-        if enc == "utf-8":
+    for enc in (*PAYLOAD_TEXT_ENCODINGS, *_CYRILLIC_CANDIDATES):
+        if enc == "utf-8" or enc in decoded:
             continue
         try:
             decoded[enc] = data.decode(enc)

@@ -185,11 +185,18 @@ _CAMPAIGN_SUBJECT_PREFIX_RE = re.compile(
     r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересл|на)\s*:\s*"
 )
 
+# Gateway tag in front of that prefix. The thread mitigation strips the same list.
+_GATEWAY_SUBJECT_PREFIX_RE = re.compile(
+    r"(?i)^(?:\[(?:external|внешнее)\]|внешняя\s+почта:)\s*"
+)
+
 
 def _campaign_subject(subject: str) -> str:
     text = (subject or "").strip()
-    for _ in range(4):
-        stripped = _CAMPAIGN_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
+    for _ in range(6):
+        stripped = _GATEWAY_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
+        if stripped == text:
+            stripped = _CAMPAIGN_SUBJECT_PREFIX_RE.sub("", text, count=1).strip()
         if stripped == text:
             break
         text = stripped

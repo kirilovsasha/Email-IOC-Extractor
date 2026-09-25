@@ -413,6 +413,7 @@ def host_from_email_or_url(value: str) -> str:
 
 
 # Longer product name of the same vendor, not a foreign suffix (microsoft-login).
+# googleapis / googleusercontent / githubusercontent / icloud-content are that vendor's host.
 _VENDOR_LONGER_LABELS = frozenset(
     {
         "googlemail",
@@ -420,6 +421,10 @@ _VENDOR_LONGER_LABELS = frozenset(
         "office365",
         "microsoftonline",
         "facebookmail",
+        "googleapis",
+        "googleusercontent",
+        "githubusercontent",
+        "icloud-content",
     }
 )
 
@@ -431,11 +436,41 @@ def _allowlisted_host(host: str) -> bool:
     return domain_matches((host or "").lower().rstrip("."), domains)
 
 
+# A product after the brand is not the brand. A bare brand name still is.
+_DISPLAY_PRODUCT_WORDS = frozenset(
+    {
+        "teams",
+        "calendar",
+        "еда",
+        "нефть",
+        "маркет",
+        "notification",
+    }
+)
+
+
 def _label_as_word(label: str, text: str) -> bool:
-    """Label on a word boundary. «цб» must not win inside «нацбанк»."""
+    """Label on a word boundary. A hyphen stays inside the word.
+
+    «цб» must not win inside «нацбанк», and «альфа» must not win inside «альфа-тест».
+    """
     if not label or not text:
         return False
-    return re.search(rf"(?iu)(?<!\w){re.escape(label)}(?!\w)", text) is not None
+    return re.search(rf"(?iu)(?<![\w-]){re.escape(label)}(?![\w-])", text) is not None
+
+
+def _brand_plus_product(display: str, label: str) -> bool:
+    """Teams, Calendar, Еда, нефть, Маркет, notification after the brand."""
+    words = "|".join(
+        re.escape(word) for word in sorted(_DISPLAY_PRODUCT_WORDS, key=len, reverse=True)
+    )
+    return (
+        re.search(
+            rf"(?iu)(?<![\w-]){re.escape(label)}(?![\w-])\s+(?:{words})(?![\w-])",
+            display,
+        )
+        is not None
+    )
 
 
 def check_domain(
@@ -567,6 +602,9 @@ def check_display_name_spoof(
             host == b or host.endswith("." + b) or _registrable(host) == b
             for b in brands
         ):
+            continue
+        # Product name, and From is not the brand. A bare brand on a foreign mailbox stays.
+        if _brand_plus_product(display, label):
             continue
         brand = brands[0]
         hits.append(
