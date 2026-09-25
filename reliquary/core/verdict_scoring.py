@@ -1707,9 +1707,21 @@ def _benign_marker_parts(
             )
         )
     if mid and (mid.in_reply_to or mid.references) and not foreign_reply:
+        # Same gateway prefix the campaign subject key strips, then the reply prefix.
+        thread_subj = subj
+        for _ in range(4):
+            stripped = re.sub(
+                r"(?i)^(?:\[(?:external|внешнее)\]|внешняя\s+почта:)\s*",
+                "",
+                thread_subj,
+                count=1,
+            ).strip()
+            if stripped == thread_subj:
+                break
+            thread_subj = stripped
         if re.match(
             r"(?i)^(?:re(?:\[\d+\])?|fw|fwd|ответ|отв|переслано|пересл|на)\s*:",
-            subj,
+            thread_subj,
         ):
             parts.append(
                 ScoreContribution(

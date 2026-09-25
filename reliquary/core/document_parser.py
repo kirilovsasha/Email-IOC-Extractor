@@ -209,6 +209,17 @@ def _decode_part_text(payload: bytes, charset: str | None) -> str:
     return decode_payload_text(payload, charset)
 
 
+def _append_named_plain_text(part: Message, text_parts: list[str]) -> None:
+    """text/plain with a filename still feeds the extractor and the verdict."""
+    try:
+        payload = part.get_payload(decode=True) or b""
+        decoded = _decode_part_text(payload, part.get_content_charset())
+    except (LookupError, UnicodeError, TypeError, ValueError, AttributeError):
+        return
+    if decoded.strip():
+        text_parts.append(decoded)
+
+
 def _append_enriched_or_rtf(part: Message, ctype: str, text_parts: list[str]) -> None:
     """text/enriched, text/rtf and application/rtf text go to the body extractor."""
     if ctype not in {"text/enriched", "text/rtf", "application/rtf"}:
@@ -256,6 +267,9 @@ def _walk_attachments(msg: Message) -> tuple[str, str, list[AttachmentInfo]]:
                             notes=[str(exc)],
                         )
                     )
+                # A named text/plain part is still body text for the extractor and verdict.
+                if ctype == "text/plain":
+                    _append_named_plain_text(part, text_parts)
                 continue
             # CID / inline images without filename → still inspect for QR
             if ctype.startswith("image/") and "attachment" not in disp.lower():

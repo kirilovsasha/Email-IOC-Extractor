@@ -222,12 +222,15 @@ def analyze_headers(msg: Message) -> list[HeaderFinding]:
         arc_results = _get_all(msg, "ARC-Authentication-Results")
         arc_seal = _get_all(msg, "ARC-Seal")
         arc_blob = " | ".join(arc_results).lower()
+        seal_blob = " | ".join(arc_seal).lower()
         if arc_results or arc_seal:
+            # cv=fail on the seal already read above is the same ARC fail.
             arc_fail = bool(
                 re.search(
                     r"(?:spf|dkim|dmarc)\s*=\s*fail|\bi\s*=\s*\d+[^\n;]*fail",
                     arc_blob,
                 )
+                or re.search(r"\bcv\s*=\s*fail\b", seal_blob)
             )
             findings.append(
                 HeaderFinding(

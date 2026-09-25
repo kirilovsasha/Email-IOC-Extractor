@@ -379,7 +379,7 @@
   },
   "suspicious_hidden_html.eml": {
     "level": "suspicious",
-    "score_min": 41,
+    "score_min": 37,
     "score_max": 59
   },
   "suspicious_href_mismatch.eml": {

@@ -162,6 +162,7 @@ _CLOUD_STORAGE_ROOTS = frozenset(
         "office.com",
         "github.com",
         "icloud.com",
+        "microsoft.com",
     }
 )
 
@@ -172,6 +173,11 @@ _GOOGLE_USER_HOSTS = (
     "sites.google.com",
     "script.google.com",
     "storage.cloud.google.com",
+    "sheets.google.com",
+    "slides.google.com",
+    "keep.google.com",
+    "groups.google.com",
+    "drive.usercontent.google.com",
 )
 
 # User content on Microsoft consumer hosts. Mail names stay allowlisted.
@@ -180,12 +186,20 @@ _MS_USER_HOSTS = (
     "storage.live.com",
     "sway.office.com",
     "forms.office.com",
+    "excel.office.com",
+    "word.office.com",
+    "powerpoint.office.com",
+    "onedrive.office.com",
+    "onedrive.microsoft.com",
+    "forms.microsoft.com",
+    "sway.microsoft.com",
 )
 
 # User content that is not mail. Mail and CDN names stay allowlisted.
 _USER_CONTENT_HOSTS = (
     "gist.github.com",
     "share.icloud.com",
+    "photos.icloud.com",
 )
 
 
@@ -228,7 +242,15 @@ def is_user_cloud_storage_host(host: str) -> bool:
         h,
     ):
         return True
+    # Azure static website: account.z13.web.core.windows.net
+    if re.search(
+        r"^[a-z0-9][a-z0-9-]{1,62}\.[a-z0-9][a-z0-9-]{0,62}\.web\.core\.windows\.net$",
+        h,
+    ):
+        return True
     if h == "storage.googleapis.com" or h.endswith(".storage.googleapis.com"):
+        return True
+    if h == "firebasestorage.googleapis.com" or h.endswith(".firebasestorage.googleapis.com"):
         return True
     if h.endswith(".githubusercontent.com"):
         return True
@@ -265,6 +287,21 @@ def value_matches(val: str, patterns: set[str]) -> bool:
     return False
 
 
+def _github_release_url(value: str) -> bool:
+    """Release binary on github.com. The host itself stays allowlisted."""
+    raw = value if "://" in value else f"https://{value}"
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    if host != "github.com":
+        return False
+    return "/releases/download/" in (parsed.path or "").lower()
+
+
 def tag_allowlist(iocs, allow_domains: set[str], allow_ips: set[str]) -> None:
     """Mutate IOC tags in place: allowlisted."""
     for ioc in iocs:
@@ -275,7 +312,10 @@ def tag_allowlist(iocs, allow_domains: set[str], allow_ips: set[str]) -> None:
             if itype == "email" and "@" in val:
                 host = val.split("@", 1)[1]
             elif itype in ("url", "messenger"):
-                host = urlparse(val if "://" in val else f"https://{val}").hostname or ""
+                if _github_release_url(val):
+                    host = ""
+                else:
+                    host = urlparse(val if "://" in val else f"https://{val}").hostname or ""
             if host and domain_matches(host, allow_domains):
                 if "allowlisted" not in ioc.tags:
                     ioc.tags.append("allowlisted")

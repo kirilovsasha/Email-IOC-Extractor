@@ -23,9 +23,9 @@ def test_mail_identity_thread_root() -> None:
         in_reply_to="<irt@x>",
         references="<root@x> <irt@x>",
     )
-    assert mid.thread_root_id() == "<root@x>"
+    assert mid.thread_root_id() == "root@x"
     mid2 = MailIdentity(message_id="<me@x>", in_reply_to="<irt@x>")
-    assert mid2.thread_root_id() == "<irt@x>"
+    assert mid2.thread_root_id() == "irt@x"
 
 
 def test_campaign_key_prefers_thread() -> None:

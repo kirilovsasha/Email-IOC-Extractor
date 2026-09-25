@@ -140,13 +140,21 @@ class MailIdentity:
         refs = (self.references or "").strip()
         if refs:
             # First token is usually the root of the thread
-            token = refs.split()[0].strip()
+            token = _thread_root_token(refs)
             if token:
-                return token.lower()
+                return token
         irt = (self.in_reply_to or "").strip()
         if irt:
-            return irt.split()[0].strip().lower()
+            return _thread_root_token(irt)
         return ""
+
+
+def _thread_root_token(value: str) -> str:
+    """Same comparison for References and In-Reply-To: drop angle brackets."""
+    token = (value or "").strip().split()
+    if not token:
+        return ""
+    return token[0].strip().strip("<>").strip().lower()
 
 
 @dataclass
