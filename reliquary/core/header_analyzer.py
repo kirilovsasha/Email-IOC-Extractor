@@ -13,7 +13,8 @@ _KIT_MAILER_RE = re.compile(
     r"(?i)(phpmailer|swiftmailer|codeigniter|zend[_\s-]?mail|pear::mail|"
     r"javax\.mail|roundcube|wordpress|joomla|wp-mail|sendgrid|mailgun)"
 )
-_ORPHAN_REPLY_RE = re.compile(r"(?i)^(re|отв|ответ)\s*:")
+# Reply prefixes the campaign subject key already strips, including Re[n]: and На:.
+_ORPHAN_REPLY_RE = re.compile(r"(?i)^(?:re(?:\[\d+\])?|ответ|отв|на)\s*:")
 
 
 def _addr_domain(addr: str) -> str:

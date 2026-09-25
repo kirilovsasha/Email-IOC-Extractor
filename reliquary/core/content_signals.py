@@ -15,9 +15,11 @@ CREDENTIAL_RE = re.compile(
     r"(?i)\b("
     # Ask to enter or change a password. A bare password / passwd / passcode,
     # outlook web, account verify and «подтвердите аккаунт» are ordinary words.
-    r"(?:enter|type|input|provide|reset|change|submit)\s+(?:your\s+|the\s+|a\s+)?passwords?|"
-    r"verify\s*account|"
-    r"update\s*your\s*(?:password|account)|"
+    # «verify account number», «password policy» and «update your account»
+    # without a password are not a password ask.
+    r"(?:enter|type|input|provide|reset|change|submit)\s+(?:your\s+|the\s+|a\s+)?passwords?(?!\s+polic(?:y|ies)\b)|"
+    r"verify\s*account(?!\s+numbers?\b)|"
+    r"update\s*your\s*password|"
     r"(?:введите|ввести|смените|сменить|обновите|укажите|подтверд\w*)\s+парол\w*|"
     r"учетн\w*\s*запис|"
     r"веб[- ]?почт"
@@ -27,26 +29,27 @@ CREDENTIAL_RE = re.compile(
 BEC_RE = re.compile(
     r"(?i)\b("
     # These need a payment object. «new details», a handbook, «of knowledge»,
-    # banking hours and a transfer receipt are ordinary mail.
-    r"(?:wire|bank)\s*transfer(?!\s+receipt\b)"
-    r"(?!\s+of\s+(?!funds\b|money\b|payment\b|cash\b|the\s+(?:funds|money|payment|amount)\b)\w)|"
+    # banking hours, a transfer receipt and a bare wire/bank transfer are ordinary mail.
+    r"(?:wire|bank)\s*transfer\s+of\s+(?:funds|money|payment|cash|the\s+(?:funds|money|payment|amount))\b|"
     r"change\s+(?:of\s+)?banking\s+details|"
     r"new\s+(?:bank|payment)\s+details|"
     r"(?:new|updated?|chang(?:e|ed|ing))\s+payment\s+instructions|"
     # A bare «реквизиты» is ordinary finance mail. Payment-change phrases stay.
     # «на карту», not «на карте». «перевод документов» is not a money transfer.
-    r"перевод\w*\s*(?:на\s*)?(?:сч[её]т|карту)|"
+    # «насчет» is not «на счет».
+    r"перевод\w*\s*(?:на\s+)?(?:сч[её]т|карту)|"
     r"смен\w*\s*реквизит\w*|нов\w{2,8}\s+реквизит\w*|"
-    r"оплат\w*\s*сегодня(?!\s+не\b)|срочн\w*\s*оплат|"
-    r"только\s*(?:в\s*)?(?:telegram|телеграм|whatsapp|ватсап)|"
+    # «не» and «уже» are not a request to pay today.
+    r"оплат\w*\s*сегодня(?!\s+(?:не|уже)\b)|срочн\w*\s*оплат|"
     r"пишите\s*только\s*сюда|CEO\s*urgent|"
     # A job title, «не звоните» and a bare UNP/ЕРИП mention are ordinary mail.
     # Payment change and out-of-band payment stay.
-    r"срочн\w*\s*перев(?:од|ед|ест)\w*(?!\s+документ\w*)|"
+    # Moving an employee is not a money transfer.
+    r"срочн\w*\s*перев(?:од|ед|ест)\w*(?!\s+(?:документ|сотрудник)\w*)|"
     r"реквизит\w*\s+на\s+карту|"
-    r"изменит\w*\s+плат[её]жн\w*|"
-    # Full IBAN stays with the payment-change tokens. A four-character tail is not one.
-    r"iban\s*by\d{2}|"
+    # A payment calendar is not a change of payment details.
+    r"изменит\w*\s+плат[её]жн\w*(?!\s+календар\w*)|"
+    # Full IBAN stays with the payment-change tokens. «IBAN BY20» is not one.
     r"новые\s+реквизиты\s+(?:рб|беларус)"
     r")\b"
 )
@@ -58,8 +61,7 @@ MESSENGER_LURE_RE = re.compile(
     r"пишите\s+(?:в|мне\s+в)\s+(?:telegram|телеграм|whatsapp|ватсап)|"
     r"напишите\s+(?:в|мне\s+в)\s+(?:telegram|телеграм|whatsapp|ватсап)|"
     r"write\s+(?:me\s+)?(?:in|on|via)\s+(?:telegram|whatsapp)|"
-    r"contact\s+(?:me\s+)?(?:in|on|via)\s+(?:telegram|whatsapp)|"
-    r"только\s+(?:в\s+)?(?:telegram|телеграм|whatsapp|ватсап)"
+    r"contact\s+(?:me\s+)?(?:in|on|via)\s+(?:telegram|whatsapp)"
     r")"
 )
 
@@ -75,16 +77,17 @@ QR_LURE_RE = re.compile(
 )
 
 # Full values only. opacity:0.85, font-size:0.9em and a percent unit are visible.
+# A one-to-three digit left shift is visible; left:-9999px is not.
 # White is a color, not a hide, so color:#fff / #ffffff is not in this list.
 HIDDEN_STYLE_RE = re.compile(
     r"(?i)(display\s*:\s*none|visibility\s*:\s*hidden|"
     r"font-size\s*:\s*0(?:px|pt|em)?(?![.\w%])|"
     r"opacity\s*:\s*0(?![.\d%])|"
     r"mso-hide\s*:\s*all|"
-    r"position\s*:\s*absolute\s*;\s*left\s*:\s*-|"
-    r"left\s*:\s*-\d{3,}|"
-    r"max-height\s*:\s*0(?![.\d])|max-width\s*:\s*0(?![.\d])|"
-    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0(?![.\d]))"
+    r"position\s*:\s*absolute\s*;\s*left\s*:\s*-\d{4,}|"
+    r"left\s*:\s*-\d{4,}|"
+    r"max-height\s*:\s*0(?![.\d%])|max-width\s*:\s*0(?![.\d%])|"
+    r"overflow\s*:\s*hidden\s*;\s*(?:height|width)\s*:\s*0(?![.\d%]))"
 )
 
 DANGEROUS_SCHEME_RE = re.compile(
@@ -156,18 +159,15 @@ CLOUD_LURE_RE = re.compile(
     r")"
 )
 
-# Win+R, powershell and mshta. A bare «выполните команду» or «нажмите win» is not ClickFix.
+# Win+R, powershell and mshta. A bare key, «вставьте команду» or «windows key» is not ClickFix.
 CLICKFIX_RE = re.compile(
     r"(?i)("
     r"\bwin\s*\+\s*r\b|"
     r"windows\s*\+\s*r\b|"
-    r"клавиш\w{0,8}\s+win\b|"
     r"powershell(?:\.exe)?\s+(?:-enc|-e\b|-encodedcommand)|"
     r"\bmshta(?:\.exe)?\b|"
     r"certutil(?:\.exe)?\s+-urlcache|"
-    r"вставьте\s+команду|"
-    r"\brun\s+dialog\b|"
-    r"press\s+(?:the\s+)?windows\s+key"
+    r"\brun\s+dialog\b"
     r")"
 )
 

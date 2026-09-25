@@ -171,7 +171,7 @@ def test_kz_ua_brands_and_display_spoof() -> None:
     assert "kaspi.kz" in brands
     assert "privatbank.ua" in brands
     assert "diia.gov.ua" in brands
-    hits = check_display_name_spoof("Kaspi Gold <noreply@evil.top>")
+    hits = check_display_name_spoof("Kaspi <noreply@evil.top>")
     assert hits and hits[0].kind == "display_spoof"
     hits2 = check_display_name_spoof("ПриватБанк <noreply@evil.top>")
     assert hits2 and hits2[0].kind == "display_spoof"

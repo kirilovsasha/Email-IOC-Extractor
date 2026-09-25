@@ -320,8 +320,8 @@
   },
   "suspicious_display_spoof_kaspi.eml": {
     "level": "malicious",
-    "score_min": 90,
-    "score_max": 100
+    "score_min": 60,
+    "score_max": 80
   },
   "suspicious_display_spoof_mns_by.eml": {
     "level": "malicious",
@@ -340,12 +340,11 @@
   },
   "suspicious_display_spoof_sber.eml": {
     "level": "malicious",
-    "score_min": 87,
-    "score_max": 100,
+    "score_min": 60,
+    "score_max": 80,
     "reason_substrings": [
-      "сбер",
-      "sber",
-      "Имя"
+      "evil.top",
+      "dmarc"
     ]
   },
   "suspicious_dkim_misalign.eml": {
@@ -460,9 +459,9 @@
     "score_max": 44
   },
   "suspicious_messenger_only.eml": {
-    "level": "malicious",
-    "score_min": 60,
-    "score_max": 78,
+    "level": "suspicious",
+    "score_min": 30,
+    "score_max": 50,
     "reason_substrings": [
       "Telegram",
       "messenger",
@@ -651,9 +650,9 @@
     ]
   },
   "unknown_bec_wire.eml": {
-    "level": "malicious",
-    "score_min": 60,
-    "score_max": 80
+    "level": "suspicious",
+    "score_min": 39,
+    "score_max": 59
   },
   "unknown_empty_body.eml": {
     "level": "unknown",

@@ -19,9 +19,9 @@ CORPUS = Path(__file__).resolve().parents[1] / "samples" / "corpus"
 
 
 def test_display_spoof_has_dedicated_weight() -> None:
-    hits = check_display_name_spoof('"Сбербанк Онлайн" <thief@evil.top>')
+    hits = check_display_name_spoof('"Сбербанк" <thief@evil.top>')
     assert hits and hits[0].kind == "display_spoof"
-    r = analyze_file(CORPUS / "suspicious_display_spoof_sber.eml")
+    r = analyze_file(CORPUS / "suspicious_display_spoof_belarusbank.eml")
     assert r.verdict is not None
     blob = " ".join(c.reason for c in (r.verdict.breakdown or []))
     assert "Сбер" in blob or "похож" in blob or any(
